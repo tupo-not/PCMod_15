@@ -12,6 +12,7 @@ DEV.Content = ""
 DEV.Status = ""
 DEV.Links = {}
 DEV.Ctrl = {}
+DEV.CreatedCtrl = {}
 DEV.Rows = {}
 DEV.InlineSig = ""
 
@@ -37,34 +38,40 @@ function DEV:InlineSignature()
 	return s
 end
 
+// Remove the controls we actually created last time (self.Ctrl is already the
+// freshly measured list, so we track the created set separately).
 function DEV:RemoveInlineControls()
-	for _, c in ipairs( self.Ctrl or {} ) do
+	for _, c in ipairs( self.CreatedCtrl or {} ) do
 		if (c.kind == "input") then
 			self:RemoveTextbox( c.gname )
 		elseif (c.kind == "submit") then
 			self:RemoveElement( c.gname )
 		end
 	end
+	self.CreatedCtrl = {}
 end
 
 // Create the inline input/submit controls for the current page. Rebuilds when
-// the controls change or a resize wiped them.
+// the controls change, or when a resize/navigation wiped the previous ones.
 function DEV:RebuildControls()
 	local sig = self:InlineSignature()
 	local missing = false
-	for _, c in ipairs( self.Ctrl or {} ) do
+	for _, c in ipairs( self.CreatedCtrl or {} ) do
 		if (c.kind == "input") && ((!self.Textboxes) || (!self.Textboxes[ c.gname ])) then missing = true end
 		if (c.kind == "submit") && ((!self.Elements) || (!self.Elements[ c.gname ])) then missing = true end
 	end
 	if ((sig == self.InlineSig) && (!missing)) then return end
 	self:RemoveInlineControls()
 	self.InlineSig = sig
+	self.CreatedCtrl = {}
 	for _, c in ipairs( self.Ctrl or {} ) do
 		if (c.kind == "input") then
 			self:CreateTextbox( self.Th, c.gname, c.cx, c.cy, c.w, c.h, "" )
 			self:SetTextboxText( c.gname, c.value or "" )
+			table.insert( self.CreatedCtrl, { kind = "input", gname = c.gname, name = c.name } )
 		elseif (c.kind == "submit") then
 			self:CreateButton2( self.Th, c.gname, c.x, c.y, c.w, c.h, c.t or "Save" )
+			table.insert( self.CreatedCtrl, { kind = "submit", gname = c.gname } )
 		end
 	end
 end

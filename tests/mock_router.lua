@@ -124,15 +124,28 @@ PCMod.Cfg.DHCPStart = 2
 PCMod.Cfg.DHCPEnd = 250
 DRV.Wireless = true
 DRV.WirelessClients = { [10] = true, [11] = true }
-local page = DRV:GetWebPage()
-assertTrue( string.find( page, "<h1>WebGear Router</h1>", 1, true ) ~= nil, "page has an h1 heading" )
-assertTrue( string.find( page, "192.168.5.1", 1, true ) ~= nil, "page shows IPv4 LAN" )
-assertTrue( string.find( page, "fd00:3:0:5::/64", 1, true ) ~= nil, "page shows IPv6 prefix" )
-assertTrue( string.find( page, "Wi-Fi password:", 1, true ) ~= nil, "page shows Wi-Fi password field" )
-assertTrue( string.find( page, "Wi-Fi clients:", 1, true ) ~= nil, "page shows client count" )
-assertTrue( string.find( page, "Configuration", 1, true ) ~= nil, "page has a configuration section" )
-assertTrue( string.find( page, "Firewall:", 1, true ) ~= nil, "page shows firewall" )
-assertTrue( string.find( page, "NAT:", 1, true ) ~= nil, "page shows NAT" )
+local page = DRV:GetWebPage( "" )
+assertTrue( string.find( page, "<h1>WebGear Router</h1>", 1, true ) ~= nil, "home page has an h1 heading" )
+assertTrue( string.find( page, "192.168.5.1", 1, true ) ~= nil, "home page shows IPv4 LAN" )
+assertTrue( string.find( page, "fd00:3:0:5::/64", 1, true ) ~= nil, "home page shows IPv6 prefix" )
+assertTrue( string.find( page, "Wi-Fi clients:", 1, true ) ~= nil, "home page shows client count" )
+assertTrue( string.find( page, "Status", 1, true ) ~= nil, "home page has a status section" )
+
+local wifipage = DRV:GetWebPage( "/wifi" )
+assertTrue( string.find( wifipage, "name=\"wpass\"", 1, true ) ~= nil, "wifi page has a password field" )
+assertTrue( string.find( wifipage, "Wireless", 1, true ) == nil, "wifi page uses Status not raw wireless" )
+
+local lanpage = DRV:GetWebPage( "/lan" )
+assertTrue( string.find( lanpage, "name=\"dhcpstart\"", 1, true ) ~= nil, "lan page has DHCP start field" )
+assertTrue( string.find( lanpage, "NAT:", 1, true ) ~= nil, "lan page shows NAT" )
+
+local fwpage = DRV:GetWebPage( "/firewall" )
+assertTrue( string.find( fwpage, "Firewall", 1, true ) ~= nil, "firewall page renders" )
+
+-- Nav links are present and relative paths route to the right pages.
+local nav = DRV:GetWebPage( "/wifi" )
+assertTrue( string.find( nav, 'href="/lan"', 1, true ) ~= nil, "nav links to LAN page" )
+assertTrue( string.find( nav, 'href="/firewall"', 1, true ) ~= nil, "nav links to firewall page" )
 
 -- Query-string config application.
 DRV:ApplyWebQuery( "?wireless=0&dhcpstart=5&firewall=1&wpass=random" )

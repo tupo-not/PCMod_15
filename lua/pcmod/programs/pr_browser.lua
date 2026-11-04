@@ -29,6 +29,8 @@ function PROG:OnStart()
 	self.DeviceData.Status = ""
 	self.Pending = false
 	self.Timeout = nil
+	self.CurrentAddr = nil
+	self.CurrentPath = ""
 end
 
 function PROG:OnEnd()
@@ -68,26 +70,52 @@ function PROG:DoCommand( com, args )
 		self.DeviceData.Url = ""
 		self.DeviceData.Content = self.Home
 		self.DeviceData.Status = ""
+		self.CurrentAddr = nil
+		self.CurrentPath = ""
 		self:UpdateSS()
 		return
 	end
 	if (com == "go") then
 		local url = args[1] or ""
 		local addr, path = self:ParseUrl( url )
-		// Relative links ("/path" or "?query") resolve against the last address.
-		if ((!addr) && (path != "") && self.CurrentAddr) then addr = self.CurrentAddr end
-		if ((!addr) || (!PCMod.IPv6.IsIP( addr ))) then
+		local isQuery = ((path != "") && (string.sub( path, 1, 1 ) == "?"))
+		local explicit = (addr != nil)
+
+		if (!explicit) then
+			if (!self.CurrentAddr) then
+				self.DeviceData.Url = url
+				self.DeviceData.Status = "Invalid address."
+				self:UpdateSS()
+				return
+			end
+			addr = self.CurrentAddr
+		end
+
+		if (!PCMod.IPv6.IsIP( addr )) then
 			self.DeviceData.Url = url
 			self.DeviceData.Status = "Invalid address."
 			self:UpdateSS()
 			return
 		end
-		self.CurrentAddr = addr
-		self.DeviceData.Url = (path == "") and addr or (addr .. path)
+
+		// Commit navigation state only after the address validated.
+		local sendPath
+		if (explicit) then
+			self.CurrentAddr = addr
+			self.CurrentPath = path
+			sendPath = path
+		elseif (isQuery) then
+			sendPath = (self.CurrentPath or "") .. path
+		else
+			self.CurrentPath = path
+			sendPath = path
+		end
+
+		self.DeviceData.Url = self.CurrentAddr .. (self.CurrentPath or "")
 		self.DeviceData.Status = "Loading " .. addr .. "..."
 		self.Pending = true
 		self.Timeout = CurTime() + 10
-		self:GetOS():SendNetMessage( addr, 80, { "http", path } )
+		self:GetOS():SendNetMessage( addr, 80, { "http", sendPath } )
 		self:UpdateSS()
 		return
 	end

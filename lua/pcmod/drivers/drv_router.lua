@@ -625,46 +625,45 @@ function DRV:ApplyWebSetting( key, value )
 	end
 end
 
-// A config/status "web page" served by the router to the in-game browser
-// (port 80). Marked up with PCMod.Web's tiny HTML subset.
-function DRV:GetWebPage()
+// Strip a query string and leading/trailing slashes off a request path to get
+// the page id ("" = home, "wifi"/"lan"/"firewall" = sub-pages).
+function DRV:WebPage( path )
+	path = tostring( path or "" )
+	path = string.gsub( path, "%?.*$", "" )
+	path = string.gsub( path, "/+", "/" )
+	path = string.gsub( path, "^/", "" )
+	path = string.gsub( path, "/$", "" )
+	return path
+end
+
+// Shared navigation bar linking the pages.
+function DRV:WebNav( current )
+	local items = { { "", "Home" }, { "wifi", "Wi-Fi" }, { "lan", "LAN" }, { "firewall", "Firewall" } }
+	local parts = {}
+	for _, it in ipairs( items ) do
+		table.insert( parts, '<a href="/' .. it[ 1 ] .. '">' .. it[ 2 ] .. '</a>' )
+	end
+	return "<p>Navigation: " .. table.concat( parts, " | " ) .. "</p>"
+end
+
+// Main page: status overview + network links.
+function DRV:PageHome()
 	local e = self.Entity
 	local c = self:GetCfg()
 	local bb = e:GetBSubnet()
 	local lines = {}
 	table.insert( lines, "<h1>WebGear Router</h1>" )
+	table.insert( lines, self:WebNav( "" ) )
+	table.insert( lines, "<h2>Status</h2>" )
 	table.insert( lines, "<p><b>Model:</b> " .. tostring( e:GetClass() ) .. "</p>" )
 	table.insert( lines, "<p><b>IPv4 LAN:</b> " .. tostring( e:GetFullIP() or "unassigned" ) .. "</p>" )
 	table.insert( lines, "<p><b>IPv6:</b> " .. tostring( e:GetIPv6() or "unassigned" ) .. "</p>" )
 	if (e.GetIPv6Prefix && e:GetIPv6Prefix()) then table.insert( lines, "<p><b>Prefix:</b> " .. tostring( e:GetIPv6Prefix() ) .. "</p>" ) end
 	if (bb) then table.insert( lines, "<p><b>Backbone:</b> fd00:" .. tostring( bb ) .. "::/32</p>" ) else table.insert( lines, "<p><b>Backbone:</b> none (standalone)</p>" ) end
-
-	// ------------------------------------------------------------------
-	// Configuration panel: booleans are toggle links, free-form values are
-	// text inputs the browser renders as editable fields.
-	// ------------------------------------------------------------------
-	table.insert( lines, "<h2>Configuration</h2>" )
-	table.insert( lines, "<form action=\"?\">" )
-	if (c.Wireless) then
-		table.insert( lines, '<p><b>Wi-Fi:</b> enabled <a href="?wireless=0">[Disable]</a></p>' )
-	else
-		table.insert( lines, '<p><b>Wi-Fi:</b> disabled <a href="?wireless=1">[Enable]</a></p>' )
-	end
-	table.insert( lines, '<p><b>Wi-Fi password:</b> <input type="text" name="wpass" label="Wi-Fi password" value="' .. tostring( c.WirePass ) .. '"></p>' )
-	table.insert( lines, '<p><b>DHCP start:</b> <input type="text" name="dhcpstart" label="DHCP start" value="' .. tostring( c.DHCPStart ) .. '"></p>' )
-	table.insert( lines, '<p><b>DHCP end:</b> <input type="text" name="dhcpend" label="DHCP end" value="' .. tostring( c.DHCPEnd ) .. '"></p>' )
-	if (c.Firewall) then
-		table.insert( lines, '<p><b>Firewall:</b> on <a href="?firewall=0">[Disable]</a></p>' )
-	else
-		table.insert( lines, '<p><b>Firewall:</b> off <a href="?firewall=1">[Enable]</a></p>' )
-	end
-	if (c.NAT) then
-		table.insert( lines, '<p><b>NAT:</b> on <a href="?nat=0">[Disable]</a></p>' )
-	else
-		table.insert( lines, '<p><b>NAT:</b> off <a href="?nat=1">[Enable]</a></p>' )
-	end
-	table.insert( lines, '<p><input type="submit" value="Save"></p>' )
-	table.insert( lines, "</form>" )
+	table.insert( lines, "<p><b>Wi-Fi:</b> " .. (c.Wireless and "enabled" or "disabled") .. "</p>" )
+	table.insert( lines, "<p><b>Firewall:</b> " .. (c.Firewall and "on" or "off") .. "</p>" )
+	table.insert( lines, "<p><b>NAT:</b> " .. (c.NAT and "on" or "off") .. "</p>" )
+	table.insert( lines, "<p><b>DHCP pool:</b> ." .. tostring( c.DHCPStart ) .. " - ." .. tostring( c.DHCPEnd ) .. "</p>" )
 
 	local wc = 0
 	for _, v in pairs( self.WirelessClients or {} ) do if (v) then wc = wc + 1 end end
@@ -692,6 +691,59 @@ function DRV:GetWebPage()
 	table.insert( lines, "</ul>" )
 
 	return table.concat( lines, "\n" )
+end
+
+function DRV:PageWifi()
+	local c = self:GetCfg()
+	local lines = {}
+	table.insert( lines, "<h1>Wi-Fi</h1>" )
+	table.insert( lines, self:WebNav( "wifi" ) )
+	if (c.Wireless) then
+		table.insert( lines, '<p><b>Status:</b> enabled <a href="?wireless=0">[Disable]</a></p>' )
+	else
+		table.insert( lines, '<p><b>Status:</b> disabled <a href="?wireless=1">[Enable]</a></p>' )
+	end
+	table.insert( lines, '<p><b>Password:</b> <input type="text" name="wpass" value="' .. tostring( c.WirePass ) .. '"> <input type="submit" value="Set Password"></p>' )
+	return table.concat( lines, "\n" )
+end
+
+function DRV:PageLAN()
+	local c = self:GetCfg()
+	local lines = {}
+	table.insert( lines, "<h1>LAN / DHCP</h1>" )
+	table.insert( lines, self:WebNav( "lan" ) )
+	table.insert( lines, '<p><b>DHCP start:</b> <input type="text" name="dhcpstart" value="' .. tostring( c.DHCPStart ) .. '"></p>' )
+	table.insert( lines, '<p><b>DHCP end:</b> <input type="text" name="dhcpend" value="' .. tostring( c.DHCPEnd ) .. '"></p>' )
+	if (c.NAT) then
+		table.insert( lines, '<p><b>NAT:</b> on <a href="?nat=0">[Disable]</a></p>' )
+	else
+		table.insert( lines, '<p><b>NAT:</b> off <a href="?nat=1">[Enable]</a></p>' )
+	end
+	table.insert( lines, '<p><input type="submit" value="Apply"></p>' )
+	return table.concat( lines, "\n" )
+end
+
+function DRV:PageFirewall()
+	local c = self:GetCfg()
+	local lines = {}
+	table.insert( lines, "<h1>Firewall</h1>" )
+	table.insert( lines, self:WebNav( "firewall" ) )
+	if (c.Firewall) then
+		table.insert( lines, '<p><b>Status:</b> on <a href="?firewall=0">[Disable]</a></p>' )
+	else
+		table.insert( lines, '<p><b>Status:</b> off <a href="?firewall=1">[Enable]</a></p>' )
+	end
+	table.insert( lines, "<p>When on, only web (80) and ping/trace (0) traffic is allowed.</p>" )
+	return table.concat( lines, "\n" )
+end
+
+// A config/status "web page" served to the in-game browser (port 80).
+function DRV:GetWebPage( path )
+	local page = self:WebPage( path )
+	if (page == "wifi") then return self:PageWifi() end
+	if (page == "lan") then return self:PageLAN() end
+	if (page == "firewall") then return self:PageFirewall() end
+	return self:PageHome()
 end
 
 // Reply to an in-game HTTP request: apply any ?query settings, then serve.
