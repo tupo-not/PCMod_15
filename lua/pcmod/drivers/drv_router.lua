@@ -189,7 +189,9 @@ function DRV:ProcessPacket( pid, pass, side )
 	if (isSelf) then
 		local flow = self:GetForwardFlow( packet.Source, packet.Port )
 		if (flow) then
-			local wanSrc = self.Entity:GetFullIP() or self.Entity:GetIPv6()
+			// Rewrite the reply's source to the router's PUBLIC address (the one
+			// the peer dialled) so it routes back and looks right to the peer.
+			local wanSrc = flow.pub or self.Entity:GetFullIP() or self.Entity:GetIPv6()
 			if (wanSrc) then
 				packet.Delivered = true
 				local rpid = PCMod.Network.CreatePacket( wanSrc, flow.src, flow.port, packet.Body )
@@ -201,7 +203,7 @@ function DRV:ProcessPacket( pid, pass, side )
 		if (rule) then
 			local lanSrc = self.Entity:GetFullIP() or self.Entity:GetIPv6()
 			if (lanSrc) then
-				self:RememberForwardFlow( rule, packet.Source, packet.Port )
+				self:RememberForwardFlow( rule, packet.Source, packet.Port, packet.Dest )
 				packet.Delivered = true
 				local dpid = PCMod.Network.CreatePacket( lanSrc, rule.ip, rule.port, packet.Body )
 				if (dpid) then self:ProcessPacket( dpid ) end
@@ -613,23 +615,31 @@ function DRV:SetWireless( on )
 	if (self.Entity.SetGVar) then self.Entity:SetGVar( "wireless", on ) end
 end
 
-// Rules-based firewall (blacklist). When enabled, traffic matching any rule
-// (direction + optional source/dest IP + optional port) is dropped; otherwise
-// everything passes.
+// Rules-based firewall (allow-list). When enabled (default deny) everything is
+// dropped except the router's control plane (web 80 / ping 0), an established
+// NAT reply, and traffic matching an allow rule (direction + optional
+// source/dest IP + optional port). This is the classic "protect the LAN" model:
+// to expose a service behind the router you open it with an allow rule (or a
+// port-forward rule, which the firewall also gates).
 function DRV:FirewallBlocks( packet, side )
 	local c = self:GetCfg()
 	if (!c.Firewall) then return false end
 	local dir = (side == "wan") and "in" or "out"
+	// Control plane always reachable (else the config UI dies).
+	if ((packet.Port == 0) || (packet.Port == 80)) then return false end
+	// An established NAT reply flows back automatically (stateful pass).
+	if (self:GetForwardFlow( packet.Source, packet.Port )) then return false end
 	for _, r in ipairs( c.FirewallRules or {} ) do
 		if ((r.dir == dir) || (r.dir == "any")) then
 			local m = true
 			if ((r.src != "") && (r.src != packet.Source)) then m = false end
 			if ((r.dst != "") && (r.dst != packet.Dest)) then m = false end
 			if ((r.port != 0) && (r.port != packet.Port)) then m = false end
-			if (m) then return true end
+			if (m) then return false end
 		end
 	end
-	return false
+	// Default deny.
+	return true
 end
 
 function DRV:AddFirewallRule( dir, src, dst, port )
@@ -701,10 +711,11 @@ function DRV:GetForwardRule( wanPort )
 end
 
 // NAT reply tracking: the internal host replies on (ip, port); remember the
-// original peer so the router can rewrite the reply's source back to itself.
-function DRV:RememberForwardFlow( rule, src, port )
+// original peer (src) and the public address they dialled (pub) so the router
+// can rewrite the reply's destination and source back.
+function DRV:RememberForwardFlow( rule, src, port, pub )
 	self.ForwardFlows = self.ForwardFlows or {}
-	self.ForwardFlows[ tostring( rule.ip ) .. ":" .. tostring( rule.port ) ] = { src = src, port = port, time = CurTime() }
+	self.ForwardFlows[ tostring( rule.ip ) .. ":" .. tostring( rule.port ) ] = { src = src, port = port, pub = pub, time = CurTime() }
 	if (table.Count( self.ForwardFlows ) > 64) then self.ForwardFlows = {} end
 end
 
@@ -852,9 +863,9 @@ function DRV:PageFirewall()
 	else
 		table.insert( lines, '<p><b>Firewall:</b> off <a href="?firewall=1">[Enable]</a></p>' )
 	end
-	table.insert( lines, "<p>Rules block matching traffic when on (default: allow all).</p>" )
+	table.insert( lines, "<p>When on, traffic is blocked by default; add allow rules below (web/ping and NAT replies always pass).</p>" )
 
-	table.insert( lines, "<h2>Rules</h2>" )
+	table.insert( lines, "<h2>Allow rules</h2>" )
 	local rc = 0
 	for i, r in ipairs( c.FirewallRules or {} ) do
 		rc = rc + 1
@@ -865,14 +876,14 @@ function DRV:PageFirewall()
 		if (r.port ~= 0) then desc = desc .. ":" .. r.port end
 		table.insert( lines, '<p>' .. desc .. ' <a href="?delfw=' .. i .. '">[Delete]</a></p>' )
 	end
-	if (rc == 0) then table.insert( lines, "<p>No rules.</p>" ) end
-	table.insert( lines, "<h3>Add rule</h3>" )
+	if (rc == 0) then table.insert( lines, "<p>No rules (everything except web/ping is blocked).</p>" ) end
+	table.insert( lines, "<h3>Add allow rule</h3>" )
 	table.insert( lines, "<form>" )
 	table.insert( lines, '<p>Direction (in/out) <input type="text" name="fwdir" value=""></p>' )
 	table.insert( lines, '<p>Source IP (blank=any) <input type="text" name="fwsrc" value=""></p>' )
 	table.insert( lines, '<p>Dest IP (blank=any) <input type="text" name="fwdst" value=""></p>' )
 	table.insert( lines, '<p>Port (blank=any) <input type="text" name="fwport" value=""></p>' )
-	table.insert( lines, '<p><input type="submit" value="Add Rule"></p>' )
+	table.insert( lines, '<p><input type="submit" value="Add Allow Rule"></p>' )
 	table.insert( lines, "</form>" )
 
 	table.insert( lines, "<h2>Port Forwarding</h2>" )

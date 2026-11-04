@@ -46,6 +46,8 @@ PCMod.Cfg = { MaxNetworkPid = 500, MaxNetworkPass = 10, WirelessRange = 0 }
 PCMod.Network = { Packets = {} }
 PCMod.DeriveDriver = function() return {} end
 math.Clamp = function( v, a, b ) if (v < a) then return a end if (v > b) then return b end return v end
+CurTime = function() return 0 end
+function table.Count( t ) local n = 0 for _ in pairs( t ) do n = n + 1 end return n end
 
 dofile( "pcmod_sh_common.lua" )
 dofile( "pcmod_drv_router.lua" )
@@ -176,6 +178,30 @@ assertTrue( routData.RouterCfg.FirewallRules[ 1 ].src == "10.0.0.9", "firewall r
 assertTrue( routData.RouterCfg.FirewallRules[ 1 ].port == 75, "firewall rule port" )
 DRV:ApplyWebQuery( "?delfw=1" )
 assertTrue( #(routData.RouterCfg.FirewallRules) == 0, "firewall rule deleted" )
+
+-- Default-deny firewall: on blocks non-control-plane; allow rules open holes.
+local function pkt( port, src, dst ) return { Port = port, Source = src, Dest = dst } end
+routData.RouterCfg.Firewall = true
+routData.RouterCfg.FirewallRules = {}
+assertTrue( DRV:FirewallBlocks( pkt( 72, "fd00:1:0:5::2", "fd00:2:0:1::1" ), "wan" ), "firewall on blocks chat by default" )
+assertTrue( not DRV:FirewallBlocks( pkt( 80, "fd00:1:0:5::2", "fd00:2:0:1::1" ), "wan" ), "web always allowed" )
+assertTrue( not DRV:FirewallBlocks( pkt( 0, "fd00:1:0:5::2", "fd00:2:0:1::1" ), "wan" ), "ping always allowed" )
+routData.RouterCfg.Firewall = false
+assertTrue( not DRV:FirewallBlocks( pkt( 72, "fd00:1:0:5::2", "fd00:2:0:1::1" ), "wan" ), "firewall off allows" )
+routData.RouterCfg.Firewall = true
+DRV:AddFirewallRule( "in", "", "", 72 )
+assertTrue( not DRV:FirewallBlocks( pkt( 72, "fd00:1:0:5::2", "fd00:2:0:1::1" ), "wan" ), "allow rule opens port 72" )
+assertTrue( DRV:FirewallBlocks( pkt( 75, "fd00:1:0:5::2", "fd00:2:0:1::1" ), "wan" ), "other ports still blocked" )
+routData.RouterCfg.FirewallRules = {}
+routData.RouterCfg.Firewall = false
+
+-- NAT flow remembers the dialled public address for the reply's source.
+DRV:AddForward( 72, "192.168.0.2", 72 )
+local fr = DRV:GetForwardRule( 72 )
+DRV:RememberForwardFlow( fr, "fd00:1:0:5::2", 72, "fd00:2:0:1::1" )
+local fl = DRV:GetForwardFlow( "192.168.0.2", 72 )
+assertTrue( fl ~= nil and fl.src == "fd00:1:0:5::2" and fl.pub == "fd00:2:0:1::1", "flow stores peer + public addr" )
+DRV:DeleteForward( 72 )
 
 local sent
 PCMod.Network.CreatePacket = function( src, dst, port, body ) sent = { src = src, dst = dst, port = port, body = body } end

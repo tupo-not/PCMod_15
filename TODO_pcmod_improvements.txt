@@ -110,12 +110,14 @@ PCMod Improvement TODO List
   (Wi-Fi password, DHCP start/end) and toggle links (Wi-Fi, Firewall, NAT), all
   stored per-router and applied via ?key=value query; firewall drops non-web/
   non-ping ports
-- DONE: Router firewall is now rules-based (blacklist): direction (in/out),
-  optional source/dest IP and port; merged the port-forwarding (DNAT/SNAT) rules
-  onto the same page. Firewall on = block matching traffic (default allow all)
+- DONE: Router firewall is now a rules-based allow-list (default deny):
+  direction (in/out), optional source/dest IP and port; merged the
+  port-forwarding (DNAT/SNAT) rules onto the same page. Firewall on = block
+  everything except web/ping, established NAT replies and matching allow rules
 - DONE: Router port forwarding (DNAT/SNAT): add/delete lan rules via the web
   page (wan port -> local ip:port), inbound traffic to a forwarded port is
-  re-targeted at the internal host and replies are NAT'ed back to the peer
+  re-targeted at the internal host and replies are source-NAT'ed back to the
+  address the peer dialled (not the router's private LAN IP)
 - DONE: Router web UI is split into pages (home/status + Wi-Fi/LAN/firewall
   sub-pages) with a shared navigation bar of relative links; the browser tracks
   the current path so toggling a setting reloads the same page and the Home
