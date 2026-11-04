@@ -1,0 +1,257 @@
+PCMod Program Author Guide
+==========================
+
+Programs live in lua/pcmod/programs/ and are loaded by sv_programs.lua:
+
+  * programs/base.lua is the base class.
+  * programs/pr_*.lua files are loaded automatically at startup.
+  * Any other filename (for example _template.lua) is ignored, which makes it
+    safe to keep a template next to the real programs.
+
+Quick start
+-----------
+1. Copy programs/_template.lua to programs/pr_myprogram.lua.
+2. Change PROG.Name / Title / Icon / OS.
+3. Pick a unique DeviceLink when SimpleMode is true.
+4. Implement only the hooks you need.
+5. Reload with:  pc_prog_reload pr_myprogram.lua   (admin only)
+   Check syntax first with:  pc_prog_check pr_myprogram.lua
+
+Required fields
+---------------
+PROG.Name       unique internal name (also used by the OS to open the program)
+PROG.Title      name shown in the start menu
+PROG.Icon       icon name used by the menu
+PROG.OS         "personal" or "server"
+
+Optional fields
+---------------
+PROG.Author
+PROG.SimpleMode    true = base class creates/removes the window for you
+PROG.DeviceLink    ssdevice name used for the main window
+PROG.DeviceName    unique screen-device name for the main window
+PROG.DeviceData    table sent to the client-side device
+PROG.SaveRoot      folder used by SaveData/LoadData (default "mydocs/")
+PROG.NoShortcut    true = do not add a start-menu shortcut automatically
+
+Lifecycle hooks (override these)
+--------------------------------
+Initialize()      once, when the program object is created
+OnInstall()       when installed into an OS (default adds the shortcut)
+OnActivate()      when the program gains focus / starts
+OnDeactivate()    when the program loses focus / stops
+OnStart()         when state becomes 1 (after activation)
+OnEnd()           when state becomes 0 (before the window is removed)
+Think()           every OS tick while running
+ProcessPacket()   legacy packet hook
+PingSuccess()     network ping reply
+TraceSuccess()    network traceroute reply
+MessageFailed()   network error reply
+
+Command hooks
+-------------
+DoCommand( com, args )
+    Your program's own commands. `args` is always a table.
+
+ProcessCommand( com, args )
+    Optional universal entry point. The base implementation handles
+    "exit"/"close" and then forwards everything to DoCommand. The OS uses this
+    for the "prog_command" command, so programs that do not implement exit
+    handling still close cleanly.
+
+Rendering
+---------
+UpdateSS()
+    Rebuild the program window on the entity's screen. Call this after changing
+    DeviceData, or the client will keep showing the old data.
+
+GetDimensions()
+    Override to choose the window rectangle { x, y, w, h } (0..1 screen space).
+    Personal-OS programs now get a normal desktop window by default (cascaded,
+    stored on the program instance so reopening keeps its position). Override
+    WindowW / WindowH before Start() to change the default size, or
+    GetDimensions() for full control.
+
+RequestFocus( update ) / RemoveFocus()
+    Focus handling. Each program gets a small integer z-order; RequestFocus
+    raises the window and RemoveFocus releases it. Clicking any part of a window
+    sends the "focus" command automatically.
+
+Window manager commands
+-----------------------
+focus
+    Handled by the base class; raises the owning program's window. Window
+    devices send this themselves, programs do not normally need to.
+win_move <x> <y>
+    Handled by the base class; stores the new normalised position, clamps it to
+    the desktop and updates the screen-space entry in place (no data refresh).
+    The window device sends this after a title-bar drag.
+win_resize <w> <h>
+    Handled by the base class; stores the new normalised size, clamps it to the
+    desktop and updates the screen-space entry in place. Sent after dragging the
+    bottom-right resize grip.
+
+Multi-window behaviour
+----------------------
+- Several personal-OS programs can be open at once, each in its own rectangle.
+- Click a window to raise it; drag its title bar to move it.
+- Drag the bottom-right grip to resize the window (live layout rebuild).
+- Starting a program that is already running raises its existing window.
+- The File Picker and print-location dialogs are drawn above normal windows.
+
+GetPriority()
+    Higher numbers are drawn/handled on top. This is the program's z-order.
+
+ShowFilePicker( path, mode ) / ShowOpenFile( path ) / CloseOpenFile()
+    Centralized file picker window. It browses the whole virtual drive (folder
+    tree + contents) starting at `path` ("" = root). `mode` is "open" or "save".
+    Picker navigation/selection is handled by the base class; override
+    OnFilePicked( path ) to receive the chosen full path (the default calls
+    DoCommand( "openpath", { path } )).
+    ShowOpenFile( path ) is the legacy alias for mode "open".
+
+    Commands picker_nav / picker_sel / picker_close are intercepted by
+    ProcessCommand(), so programs do not need to implement them.
+
+File browser helpers (also used by the File Manager):
+    BuildFileTree()   pre-order folder tree { Path, Name, Parent, Depth,
+                      Locked, HasChildren }
+    GetPlaces()       top-level folders
+    NormalizePath(p)  clean virtual path
+
+ShowPrintLocation( changed ) / ClosePrintLocation() / PrintDocument( text, single )
+    Built-in printer UI and printing.
+
+Persistence
+-----------
+GetDataPath( filename )        resolves SaveRoot .. filename
+SaveData( filename, data )     JSON + util.Compress to the VFS
+LoadData( filename )           returns the decoded table or nil
+
+Data is written through the tower entity, so it is stored on that tower's
+hard drive and survives save/duplicate like any other PCMod file.
+
+Virtual file system
+-------------------
+FileExists( name )      true if the file exists
+FolderExists( name )    true if the folder exists
+ReadFile( name )        raw file contents ("" when missing)
+WriteFile( name, data ) write/replace a file
+DeleteFile( name )      remove a file/folder (fails when locked)
+ListFiles( folder )     table of direct child names (files and folders)
+
+Advanced file/folder operations:
+
+CreateFolder( name )           create a folder and any missing parents
+ListDir( folder )              rich listing: { {Name, Path, Type, Size, Locked}, ... }
+                               Type is "file" or "folder"; folders sort first.
+GetItemInfo( name )            nil, or {Name, Path, Type, Size, Locked, Content}
+RenameItem( old, new )         rename/move a file or an entire folder
+CopyItem( old, new )           copy a file or an entire folder
+DeleteItem( name )             delete a file or an entire folder (recursive)
+JoinPath( dir, name )          normalised "dir/name"
+GetParentPath( name )          parent directory ("" = root)
+GetBaseName( name )            final name component
+
+RenameFile, CopyFile, DeleteFolder and MoveItem are aliases for the matching
+Item functions. Locked paths (for example system/data/) cannot be modified.
+
+Paths are relative to the hard-drive root and use forward slashes:
+"mydocs/text/note.txt". Leading/trailing slashes are accepted and normalised.
+Link a folder in OnInstall before writing to it:
+
+    self.Entity:LinkFolder( "mydocs/text/" )
+
+See programs/pr_files.lua and ssdevices/dev_win_files.lua for a complete file
+manager example (browse, create, rename, delete, open in Notepad).
+
+Theme
+-----
+GetTheme()                    current theme name ("basic", "server", ...)
+GetThemeColor( key, default )  theme colour; on the server this safely returns
+                               the default because the theme table is client-side
+
+Networking
+----------
+SendNetworkPacket( entIndex, port, body )
+ProcessNetworkPacket( sourceEnt, port, body )
+
+    The target OS must have the port open (OpenNetPort) or the packet is
+    rejected with netPortClosed / netPortLocked.
+
+IPv6 (emulated dual stack)
+--------------------------
+The routing core is still IPv4, but every PC also has a deterministic IPv6
+address on a real /64 subnet:
+
+    LAN:       fd00:c0:a8:<subnet>::/64   gateway ::1, hosts ::2, ::3, ...
+    Backbone:  fd00:a:0:<subnet>::/64     gateway ::1, hosts ::2, ::3, ...
+
+Send to either family. Routers match IPv6 destinations against their /64
+prefixes and translate them back to IPv4 for delivery, so no separate packet
+format is needed. IPv4, IPv4-mapped IPv6 (::ffff:a.b.c.d and
+::ffff:hhhh:hhhh), ::1/localhost and bracketed literals are all accepted.
+
+OS helpers:
+
+GetIPv6()                  own IPv6 address
+GetAddress()               IPv6 if available, otherwise IPv4
+GetIPv6Prefix()            own LAN /64 in CIDR form
+                           (GetIPv6Subnet/GetIPv6Network are aliases)
+GetIPv6Gateway()           LAN gateway (::1 of that /64)
+GetIPv6LinkLocal()         interface link-local address (fe80::/64)
+GetBIPv6Prefix()           backbone /64 (server/router machines)
+GetAddressType( addr )     "ipv4", "ipv4-mapped", "unique-local", ...
+
+Address helpers (PCMod.IPv6):
+
+FromIPv4( ip )             IPv4 -> emulated IPv6
+ToIPv4( addr )             any supported form -> IPv4 (nil if unroutable)
+IsIP( addr )               accepts both IPv4 and IPv6
+IsIPv4( addr ) / IsIPv6( addr )
+InSubnet( addr, prefix[, len] )
+GetPrefix( addr, len )     network prefix, default /128
+Network( addr, len )       network address without "/len"
+Gateway( prefix )          ::1 of the prefix
+LinkLocal( addrOrSeed )    deterministic fe80::/64 address
+Equal( a, b )              compare compressed and expanded forms
+AddressType( addr )        category string
+
+The entity has the same information:
+self.Entity:GetIPv6(), GetIPv6Prefix(), GetIPv6Gateway(),
+GetIPv6LinkLocal(), IsInIPv6Subnet( addr[, backbone] ).
+
+Devices and USB
+---------------
+GetUSBDevicePorts( devname )  list of device ports (for example "printer")
+SendUSBData( port, data )
+ReceiveUSBData( port )
+
+Audio
+-----
+PlaySound( path )
+StopSounds()
+
+Timers
+------
+Timer( name, delay, callback )   one-shot timer
+KillTimer( name )
+
+Misc
+----
+Toggle()        start if stopped, stop if running
+GetInfo()       table with name/title/icon/author/state/os/focus/priority
+DbgMsg( msg )   prints only when PCMod.Cfg.DebugMode is on
+
+Important notes
+---------------
+* Programs run on the SERVER. Do not call client-only libraries such as
+  PCMod.Gui directly from a program; put visual data in DeviceData instead and
+  let the client-side ssdevice draw it.
+* The OS copies programs with table.Copy, so module-level tables in a program
+  file are shared templates. Create per-instance state in Initialize() or in
+  the individual hooks.
+* GMod Lua accepts // comments and C-style !, && and ||. A normal Lua parser
+  (luac/lua5.1) cannot validate program files until those are translated.
+* Device names must be unique. Prefix extra windows with your program name,
+  for example "win_" .. self.Name .. "_settings".
