@@ -103,6 +103,11 @@ PCMod Improvement TODO List
   { "http", path } to port 80 of the router gets a plain-text config page
   (IPv4/IPv6, prefix, backbone, DHCP pool, Wi-Fi status/password, client
   count). The browser itself is deferred
+- DONE: Backbones run a distance-vector routing protocol: each learns every
+  reachable /32 (next hop + hop count) and reconverges whenever a backbone link
+  is added/removed, so IPv6 routes across any number of backbones. LAN routers
+  auto-renumber their LAN (and every client lease) when their upstream /32-/64
+  changes on connect/disconnect
 - DONE: Private, isolated LANs (NAT-less "real internet" model): each router
   owns 192.168.0.0/24 or /16 (cfg.LanNetmask), overlapping with every other
   router - a LAN knows nothing about upstream. IPv4 never leaves its LAN;

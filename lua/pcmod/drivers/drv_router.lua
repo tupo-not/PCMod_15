@@ -245,8 +245,8 @@ function DRV:ProcessPacket( pid, pass )
 				self.Entity:PushData( childPort, { "deliver", pid, pass } )
 				return
 			end
-		else
-			local nPort = self.Neighbors && self.Neighbors[ hier.bb ]
+		elseif (hier) then
+			local nPort = self:RouteForBB( hier.bb )
 			if (nPort) then
 				self.Entity:PushData( nPort, { "deliver", pid, pass } )
 				return
@@ -275,7 +275,7 @@ function DRV:CallEvent( data )
 
 		if ((cls == "pcmod_brouter") && (peer == "pcmod_router")) then
 			// LAN router attaches to my backbone: give it a /64 of my /32 and a
-			// WAN backbone address.
+			// WAN backbone address, then renumber its LAN.
 			self.BLAN[ data[ 1 ] ] = port
 			local bb = self.Entity:GetBSubnet()
 			PCMod.Network.RegisterPC( port.ConEnt, bb, true )
@@ -286,11 +286,16 @@ function DRV:CallEvent( data )
 			if (!self.ChildLan) then self.ChildLan = {} end
 			self.Children[ port.ConEnt:EntIndex() ] = lanid
 			self.ChildLan[ lanid ] = port
+			local cdata = PCMod.Data[ port.ConEnt:EntIndex() ]
+			local child = cdata && cdata.Drivers && cdata.Drivers[ "webgr_router" ]
+			if (child && child.ReconfigureClients) then child:ReconfigureClients() end
 		elseif ((cls == "pcmod_brouter") && (peer == "pcmod_brouter")) then
-			// Peer backbone: learn its /32 -> this port.
+			// Peer backbone: learn its /32 -> this port, then reconverge.
 			self.BLAN[ data[ 1 ] ] = port
 			if (!self.Neighbors) then self.Neighbors = {} end
 			self.Neighbors[ port.ConEnt:GetBSubnet() ] = port
+			self:RecalcRoutes()
+			PCMod.Network.Reconverge()
 		elseif ((cls == "pcmod_router") && (peer == "pcmod_brouter")) then
 			// My WAN uplink.
 			self.Uplink = port
@@ -314,10 +319,22 @@ function DRV:CallEvent( data )
 			PCMod.Network.UnRegisterPC( port.ConEnt, self.Entity:GetBSubnet(), true )
 			if (lanid && self.ChildLan) then self.ChildLan[ lanid ] = nil end
 			if (self.Children) then self.Children[ port.ConEnt:EntIndex() ] = nil end
+			// The detached LAN becomes standalone again.
+			port.ConEnt:SetUpBB( 0 )
+			port.ConEnt:SetLanID( 0 )
+			local cdata = PCMod.Data[ port.ConEnt:EntIndex() ]
+			local child = cdata && cdata.Drivers && cdata.Drivers[ "webgr_router" ]
+			if (child && child.ReconfigureClients) then child:ReconfigureClients() end
 		elseif ((cls == "pcmod_brouter") && (peer == "pcmod_brouter")) then
 			if (self.Neighbors) then self.Neighbors[ port.ConEnt:GetBSubnet() ] = nil end
+			self:RecalcRoutes()
+			PCMod.Network.Reconverge()
 		elseif ((cls == "pcmod_router") && ((peer == "pcmod_brouter") || (peer == "pcmod_router"))) then
 			self.Uplink = nil
+			// Lost our uplink: fall back to standalone addressing.
+			self.Entity:SetUpBB( 0 )
+			self.Entity:SetLanID( 0 )
+			self:ReconfigureClients()
 		elseif ((cls == "pcmod_router") && (peer != "pcmod_router") && (peer != "pcmod_brouter")) then
 			self:ReleaseLease( port.ConEnt )
 		end
@@ -407,6 +424,83 @@ end
 function DRV:NextLanID()
 	self.NextLan = (self.NextLan or 0) + 1
 	return self.NextLan
+end
+
+function DRV:IsBackbone()
+	return (self.Entity:GetClass() == "pcmod_brouter")
+end
+
+// Re-push this router's own /32 + /64 onto every client lease (a LAN router
+// renumbers its LAN when its upstream changes).
+function DRV:ReconfigureClients()
+	local ip = self.Entity:Data().IP
+	local upbb = ip.UpBB or 0
+	local lanid = ip.LanID or 0
+	for _, pc in pairs( self.Leases or {} ) do
+		if (pc && pc.SetUpBB) then pc:SetUpBB( upbb ) end
+		if (pc && pc.SetLanID) then pc:SetLanID( lanid ) end
+	end
+	for _, pc in pairs( self.WirelessClients or {} ) do
+		if (pc && pc.SetUpBB) then pc:SetUpBB( upbb ) end
+		if (pc && pc.SetLanID) then pc:SetLanID( lanid ) end
+	end
+end
+
+// ---------------------------------------------------------------------------
+// Distance-vector routing between backbones. Each backbone keeps Routes[bb] =
+// { dist = hops, via = neighbor /32 }, seeded from direct neighbours, and all
+// backbones reconverge whenever the backbone graph changes.
+// ---------------------------------------------------------------------------
+function DRV:RecalcRoutes()
+	if (!self:IsBackbone()) then return end
+	self.Routes = {}
+	local mybb = self.Entity:GetBSubnet()
+	if (mybb) then self.Routes[ mybb ] = { dist = 0, via = nil } end
+	for bb, port in pairs( self.Neighbors or {} ) do
+		local cur = self.Routes[ bb ]
+		if ((!cur) || (cur.dist > 1)) then self.Routes[ bb ] = { dist = 1, via = bb } end
+	end
+end
+
+function DRV:GetDV()
+	local dv = {}
+	for bb, r in pairs( self.Routes or {} ) do dv[ bb ] = r.dist end
+	return dv
+end
+
+function DRV:NeighborDrv( port )
+	local ent = port && port.ConEnt
+	if ((!ent) || (!ent:IsValid())) then return nil end
+	local data = PCMod.Data[ ent:EntIndex() ]
+	return data && data.Drivers && data.Drivers[ "webgr_router" ]
+end
+
+// Push this router's distance vector to every neighbouring backbone.
+function DRV:AdvertiseRoutes()
+	if (!self:IsBackbone()) then return end
+	for bb, port in pairs( self.Neighbors or {} ) do
+		local drv = self:NeighborDrv( port )
+		if (drv && drv.RecvRoutes) then drv:RecvRoutes( self.Entity:GetBSubnet(), self:GetDV() ) end
+	end
+end
+
+// Merge a neighbour's distance vector (Bellman-Ford update).
+function DRV:RecvRoutes( fromBB, dv )
+	if (!self:IsBackbone()) then return end
+	for bb, dist in pairs( dv or {} ) do
+		if (bb != self.Entity:GetBSubnet()) then
+			local nd = dist + 1
+			local cur = self.Routes[ bb ]
+			if ((!cur) || (cur.dist > nd)) then self.Routes[ bb ] = { dist = nd, via = fromBB } end
+		end
+	end
+end
+
+// The next-hop optic port for an IPv6 /32 destination (nil = no route).
+function DRV:RouteForBB( bb )
+	local r = self.Routes && self.Routes[ bb ]
+	if ((!r) || (!r.via)) then return nil end
+	return self.Neighbors && self.Neighbors[ r.via ]
 end
 
 function DRV:RemoveWirelessClient( pc )

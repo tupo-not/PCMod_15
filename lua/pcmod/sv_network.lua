@@ -379,3 +379,28 @@ function PCMod.Network.UnRegisterPC( ent, subnet, backbone )
 		end
 	end
 end
+
+// ---------------------------------------------------------------------------------------------------------
+// Reconverge - Recompute the backbone /32 routing tables (distance vector).
+// Called whenever a backbone link is added or removed; synchronously floods
+// each backbone's distance vector until the tables stabilise.
+// ---------------------------------------------------------------------------------------------------------
+function PCMod.Network.Reconverge()
+	local list = {}
+	for _, r in pairs( PCMod.Network.Backbones or {} ) do
+		if ((r) && (r.Ent)) then table.insert( list, r.Ent ) end
+	end
+	for _, ent in ipairs( list ) do
+		local data = PCMod.Data[ ent:EntIndex() ]
+		local drv = data && data.Drivers && data.Drivers[ "webgr_router" ]
+		if (drv && drv.RecalcRoutes) then drv:RecalcRoutes() end
+	end
+	// A path graph of N backbones converges in N iterations.
+	for i = 1, 32 do
+		for _, ent in ipairs( list ) do
+			local data = PCMod.Data[ ent:EntIndex() ]
+			local drv = data && data.Drivers && data.Drivers[ "webgr_router" ]
+			if (drv && drv.AdvertiseRoutes) then drv:AdvertiseRoutes() end
+		end
+	end
+end
