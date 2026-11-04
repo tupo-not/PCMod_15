@@ -404,8 +404,8 @@ if (SERVER) then
 				self:SetNWString( "IP", PCMod.Data[ self:EntIndex() ].IP.Full )
 				// Emulated dual-stack address (see PCMod.IPv6 in sh_common.lua).
 				// Hierarchical LAN: fd00:<bb>:0:<subnet>::<host>.
-				tmp.V6 = PCMod.IPv6.Format( { 0xfd00, tmp.UpBB or 0, 0, tmp.Sub, 0, 0, 0, tmp.Add } )
-				tmp.V6Prefix = PCMod.IPv6.LANPrefix( tmp.UpBB or 0, tmp.Sub )
+				tmp.V6 = PCMod.IPv6.Format( { 0xfd00, tmp.UpBB or 0, 0, tmp.LanID or 0, 0, 0, 0, (tmp.Sub or 0) * 256 + tmp.Add } )
+				tmp.V6Prefix = PCMod.IPv6.LANPrefix( tmp.UpBB or 0, tmp.LanID or 0 )
 				tmp.V6Link = PCMod.IPv6.LinkLocal( tmp.V6 )
 				self:SetNWString( "IPv6", tmp.V6 or "" )
 				self:SetNWString( "IPv6.Prefix", tmp.V6Prefix or "" )
@@ -452,7 +452,8 @@ if (SERVER) then
 			local ip = self:Data().IP
 			if ((!ip.Sub) || (!ip.Add)) then return false end
 			if (ip.V6 == nil) then
-				ip.V6 = PCMod.IPv6.Format( { 0xfd00, ip.UpBB or 0, 0, ip.Sub, 0, 0, 0, ip.Add } )
+				local host = (ip.Sub or 0) * 256 + ip.Add
+				ip.V6 = PCMod.IPv6.Format( { 0xfd00, ip.UpBB or 0, 0, ip.LanID or 0, 0, 0, 0, host } )
 			end
 			return ip.V6
 		end
@@ -475,11 +476,11 @@ if (SERVER) then
 			return self:GetBIPv6()
 		end
 
-		// The /64 LAN prefix fd00:<bb>:0:<subnet>::/64.
+		// The /64 LAN prefix fd00:<bb>:0:<net>::/64.
 		function ENT:GetIPv6Prefix()
 			local ip = self:Data().IP
 			if ((!ip.Sub) || (!ip.Add)) then return false end
-			if (!ip.V6Prefix) then ip.V6Prefix = PCMod.IPv6.LANPrefix( ip.UpBB or 0, ip.Sub ) end
+			if (!ip.V6Prefix) then ip.V6Prefix = PCMod.IPv6.LANPrefix( ip.UpBB or 0, ip.LanID or 0 ) end
 			return ip.V6Prefix
 		end
 
@@ -548,6 +549,16 @@ if (SERVER) then
 			self:SetIPText()
 		end
 
+		// The /64 network id this LAN uses inside its backbone /32.
+		function ENT:SetLanID( net )
+			local ip = self:Data().IP
+			ip.LanID = net
+			ip.V6 = nil
+			ip.V6Prefix = nil
+			ip.V6Link = nil
+			self:SetIPText()
+		end
+
 		// Is addr part of this entity's LAN (or backbone) /64?
 		function ENT:IsInIPv6Subnet( addr, backbone )
 			local p = backbone && self:GetBIPv6Prefix() or self:GetIPv6Prefix()
@@ -564,6 +575,15 @@ if (SERVER) then
 			return false
 		end
 		
+		function ENT:GetSourceAddress( dest )
+			// Pick the routable source: IPv6 for IPv6 destinations (the WAN is
+			// IPv6-only), private IPv4 for anything LAN-local.
+			if (dest && PCMod.IPv6.IsIPv6( dest )) then
+				return self:GetIPv6() or self:GetFullIP() or self:GetFullBIP()
+			end
+			return self:GetFullIP() or self:GetFullBIP()
+		end
+
 		function ENT:SendPacket( portid, dest, port, body )
 			// Called from this entity, sends a new packet
 			if (!portid) then
@@ -581,8 +601,7 @@ if (SERVER) then
 			local portid2 = prt.RemotePort
 			local data = {}
 			data[1] = "sendpacket"
-			data[2] = { self:GetFullIP(), dest, port, body }
-			if (!self:GetFullIP()) then data[2][1] = self:GetFullBIP() end
+			data[2] = { self:GetSourceAddress( dest ), dest, port, body }
 			if (!self.IsNetworkDevice) then
 				prt.ConEnt:DataRecieved( portid2, data )
 				// self:PushData

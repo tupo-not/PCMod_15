@@ -34,7 +34,7 @@ function DRV:SendPacket( dest, port, body )
 	// Loopback is accepted in IPv4 (127.0.0.1), IPv6 (::1) and hostname form.
 	if (PCMod.IPv6.IsLoopback( dest )) then
 		local pk = {}
-		pk.Source = self:GetIP()
+		pk.Source = self.Entity:GetSourceAddress( dest )
 		pk.Dest = dest
 		pk.Port = port
 		pk.Body = body
@@ -45,7 +45,7 @@ function DRV:SendPacket( dest, port, body )
 	// Wireless uplink: when connected to a router, send through it over the air
 	// instead of the cable port. Falls back to the cable when out of range.
 	if (self:WirelessConnected()) then
-		local src = self.Entity:GetFullIP() or self.Entity:GetFullBIP()
+		local src = self.Entity:GetSourceAddress( dest )
 		self.WirelessEnt:DataRecieved( 0, { "sendpacket", { src, dest, port, body } } )
 		return
 	end

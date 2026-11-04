@@ -75,16 +75,17 @@ local function assertTrue( v, msg )
 	if (not v) then error( "FAILED: " .. msg, 2 ) end
 end
 
--- LAN under backbone 3, subnet 5, host 2 -> fd00:3:0:5::2.
-ent:SetSubnet( 5 )
+-- Private LAN under backbone 3, /64 net 5, host 2 -> fd00:3:0:5::2.
+ent:SetSubnet( 0 )
 ent:SetUpBB( 3 )
+ent:SetLanID( 5 )
 ent:SetIP( 2 )
-assertEq( ent:GetFullIP(), "192.168.5.2", "IPv4 LAN address" )
+assertEq( ent:GetFullIP(), "192.168.0.2", "IPv4 LAN address" )
 assertEq( ent:GetIPv6(), "fd00:3:0:5::2", "emulated IPv6 LAN address" )
 assertEq( ent:GetIPv6Prefix(), "fd00:3:0:5::/64", "LAN /64 prefix" )
 assertEq( ent:GetIPv6Gateway(), "fd00:3:0:5::1", "LAN gateway" )
 assertEq( ent:GetIPv6LinkLocal(), "fe80::2", "LAN link-local" )
-assertEq( nw[ "IP" ], "192.168.5.2", "IPv4 NW string" )
+assertEq( nw[ "IP" ], "192.168.0.2", "IPv4 NW string" )
 assertEq( nw[ "IPv6" ], "fd00:3:0:5::2", "IPv6 NW string" )
 assertEq( nw[ "IPv6.Prefix" ], "fd00:3:0:5::/64", "IPv6 prefix NW string" )
 assertEq( nw[ "IPv6.LinkLocal" ], "fe80::2", "IPv6 link-local NW string" )
@@ -99,14 +100,14 @@ assertEq( ent:GetBIPv6Gateway(), "fd00:3::1", "backbone gateway" )
 assertEq( ent:GetBIPv6LinkLocal(), "fe80::2", "backbone link-local" )
 
 -- Exact-address matching accepts every supported representation.
-assertTrue( ent:IsAddressedTo( "192.168.5.2" ), "LAN IPv4 matches" )
+assertTrue( ent:IsAddressedTo( "192.168.0.2" ), "LAN IPv4 matches" )
 assertTrue( ent:IsAddressedTo( "fd00:3:0:5::2" ), "LAN IPv6 matches" )
 assertTrue( ent:IsAddressedTo( "fd00:3:0:5:0:0:0:2" ), "expanded LAN IPv6 matches" )
 assertTrue( ent:IsAddressedTo( "[fd00:3:0:5::2]" ), "bracketed LAN IPv6 matches" )
-assertTrue( ent:IsAddressedTo( "::ffff:192.168.5.2" ), "mapped LAN IPv4 matches" )
+assertTrue( ent:IsAddressedTo( "::ffff:192.168.0.2" ), "mapped LAN IPv4 matches" )
 assertTrue( ent:IsAddressedTo( "10.0.3.1" ), "backbone IPv4 matches" )
 assertTrue( ent:IsAddressedTo( "fd00:3::2" ), "backbone IPv6 matches" )
-assertTrue( not ent:IsAddressedTo( "192.168.5.3" ), "other LAN host rejected" )
+assertTrue( not ent:IsAddressedTo( "192.168.0.3" ), "other LAN host rejected" )
 assertTrue( not ent:IsAddressedTo( "fd00:3:0:5::4" ), "other LAN IPv6 host rejected" )
 assertTrue( not ent:IsAddressedTo( "::1" ), "loopback is not this entity" )
 assertTrue( not ent:IsAddressedTo( nil ), "nil rejected" )
@@ -132,7 +133,7 @@ assertEq( ent:GetBIPv6Prefix(), "fd00:3::/32", "lazy backbone prefix" )
 
 -- Router-style host .1 becomes the ::1 gateway.
 ent:SetIP( 1 )
-assertEq( ent:GetFullIP(), "192.168.5.1", "IPv4 gateway address" )
+assertEq( ent:GetFullIP(), "192.168.0.1", "IPv4 gateway address" )
 assertEq( ent:GetIPv6(), "fd00:3:0:5::1", "IPv6 gateway address" )
 
 -- Clearing an address must clear every derived field.

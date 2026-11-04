@@ -382,6 +382,14 @@ function PCMod.IPv6.LANPrefix( bb, subnet )
 	return PCMod.IPv6.Format( { 0xfd00, bb, 0, subnet, 0, 0, 0, 0 } ) .. "/64"
 end
 
+// Split a PCMod ULA into { bb, lan, iid } (backbone /32 id, LAN /64 id,
+// interface id). Returns nil for addresses outside the hierarchy.
+function PCMod.IPv6.Hierarchy( addr )
+	local g = PCMod.IPv6.Expand( addr )
+	if ((!g) || (g[1] != 0xfd00)) then return nil end
+	return { bb = g[2], lan = g[4], iid = g[8] }
+end
+
 // Build the emulated IPv6 address for an IPv4 address string. Only the backbone
 // (10.0.bb.host) and loopback have a stateless mapping; a LAN's /64 depends on
 // its upstream backbone, so LAN addresses are stored rather than derived here.

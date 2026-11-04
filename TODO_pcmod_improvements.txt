@@ -103,6 +103,16 @@ PCMod Improvement TODO List
   { "http", path } to port 80 of the router gets a plain-text config page
   (IPv4/IPv6, prefix, backbone, DHCP pool, Wi-Fi status/password, client
   count). The browser itself is deferred
+- DONE: Private, isolated LANs (NAT-less "real internet" model): each router
+  owns 192.168.0.0/24 or /16 (cfg.LanNetmask), overlapping with every other
+  router - a LAN knows nothing about upstream. IPv4 never leaves its LAN;
+  cross-router traffic is IPv6 only
+- DONE: Explicit IPv6 routing table: backbones map child /64s and peer /32s to
+  ports, LAN routers forward non-local IPv6 upstream via their uplink, and the
+  packet source is chosen by destination family (IPv6 for the WAN, private IPv4
+  locally) so replies route back over IPv6
+- DONE: LAN DHCP moved onto the router (per-router lease pool, /16 spans both
+  host octets); replaced the global subnet allocator
 - DONE: Control Panel Network page now scans and lists nearby wireless routers
   (name, distance, signal %), lets the user connect with the router's Wi-Fi
   password (default 123), and disconnect; the PC routes over the air through

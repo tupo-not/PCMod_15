@@ -116,6 +116,7 @@ function ent:GetFullIP() return "192.168.5.1" end
 function ent:GetIPv6() return "fd00:3:0:5::1" end
 function ent:GetIPv6Prefix() return "fd00:3:0:5::/64" end
 function ent:GetBSubnet() return 3 end
+function ent:GetSourceAddress() return "192.168.5.1" end
 function ent:Data() return { WirePass = "abc" } end
 PCMod.Cfg.DHCPStart = 2
 PCMod.Cfg.DHCPEnd = 250

@@ -16,6 +16,8 @@ DRV.Subnet = nil
 DRV.Wireless = false
 // PCs ("stations") connected to this router over the air, keyed by ent index.
 DRV.WirelessClients = {}
+// Active DHCP leases (host id -> entity), shared by cable and Wi-Fi clients.
+DRV.Leases = {}
 
 function DRV:Initialize()
 	if (!self.Entity) then return end
@@ -201,64 +203,65 @@ function DRV:ProcessPacket( pid, pass )
 		// source, dest, port, body
 		self:Process( { "sendpacket", { sip, packet.Source, 0, { "netTraceNode", packet.Body[3], sid } } } )
 	end
-	// Resolve the destination against this router's LAN/backbone /64s. IPv4,
-	// the emulated IPv6 form, IPv4-mapped IPv6 and bracketed literals all end
-	// up in the same classification.
-	local route = self:ClassifyDestination( packet.Dest )
-	local dest6 = route.IsIPv6
-	local toBackbone = route.Backbone
-	local toLAN = route.LAN
+	// Resolve the destination. IPv4 is LAN-local only; IPv6 is routed by prefix
+	// (explicit /64 and /32 routing table, no flooding, no IPv4 retrofitting).
+	local dest6 = PCMod.IPv6.IsIPv6( packet.Dest )
 
-	if (toBackbone) then
-		local port = self:HasRouter( packet.Dest )
-		if (port) then
-			PCMod.Msg( "[webgr]This packet is headed for a backbone IP, searching local network", true )
-			PCMod.Msg( "[webgr]The target on this network is on port " .. port .. ". Pushing data", true )
-
-			// Deliver to Router
-			self.Entity:PushData( port, { "deliver", pid, pass } )
-
-			// Check to see if the packet has been delivered yet
-			if (PCMod.Network.Packets[ pid ].Delivered) then
-				PCMod.Msg( "[webgr]The packet was delivered", true )
-				// Delivery successful!
-				return
-			end
-		elseif (dest6) then
-			PCMod.Msg( "[webgr]Backbone IPv6 target is not directly attached; flooding backbone", true )
-		end
-	end
-
-	if (toLAN) then
+	if (!dest6) then
+		// IPv4 never leaves the LAN it was born on (real private addressing;
+		// cross-router traffic goes over IPv6).
 		local port = self:HasPC( packet.Dest )
 		if (port) then
-			PCMod.Msg( "[webgr]This packet is headed for a normal IP, searching local network", true )
-			PCMod.Msg( "[webgr]The target on this network is on port " .. port .. ". Pushing data", true )
-
-			// Deliver to PC
 			self.Entity:PushData( port, { "deliver", pid, pass } )
-
-			// Check to see if the packet has been delivered yet
-			if (PCMod.Network.Packets[ pid ].Delivered) then
-				PCMod.Msg( "[webgr]The packet was delivered", true )
-				// Delivery successful!
-				return
-			end
-		elseif ((!port) && self:DeliverToWirelessClient( packet )) then
-			return
-		elseif (dest6 && route.OnLinkLAN) then
-			// IPv6 has no broadcast. An address on THIS router's LAN /64 that
-			// no attached host owns must not leak onto the rest of the network.
-			// Addresses belonging to another router's LAN are still forwarded.
-			PCMod.Msg( "[webgr]No host for on-link IPv6 target " .. tostring( packet.Dest ), true )
 			return
 		end
+		if (self:DeliverToWirelessClient( packet )) then return end
+		PCMod.Msg( "[webgr]IPv4 target " .. tostring( packet.Dest ) .. " is not on this LAN; dropping", true )
+		return
 	end
 
-	PCMod.Msg( "[webgr]This router does not have the target. Pushing to other routers", true )
+	// IPv6: on-link LAN first.
+	local lp = self:GetIPv6Prefix()
+	if (lp && PCMod.IPv6.InSubnet( packet.Dest, lp )) then
+		local port = self:HasPC( packet.Dest )
+		if (port) then
+			self.Entity:PushData( port, { "deliver", pid, pass } )
+			return
+		end
+		if (self:DeliverToWirelessClient( packet )) then return end
+		// Unknown host on my own /64: IPv6 has no broadcast.
+		PCMod.Msg( "[webgr]No host for on-link IPv6 target " .. tostring( packet.Dest ), true )
+		return
+	end
 
-	// If not, push it to all connected routers
-	self.Entity:FullPushData( { "deliver", pid, pass }, "optic" )
+	// Route by hierarchy.
+	local hier = PCMod.IPv6.Hierarchy( packet.Dest )
+	if (self.Entity:GetClass() == "pcmod_brouter") then
+		// Backbone router: child /64s (my /32) and peer /32s (neighbors).
+		local mybb = self.Entity:GetBSubnet()
+		if (hier && (hier.bb == mybb)) then
+			local childPort = self.ChildLan && self.ChildLan[ hier.lan ]
+			if (childPort) then
+				self.Entity:PushData( childPort, { "deliver", pid, pass } )
+				return
+			end
+		else
+			local nPort = self.Neighbors && self.Neighbors[ hier.bb ]
+			if (nPort) then
+				self.Entity:PushData( nPort, { "deliver", pid, pass } )
+				return
+			end
+		end
+		PCMod.Msg( "[webgr]No IPv6 route for " .. tostring( packet.Dest ) .. "; dropping", true )
+		return
+	end
+
+	// LAN router: everything not on my LAN goes upstream.
+	if (self.Uplink) then
+		self.Entity:PushData( self.Uplink, { "deliver", pid, pass } )
+		return
+	end
+	PCMod.Msg( "[webgr]No uplink for IPv6 target " .. tostring( packet.Dest ) .. "; dropping", true )
 end
 
 function DRV:CallEvent( data )
@@ -267,35 +270,56 @@ function DRV:CallEvent( data )
 	local e = data.Event
 	if (e == "linked") then
 		local port = self.Entity:Ports()[ data[ 1 ] ]
-		
-		PCMod.Msg( "[webgr]Linked event called on router! (" .. self.Entity:EntIndex() .. ")", true )
-		PCMod.Msg( "[webgr]REMOTE: " .. port.ConEnt:GetClass(), true )
-		PCMod.Msg( "[webgr]SOURCE: " .. self.Entity:GetClass(), true )
-		
-		if (self.Entity:GetClass() == "pcmod_brouter" && port.ConEnt:GetClass() == "pcmod_router") then
-			table.insert( self.BLAN, data[ 1 ], port )
-			PCMod.Network.RegisterPC( port.ConEnt, self.Entity:GetBSubnet(), true )
-		end
+		local cls = self.Entity:GetClass()
+		local peer = port.ConEnt:GetClass()
 
-		if (self.Entity:GetClass() == "pcmod_router" && port.ConEnt:GetClass() != "pcmod_router" && port.ConEnt:GetClass() != "pcmod_brouter") then
-			table.insert( self.LAN, data[ 1 ], port )
-			PCMod.Network.RegisterPC( port.ConEnt, self.Entity:GetSubnet(), false, self.Entity:GetBSubnet() )
+		if ((cls == "pcmod_brouter") && (peer == "pcmod_router")) then
+			// LAN router attaches to my backbone: give it a /64 of my /32 and a
+			// WAN backbone address.
+			self.BLAN[ data[ 1 ] ] = port
+			local bb = self.Entity:GetBSubnet()
+			PCMod.Network.RegisterPC( port.ConEnt, bb, true )
+			local lanid = self:NextLanID()
+			port.ConEnt:SetUpBB( bb )
+			port.ConEnt:SetLanID( lanid )
+			if (!self.Children) then self.Children = {} end
+			if (!self.ChildLan) then self.ChildLan = {} end
+			self.Children[ port.ConEnt:EntIndex() ] = lanid
+			self.ChildLan[ lanid ] = port
+		elseif ((cls == "pcmod_brouter") && (peer == "pcmod_brouter")) then
+			// Peer backbone: learn its /32 -> this port.
+			self.BLAN[ data[ 1 ] ] = port
+			if (!self.Neighbors) then self.Neighbors = {} end
+			self.Neighbors[ port.ConEnt:GetBSubnet() ] = port
+		elseif ((cls == "pcmod_router") && (peer == "pcmod_brouter")) then
+			// My WAN uplink.
+			self.Uplink = port
+		elseif ((cls == "pcmod_router") && (peer == "pcmod_router")) then
+			// Two LAN routers cabled together: treat it as an uplink too.
+			self.Uplink = port
+		elseif ((cls == "pcmod_router") && (peer != "pcmod_router") && (peer != "pcmod_brouter")) then
+			// A computer plugs into a LAN port.
+			self.LAN[ data[ 1 ] ] = port
+			self:AssignLease( port.ConEnt )
 		end
 	end
 	if (e == "unlinked") then
 		local port = {}
 		port.ConEnt = data[ 2 ]
+		local cls = self.Entity:GetClass()
+		local peer = port.ConEnt && port.ConEnt:GetClass() or ""
 
-		PCMod.Msg( "[webgr]An unlink event was called", true )
-
-		if (self.Entity:GetClass() == "pcmod_brouter" && port.ConEnt:GetClass() == "pcmod_router") then
-			table.insert( self.BLAN, data[ 1 ], self.Entity:Ports()[ data[ 1 ] ] )
+		if ((cls == "pcmod_brouter") && (peer == "pcmod_router")) then
+			local lanid = self.Children && self.Children[ port.ConEnt:EntIndex() ]
 			PCMod.Network.UnRegisterPC( port.ConEnt, self.Entity:GetBSubnet(), true )
-		end
-
-		if (self.Entity:GetClass() == "pcmod_router" && port.ConEnt:GetClass() != "pcmod_router" && port.ConEnt:GetClass() != "pcmod_brouter") then
-			table.insert( self.LAN, data[ 1 ], self.Entity:Ports()[ data[ 1 ] ] )
-			PCMod.Network.UnRegisterPC( port.ConEnt, self.Entity:GetSubnet(), false )
+			if (lanid && self.ChildLan) then self.ChildLan[ lanid ] = nil end
+			if (self.Children) then self.Children[ port.ConEnt:EntIndex() ] = nil end
+		elseif ((cls == "pcmod_brouter") && (peer == "pcmod_brouter")) then
+			if (self.Neighbors) then self.Neighbors[ port.ConEnt:GetBSubnet() ] = nil end
+		elseif ((cls == "pcmod_router") && ((peer == "pcmod_brouter") || (peer == "pcmod_router"))) then
+			self.Uplink = nil
+		elseif ((cls == "pcmod_router") && (peer != "pcmod_router") && (peer != "pcmod_brouter")) then
+			self:ReleaseLease( port.ConEnt )
 		end
 	end
 end
@@ -326,23 +350,71 @@ function DRV:HasPC( ip )
 	return false
 end
 
-// Register a PC that connected to this router over Wi-Fi. The address lease is
-// handed out by the same DHCP pool as cable clients (PCMod.Network.RegisterPC);
-// when the pool is full the client is still admitted and stands by as
-// IPv6-only, so the network never turns anyone away.
+// Register a PC that connected to this router over Wi-Fi.
 function DRV:AddWirelessClient( pc )
 	if ((!pc) || (!pc:IsValid())) then return false end
 	if (!self.WirelessClients) then self.WirelessClients = {} end
 	self.WirelessClients[ pc:EntIndex() ] = pc
-	return PCMod.Network.RegisterPC( pc, self.Entity:GetSubnet(), false, self.Entity:GetBSubnet() )
+	local host = self:AssignLease( pc )
+	if (!host) then return "full" end
+	return "assigned"
+end
+
+// Hand out an IPv4 lease from this router's private LAN pool. Returns the host
+// id, or nil when the pool is exhausted (the client is still admitted as
+// IPv6-only by the caller).
+function DRV:AssignLease( pc )
+	if ((!pc) || (!pc:IsValid())) then return nil end
+	if (!self.Leases) then self.Leases = {} end
+	self:ReleaseLease( pc )
+	local mask = (tonumber( PCMod.Cfg.LanNetmask ) == 16) and 16 or 24
+	local start = tonumber( PCMod.Cfg.DHCPStart ) or 2
+	local finish = tonumber( PCMod.Cfg.DHCPEnd ) or ((mask == 16) and 65534 or 254)
+	if (finish > 65534) then finish = 65534 end
+	local host = nil
+	for h = start, finish do
+		if (!self.Leases[ h ]) then host = h break end
+	end
+	if (!host) then return nil end
+	self.Leases[ host ] = pc
+	if (mask == 16) then
+		pc:SetSubnet( math.floor( host / 256 ) )
+		pc:SetIP( host % 256 )
+	else
+		pc:SetSubnet( 0 )
+		pc:SetIP( host )
+	end
+	local ip = self.Entity:Data().IP
+	if (pc.SetUpBB) then pc:SetUpBB( ip.UpBB or 0 ) end
+	if (pc.SetLanID) then pc:SetLanID( ip.LanID or 0 ) end
+	return host
+end
+
+function DRV:ReleaseLease( pc )
+	if (!pc) then return end
+	if (!self.Leases) then self.Leases = {} end
+	for host, ent in pairs( self.Leases ) do
+		if (ent == pc) then
+			self.Leases[ host ] = nil
+			pc:SetSubnet( false )
+			pc:SetIP( false )
+			return host
+		end
+	end
+end
+
+// A new /64 id within this backbone's /32 (one per attached LAN router).
+function DRV:NextLanID()
+	self.NextLan = (self.NextLan or 0) + 1
+	return self.NextLan
 end
 
 function DRV:RemoveWirelessClient( pc )
 	if (!pc) then return end
 	if (self.WirelessClients && self.WirelessClients[ pc:EntIndex() ]) then
 		self.WirelessClients[ pc:EntIndex() ] = nil
-		PCMod.Network.UnRegisterPC( pc, self.Entity:GetSubnet(), false )
 	end
+	self:ReleaseLease( pc )
 end
 
 // Deliver an in-flight packet to a Wi-Fi client on this router. Returns true
@@ -416,7 +488,7 @@ end
 // Reply to an in-game HTTP request with the page body.
 function DRV:HandleWebRequest( packet )
 	local page = self:GetWebPage()
-	local src = self.Entity:GetFullIP() or self.Entity:GetIPv6()
+	local src = self.Entity:GetSourceAddress( packet.Source ) or self.Entity:GetFullIP()
 	if (!src) then return false end
 	PCMod.Network.CreatePacket( src, packet.Source, 80, { "http-response", page } )
 	return true
@@ -430,4 +502,9 @@ function DRV:OnRemove()
 	self.NPorts = {}
 	self.OPorts = {}
 	self.WirelessClients = {}
+	self.Leases = {}
+	self.Children = {}
+	self.ChildLan = {}
+	self.Neighbors = {}
+	self.Uplink = nil
 end

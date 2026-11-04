@@ -172,23 +172,14 @@ function PCMod.Network.RegisterRouter( ent )
 		rtr.Ent:SetBSubnet( id )
 		rtr.Ent:SetBIP( 0 )
 	else
-		for _, v in pairs(PCMod.Network.Subnets) do
-			if (v.EntID == rtr.EntID) then
-				PCMod.Msg( "Router "..ent:EntIndex().." is already registered", true )
-				return
-			end
-		end
-		id = PCMod.Network.GetSub( false )
-		if (!id) then
-			rtr.Ent:ForceRemove( "No subnets availible" )
-			return
-		end
-		PCMod.Network.Subnets[ id ] = rtr
-		rtr.Ent:SetSubnet( id )
+		// A LAN router owns a private, isolated LAN. It does not consume a
+		// globally-unique subnet: every router's LAN is 192.168.0.0/24 (or /16),
+		// and the LAN knows nothing about the wider network.
+		rtr.Ent:SetSubnet( 0 )
 		rtr.Ent:SetIP( 1 )
 	end
 
-	PCMod.Msg( "Registered router "..ent:EntIndex()..back.." and aquired subnet "..id, true )
+	PCMod.Msg( "Registered router "..ent:EntIndex()..back.." (subnet "..tostring( id )..")", true )
 	
 	return true
 end
