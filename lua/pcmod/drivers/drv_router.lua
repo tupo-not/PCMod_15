@@ -123,10 +123,14 @@ function DRV:ClassifyDestination( dest )
 			toBackbone = true
 			onLinkBackbone = true
 		end
-	end
-	if ((!onLinkLAN) && (!onLinkBackbone) && (type( dest4 ) == "string")) then
-		if (string.find( dest4, "10.0", 1, true )) then toBackbone = true end
-		if (string.find( dest4, "192.168", 1, true )) then toLAN = true end
+	else
+		// IPv4 (and mapped IPv6) are classified by their historic address
+		// space; an unknown IPv6 /32 is NOT retrofitted onto the IPv4 core, it
+		// is forwarded upstream instead.
+		if ((type( dest4 ) == "string")) then
+			if (string.find( dest4, "10.0", 1, true )) then toBackbone = true end
+			if (string.find( dest4, "192.168", 1, true )) then toLAN = true end
+		end
 	end
 	return {
 		IsIPv6 = dest6,

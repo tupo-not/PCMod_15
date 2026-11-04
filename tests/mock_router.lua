@@ -82,8 +82,8 @@ assertTrue( r.OnLinkBackbone, "sibling LAN is on-link backbone" )
 assertEq( r.IPv4, "192.168.6.3", "sibling LAN translates to IPv4" )
 
 r = DRV:ClassifyDestination( "fd00:4:0:5::3" )
-assertTrue( r.LAN, "other backbone classified as LAN (must flood)" )
-assertTrue( not r.OnLinkLAN, "other backbone is not on-link LAN" )
+assertTrue( not r.LAN, "other backbone /32 is not retrofitted as LAN" )
+assertTrue( not r.Backbone, "other backbone /32 is not our backbone" )
 
 r = DRV:ClassifyDestination( "192.168.5.2" )
 assertTrue( not r.IsIPv6, "IPv4 target" )
@@ -107,7 +107,8 @@ assertTrue( r.OnLinkBackbone, "own backbone is on-link" )
 
 r = DRV:ClassifyDestination( "fd00:4:0:2::1" )
 assertTrue( not r.OnLinkBackbone, "other backbone is not on-link" )
-assertTrue( r.LAN, "other backbone floods as LAN" )
+assertTrue( not r.LAN, "other backbone is not LAN" )
+assertTrue( not r.Backbone, "other backbone is not ours" )
 
 -- Router web page (the HTTP server a future browser will fetch).
 function ent:GetClass() return "pcmod_router" end
