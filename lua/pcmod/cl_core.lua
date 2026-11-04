@@ -35,6 +35,7 @@ if (!PCMod_NoInclude) then
 	include( "pcmod/sh_beam.lua" ) -- Beaming control file
 	include( "pcmod/sh_resources.lua" ) -- Resources file
 	include( "pcmod/sh_settings.lua" ) -- Settings file
+	include( "pcmod/web.lua" ) -- Tiny HTML renderer (browser)
 
 
 	// ---------------------------------------------------------------------------------------------------------

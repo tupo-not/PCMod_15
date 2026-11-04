@@ -54,6 +54,7 @@ TESTS=(
     mock_mycomp
     mock_mycomp_prog
     mock_browser
+    mock_web
     mock_ui_scale
     mock_hackyclicky
     mock_elements

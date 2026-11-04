@@ -551,31 +551,52 @@ function DRV:HasIPv6Subnet( addr )
 	return false
 end
 
-// A plain-text config/status "web page" served by the router (the browser is a
-// later milestone; any client can fetch this over the network on port 80).
+// A config/status "web page" served by the router to the in-game browser
+// (port 80). Marked up with PCMod.Web's tiny HTML subset.
 function DRV:GetWebPage()
 	local e = self.Entity
 	local data = e.Data && e:Data() or nil
 	local bb = e:GetBSubnet()
 	local lines = {}
-	table.insert( lines, "WebGear Router" )
-	table.insert( lines, "=================" )
-	table.insert( lines, "Model: " .. tostring( e:GetClass() ) )
-	table.insert( lines, "IPv4 LAN: " .. tostring( e:GetFullIP() or "unassigned" ) )
-	table.insert( lines, "IPv6 LAN: " .. tostring( e:GetIPv6() or "unassigned" ) )
-	if (e.GetIPv6Prefix && e:GetIPv6Prefix()) then table.insert( lines, "IPv6 prefix: " .. tostring( e:GetIPv6Prefix() ) ) end
-	if (bb) then table.insert( lines, "Backbone: fd00:" .. tostring( bb ) .. "::/32" ) else table.insert( lines, "Backbone: none (standalone)" ) end
+	table.insert( lines, "<h1>WebGear Router</h1>" )
+	table.insert( lines, "<p><b>Model:</b> " .. tostring( e:GetClass() ) .. "</p>" )
+	table.insert( lines, "<p><b>IPv4 LAN:</b> " .. tostring( e:GetFullIP() or "unassigned" ) .. "</p>" )
+	table.insert( lines, "<p><b>IPv6:</b> " .. tostring( e:GetIPv6() or "unassigned" ) .. "</p>" )
+	if (e.GetIPv6Prefix && e:GetIPv6Prefix()) then table.insert( lines, "<p><b>Prefix:</b> " .. tostring( e:GetIPv6Prefix() ) .. "</p>" ) end
+	if (bb) then table.insert( lines, "<p><b>Backbone:</b> fd00:" .. tostring( bb ) .. "::/32</p>" ) else table.insert( lines, "<p><b>Backbone:</b> none (standalone)</p>" ) end
 	local dhcpS = tonumber( PCMod.Cfg.DHCPStart ) or 2
 	local dhcpE = tonumber( PCMod.Cfg.DHCPEnd ) or 254
-	table.insert( lines, "DHCP pool: ." .. tostring( dhcpS ) .. " - ." .. tostring( dhcpE ) )
+	table.insert( lines, "<p><b>DHCP pool:</b> ." .. tostring( dhcpS ) .. " - ." .. tostring( dhcpE ) .. "</p>" )
 	if (self.Wireless) then
-		table.insert( lines, "Wi-Fi: enabled (password " .. tostring( (data && data.WirePass) or "123" ) .. ")" )
+		table.insert( lines, "<p><b>Wi-Fi:</b> enabled (password " .. tostring( (data && data.WirePass) or "123" ) .. ")</p>" )
 	else
-		table.insert( lines, "Wi-Fi: disabled" )
+		table.insert( lines, "<p><b>Wi-Fi:</b> disabled</p>" )
 	end
 	local wc = 0
 	for _, v in pairs( self.WirelessClients or {} ) do if (v) then wc = wc + 1 end end
-	table.insert( lines, "Wi-Fi clients: " .. tostring( wc ) )
+	table.insert( lines, "<p><b>Wi-Fi clients:</b> " .. tostring( wc ) .. "</p>" )
+
+	table.insert( lines, "<h2>Network</h2>" )
+	local links = {}
+	if (self:IsBackbone()) then
+		for lanid, port in pairs( self.ChildLan or {} ) do
+			local child = port && port.ConEnt
+			local name = "LAN router #" .. tostring( (child && child:IsValid() && child:EntIndex()) or "?" )
+			table.insert( links, '<li><a href="fd00:' .. tostring( bb ) .. ':0:' .. tostring( lanid ) .. '::1">' .. name .. '</a></li>' )
+		end
+		for nbb, port in pairs( self.Neighbors or {} ) do
+			table.insert( links, '<li><a href="fd00:' .. tostring( nbb ) .. '::1">Backbone fd00:' .. tostring( nbb ) .. '::/32</a></li>' )
+		end
+	else
+		if (bb) then
+			table.insert( links, '<li><a href="fd00:' .. tostring( bb ) .. '::1">Upstream backbone fd00:' .. tostring( bb ) .. '::/32</a></li>' )
+		end
+	end
+	if (#links == 0) then table.insert( links, "<li>No links.</li>" ) end
+	table.insert( lines, "<ul>" )
+	for _, l in ipairs( links ) do table.insert( lines, l ) end
+	table.insert( lines, "</ul>" )
+
 	return table.concat( lines, "\n" )
 end
 

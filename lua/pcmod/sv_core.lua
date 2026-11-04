@@ -30,6 +30,9 @@ AddCSLuaFile( "pcmod/sh_config.lua" ) -- Give config file to client
 include( "pcmod/sh_common.lua" ) -- Common functions
 AddCSLuaFile( "pcmod/sh_common.lua" ) -- Give common file to client
 
+include( "pcmod/web.lua" ) -- Tiny HTML renderer (browser)
+AddCSLuaFile( "pcmod/web.lua" )
+
 include( "pcmod/sh_logging.lua" ) -- Logging functions
 AddCSLuaFile( "pcmod/sh_logging.lua" ) -- Give logging file to client
 

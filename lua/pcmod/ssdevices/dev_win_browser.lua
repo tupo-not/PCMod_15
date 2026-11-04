@@ -10,6 +10,9 @@ DEV.Th = "basic"
 DEV.Url = ""
 DEV.Content = ""
 DEV.Status = ""
+DEV.LineY = {}
+DEV.LineHref = {}
+DEV.LineH = 0
 
 function DEV:Initialize( x, y, w, h )
 	// Exit button
@@ -30,40 +33,46 @@ function DEV:Initialize( x, y, w, h )
 	self.WinH = h
 end
 
-function DEV:WrapContent( text, width )
-	text = text or ""
-	if (type( text ) != "string") then text = tostring( text ) end
-	local out = {}
-	for _, line in ipairs( string.Explode( "\n", text ) ) do
-		local wrapped = PCMod.Gui.CalcTextWrap( line, "pcmod_3d2d", width )
-		for _, wl in ipairs( wrapped ) do
-			// string.gsub returns (result, count); a bare call feeds both into
-			// table.insert (3-arg form). string.Replace returns a single string.
-			table.insert( out, string.Replace( wl, "\n", "" ) )
-		end
-	end
-	return out
-end
-
 function DEV:Paint( x, y, w, h )
 	self:RenderWindow( self.Th, x, y, w, h, "Browser", h*0.06 )
 
 	local c_bor = PCMod.Gui.GetThemeColour( self.Th, "Border" )
 	local c_tbbg = PCMod.Gui.GetThemeColour( self.Th, "TextboxBG" )
 	local c_tb_txt = PCMod.Gui.GetThemeColour( self.Th, "Textbox_Text" )
+	local c_link = Color( 30, 90, 220, 255 )
 
-	local a = {}
-	a.x, a.y, a.w, a.h = x+(w*0.02), y+(h*0.20), w*0.96, h*0.70
+	// Content area (pixels).
+	local ax, ay, aw, ah = x+(w*0.02), y+(h*0.20), w*0.96, h*0.70
 	surface.SetDrawColor( c_tbbg.r, c_tbbg.g, c_tbbg.b, c_tbbg.a )
-	surface.DrawRect( a.x, a.y, a.w, a.h )
-	surface.DrawOutline( a.x, a.y, a.w, a.h, c_bor )
+	surface.DrawRect( ax, ay, aw, ah )
+	surface.DrawOutline( ax, ay, aw, ah, c_bor )
 
 	surface.SetFont( "pcmod_3d2d" )
 	local tw, th = surface.GetTextSize( "Xq" )
-	local lines = self:WrapContent( self.Content, a.w - 4 )
-	local max = math.floor( a.h / th )
-	for i = 1, math.min( #lines, max ) do
-		draw.SimpleText( lines[ i ], "pcmod_3d2d", a.x+2, a.y+((i-1)*th), c_tb_txt, TEXT_ALIGN_LEFT, TEXT_ALIGN_TOP )
+	local doc = PCMod.Web.Parse( self.Content )
+
+	self.LineY = {}
+	self.LineHref = {}
+	self.LineH = (th + 1) / h
+
+	local ypix = ay + 2
+	local lineIndex = 0
+	for _, line in ipairs( doc ) do
+		if ((ypix + th) > (ay + ah - 2)) then break end
+		lineIndex = lineIndex + 1
+		self.LineY[ lineIndex ] = (ypix - y) / h
+		local xcur = ax + 2
+		for _, sp in ipairs( line ) do
+			local txt = sp.t or ""
+			local col = sp.href and c_link or c_tb_txt
+			draw.SimpleText( txt, "pcmod_3d2d", xcur, ypix, col, TEXT_ALIGN_LEFT, TEXT_ALIGN_TOP )
+			if (sp.bold) then
+				draw.SimpleText( txt, "pcmod_3d2d", xcur+1, ypix, col, TEXT_ALIGN_LEFT, TEXT_ALIGN_TOP )
+			end
+			xcur = xcur + surface.GetTextSize( txt )
+			if (sp.href) then self.LineHref[ lineIndex ] = sp.href end
+		end
+		ypix = ypix + th + 1
 	end
 
 	if (self.Status != "") then
@@ -75,6 +84,19 @@ end
 
 function DEV:OnUpdate()
 	self:SetTextboxText( "txtUrl", self.Url )
+end
+
+// Clicks arrive normalised (0..1) within the window. A click on a link line
+// navigates; anything else falls through to the textbox/buttons.
+function DEV:DoClick( x, y )
+	for i, href in pairs( self.LineHref or {} ) do
+		local ly = self.LineY[ i ]
+		if (ly && (y >= ly) && (y < (ly + self.LineH))) then
+			self:RunProgCommand( "browser", "go", href )
+			return
+		end
+	end
+	self:ProcessClick( x, y )
 end
 
 function DEV:ButtonClick( btn )
@@ -89,10 +111,6 @@ function DEV:ButtonClick( btn )
 	if (btn == "btnHome") then
 		self:RunProgCommand( "browser", "home" )
 	end
-end
-
-function DEV:DoClick( x, y )
-	self:ProcessClick( x, y )
 end
 
 function DEV:Tick()
