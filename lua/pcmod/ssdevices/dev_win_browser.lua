@@ -11,8 +11,9 @@ DEV.Url = ""
 DEV.Content = ""
 DEV.Status = ""
 DEV.Links = {}
-DEV.Form = { action = "", fields = {} }
-DEV.FormSig = ""
+DEV.Ctrl = {}
+DEV.Rows = {}
+DEV.InlineSig = ""
 
 function DEV:Initialize( x, y, w, h )
 	self:CreateButton2( self.Th, "btnExit", (x+w)-(h*0.06), y, h*0.06, h*0.06, "X" )
@@ -28,42 +29,43 @@ function DEV:Initialize( x, y, w, h )
 	self.WinH = h
 end
 
-function DEV:FormSignature( form )
-	local s = tostring( #(form.fields or {}) ) .. ":"
-	for _, f in ipairs( form.fields or {} ) do
-		s = s .. tostring( f.name ) .. "=" .. tostring( f.value ) .. ";"
+function DEV:InlineSignature()
+	local s = ""
+	for _, c in ipairs( self.Ctrl or {} ) do
+		s = s .. tostring( c.gname ) .. ":" .. tostring( c.kind ) .. ":" .. tostring( c.value or "" ) .. ";"
 	end
-	return s .. "|" .. tostring( form.action or "" )
+	return s
 end
 
-function DEV:RemoveFormControls()
-	for i = 1, 8 do self:RemoveTextbox( "frm_" .. i ) end
-	self:RemoveElement( "btnFormSave" )
+function DEV:RemoveInlineControls()
+	for _, c in ipairs( self.Ctrl or {} ) do
+		if (c.kind == "input") then
+			self:RemoveTextbox( c.gname )
+		elseif (c.kind == "submit") then
+			self:RemoveElement( c.gname )
+		end
+	end
 end
 
-// (Re)build editable fields from the page's single <form>. Runs when the form
-// signature changes OR when a resize wiped the controls (Int_Reinitialize calls
-// OnCreate), so the fields survive window resizing.
-function DEV:BuildForm( x, y, w, h )
-	local form = PCMod.Web.ParseForm( self.Content or "" )
-	local sig = self:FormSignature( form )
+// Create the inline input/submit controls for the current page. Rebuilds when
+// the controls change or a resize wiped them.
+function DEV:RebuildControls()
+	local sig = self:InlineSignature()
 	local missing = false
-	if (#(form.fields) > 0) then
-		if ((!self.Textboxes) || (!self.Textboxes[ "frm_1" ])) then missing = true end
-		if ((!self.Elements) || (!self.Elements[ "btnFormSave" ])) then missing = true end
+	for _, c in ipairs( self.Ctrl or {} ) do
+		if (c.kind == "input") && ((!self.Textboxes) || (!self.Textboxes[ c.gname ])) then missing = true end
+		if (c.kind == "submit") && ((!self.Elements) || (!self.Elements[ c.gname ])) then missing = true end
 	end
-	if ((sig == self.FormSig) && (!missing)) then return end
-	self.FormSig = sig
-	self.Form = form
-	self:RemoveFormControls()
-	local yn = 0.53
-	for i, f in ipairs( form.fields ) do
-		self:CreateTextbox( self.Th, "frm_" .. i, x+(w*0.45), y+(h*yn), w*0.5, h*0.055, f.label or f.name )
-		self:SetTextboxText( "frm_" .. i, f.value )
-		yn = yn + 0.075
-	end
-	if (#(form.fields) > 0) then
-		self:CreateButton2( self.Th, "btnFormSave", x+(w*0.78), y+(h*(yn - 0.075)), w*0.2, h*0.055, "Save" )
+	if ((sig == self.InlineSig) && (!missing)) then return end
+	self:RemoveInlineControls()
+	self.InlineSig = sig
+	for _, c in ipairs( self.Ctrl or {} ) do
+		if (c.kind == "input") then
+			self:CreateTextbox( self.Th, c.gname, c.cx, c.cy, c.w, c.h, "" )
+			self:SetTextboxText( c.gname, c.value or "" )
+		elseif (c.kind == "submit") then
+			self:CreateButton2( self.Th, c.gname, c.x, c.y, c.w, c.h, c.t or "Save" )
+		end
 	end
 end
 
@@ -75,38 +77,78 @@ function DEV:Paint( x, y, w, h )
 	local c_tb_txt = PCMod.Gui.GetThemeColour( self.Th, "Textbox_Text" )
 	local c_link = Color( 30, 90, 220, 255 )
 
-	// Content area (pixels).
-	local ax, ay, aw, ah = x+(w*0.02), y+(h*0.16), w*0.96, h*0.34
-	surface.SetDrawColor( c_tbbg.r, c_tbbg.g, c_tbbg.b, c_tbbg.a )
-	surface.DrawRect( ax, ay, aw, ah )
-	surface.DrawOutline( ax, ay, aw, ah, c_bor )
+	local ax, ay, aw = x+(w*0.02), y+(h*0.16), w*0.96
+	local maxBottom = y + (h * 0.78)
 
 	surface.SetFont( "pcmod_3d2d" )
 	local tw, th = surface.GetTextSize( "Xq" )
-	local doc = PCMod.Web.Parse( self.Content )
+	local doc = PCMod.Web.Parse( self.Content or "" )
 
+	// Measure: positions, link rectangles and inline control placement.
 	self.Links = {}
-	local ypix = ay + 2
-	for _, line in ipairs( doc ) do
-		if ((ypix + th) > (ay + ah - 2)) then break end
+	self.Ctrl = {}
+	self.Rows = {}
+	local inCount, btnCount = 0, 0
+	local inW = w * 0.22
+	local subW = w * 0.12
+	local ypix = ay + 4
+
+	local function advance( line )
+		if ((ypix + th) <= maxBottom) then
+			table.insert( self.Rows, line )
+			ypix = ypix + th + 1
+		end
+	end
+
+	for _, spans in ipairs( doc ) do
+		local row = { y = ypix, spans = {} }
 		local xcur = ax + 2
-		for _, sp in ipairs( line ) do
+		for _, sp in ipairs( spans ) do
+			if (sp.kind == "input") then
+				inCount = inCount + 1
+				local gname = "inp_" .. inCount
+				table.insert( self.Ctrl, { kind = "input", gname = gname, name = sp.name, value = sp.value, cx = xcur + (inW * 0.5), cy = ypix + (th * 0.5), w = inW, h = th } )
+				xcur = xcur + inW + 4
+			elseif (sp.kind == "submit") then
+				btnCount = btnCount + 1
+				table.insert( self.Ctrl, { kind = "submit", gname = "btn_" .. btnCount, x = xcur, y = ypix, w = subW, h = th, t = sp.t } )
+				xcur = xcur + subW + 4
+			else
+				table.insert( row.spans, sp )
+				if (sp.href) then
+					local sx = surface.GetTextSize( sp.t or "" )
+					table.insert( self.Links, { x1 = (xcur - x) / w, y1 = (ypix - y) / h, x2 = (xcur + sx - x) / w, y2 = (ypix + th - y) / h, href = sp.href } )
+				end
+				xcur = xcur + surface.GetTextSize( sp.t or "" )
+			end
+		end
+		row.xcur = xcur
+		advance( row )
+	end
+
+	// Box hugs the content (text + inline controls).
+	local bottom = ypix + 4
+	if (bottom < (ay + (th * 2))) then bottom = ay + (th * 2) end
+	surface.SetDrawColor( c_tbbg.r, c_tbbg.g, c_tbbg.b, c_tbbg.a )
+	surface.DrawRect( ax, ay, aw, bottom - ay )
+	surface.DrawOutline( ax, ay, aw, bottom - ay, c_bor )
+
+	self:RebuildControls()
+
+	// Draw text (after controls, so the edit fields sit on their line).
+	for _, row in ipairs( self.Rows ) do
+		local xcur = ax + 2
+		for _, sp in ipairs( row.spans ) do
 			local txt = sp.t or ""
 			local sx = surface.GetTextSize( txt )
 			local col = sp.href and c_link or c_tb_txt
-			draw.SimpleText( txt, "pcmod_3d2d", xcur, ypix, col, TEXT_ALIGN_LEFT, TEXT_ALIGN_TOP )
+			draw.SimpleText( txt, "pcmod_3d2d", xcur, row.y, col, TEXT_ALIGN_LEFT, TEXT_ALIGN_TOP )
 			if (sp.bold) then
-				draw.SimpleText( txt, "pcmod_3d2d", xcur+1, ypix, col, TEXT_ALIGN_LEFT, TEXT_ALIGN_TOP )
-			end
-			if (sp.href) then
-				table.insert( self.Links, { x1 = (xcur - x) / w, y1 = (ypix - y) / h, x2 = (xcur + sx - x) / w, y2 = (ypix + th - y) / h, href = sp.href } )
+				draw.SimpleText( txt, "pcmod_3d2d", xcur+1, row.y, col, TEXT_ALIGN_LEFT, TEXT_ALIGN_TOP )
 			end
 			xcur = xcur + sx
 		end
-		ypix = ypix + th + 1
 	end
-
-	self:BuildForm( x, y, w, h )
 
 	if (self.Status != "") then
 		self:RenderText( x+(w*0.5), y+(h*0.92), { self.Status }, Color( 0, 0, 0, 255 ), 1 )
@@ -119,8 +161,6 @@ function DEV:OnUpdate()
 	self:SetTextboxText( "txtUrl", self.Url )
 end
 
-// Clicks arrive normalised (0..1) in the window. Hit-test links by their exact
-// rectangle; anything else falls through to the textboxes/buttons.
 function DEV:DoClick( x, y )
 	for _, l in ipairs( self.Links or {} ) do
 		if ((x >= l.x1) && (x <= l.x2) && (y >= l.y1) && (y <= l.y2)) then
@@ -144,10 +184,13 @@ function DEV:ButtonClick( btn )
 		self:RunProgCommand( "browser", "home" )
 		return
 	end
-	if (btn == "btnFormSave") then
+	// Any submit button saves the form.
+	if (string.sub( btn, 1, 4 ) == "btn_") then
 		local parts = {}
-		for i, f in ipairs( self.Form.fields or {} ) do
-			table.insert( parts, tostring( f.name ) .. "=" .. tostring( self:GetTextboxText( "frm_" .. i ) or "" ) )
+		for _, c in ipairs( self.Ctrl or {} ) do
+			if (c.kind == "input") then
+				table.insert( parts, tostring( c.name ) .. "=" .. tostring( self:GetTextboxText( c.gname ) or "" ) )
+			end
 		end
 		if (#parts > 0) then
 			self:RunProgCommand( "browser", "go", "?" .. table.concat( parts, "&" ) )

@@ -37,12 +37,13 @@ local plain = PCMod.Web.Parse( "line one\nline two<br>line three" )
 assertEq( #plain, 3, "newline + br split lines" )
 assertEq( plain[ 2 ][ 1 ].t, "line two", "newline line kept" )
 
--- Form parsing: text inputs with labels and values, submit excluded.
-local form = PCMod.Web.ParseForm( '<form action="?"><input type="text" name="wpass" label="Wi-Fi password" value="123"><input type="text" name="dhcpstart" label="DHCP start" value="2"><input type="submit" value="Save"></form>' )
-assertEq( #form.fields, 2, "two text fields" )
-assertEq( form.fields[ 1 ].name, "wpass", "field name" )
-assertEq( form.fields[ 1 ].value, "123", "field value" )
-assertEq( form.fields[ 1 ].label, "Wi-Fi password", "field label" )
-assertEq( form.fields[ 2 ].name, "dhcpstart", "second field name" )
+-- Inline <input> text + submit flow in their paragraph as spans.
+local fdoc = PCMod.Web.Parse( '<p><b>Name:</b> <input type="text" name="x" value="7"><input type="submit" value="Save"></p>' )
+assertEq( #fdoc[ 1 ], 4, "label + space + input + submit spans" )
+assertTrue( fdoc[ 1 ][ 3 ].kind == "input", "input span kind" )
+assertEq( fdoc[ 1 ][ 3 ].name, "x", "input name" )
+assertEq( fdoc[ 1 ][ 3 ].value, "7", "input value" )
+assertTrue( fdoc[ 1 ][ 4 ].kind == "submit", "submit span kind" )
+assertEq( fdoc[ 1 ][ 4 ].t, "Save", "submit label" )
 
 print( "ALL WEB TESTS PASSED" )
