@@ -2,13 +2,14 @@ function table.Copy(t) if type(t)~='table' then return t end local o={} for k,v 
 local function assertTrue(v,m) if not v then error('FAILED: '..m,2) end end
 local function assertEq(a,b,m) if a~=b then error('FAILED: '..m..' got '..tostring(a)..' want '..tostring(b),2) end end
 function Color(r,g,b,a) return {r=r,g=g,b=b,a=a or 255} end
+string.Replace=function(s,pat,rep) return (string.gsub(s,pat,rep)) end
 surface={SetFont=function() end,GetTextSize=function(t) return #tostring(t)*6,10 end,SetDrawColor=function() end,DrawRect=function() end,DrawOutline=function() end,DrawLine=function() end}
 draw={SimpleText=function() end}
 TEXT_ALIGN_LEFT=0; TEXT_ALIGN_CENTER=1
 math.Clamp=function(v,a,b) if v<a then return a end if v>b then return b end return v end
 CurTime=function() return 0 end
 local el
-PCMod={Msg=function() end,SDraw={CFrame=0,GetGuiScale=function() return 1.25 end},Cfg={GuiScale=1.25},Gui={Themes={basic={NiceName='Basic'},dark={NiceName='Dark'}},GetThemeColour=function() return Color(0,0,0,255) end,ThemeDraw=function() return false end},SSEL={Create=function()
+PCMod={Msg=function() end,SDraw={CFrame=0,GetGuiScale=function() return 1.25 end},Cfg={GuiScale=1.25},Gui={Themes={basic={NiceName='Basic'},dark={NiceName='Dark'}},GetThemeColour=function() return Color(0,0,0,255) end,ThemeDraw=function() return false end,CalcTextWrap=function() return {} end},SSEL={Create=function()
   el={Valid=true,SetTheme=function(self) end,SetLayout=function(self,x,y,w,h) self.X=x self.Y=y self.W=w self.H=h end,SetText=function(self,t) self.Text=t end,SetIcon=function(self) end,SetFunc=function(self,n,f) self[n]=f end,IsValid=function(self) return self.Valid end,Remove=function(self) self.Valid=false end,CursorInside=function() return false end,Paint=function() end}
   return el
 end}}
@@ -37,6 +38,13 @@ assertEq(#d.Listboxes.lstNetInfo.Order, 5, 'network information rows')
 assertTrue(string.find(d.Listboxes.lstNetInfo.List.gateway, 'fd00:c0:a8:1::1', 1, true) ~= nil, 'gateway shown')
 assertEq(#d.Listboxes.lstWireless.Order, 1, 'wireless network listed')
 assertTrue(string.find(d.Listboxes.lstWireless.List['12'], 'Signal 80%', 1, true) ~= nil, 'wireless signal shown')
+assertTrue(d.Textboxes.txtWifiPass ~= nil, 'wifi password box exists')
+d:SetListboxSelRow('lstWireless','12')
+d:SetTextboxText('txtWifiPass','123')
+local wsent
+function d:RunProgCommand(prog,cmd,a,b) wsent={prog=prog,cmd=cmd,a=a,b=b} end
+d:ButtonClick('btnWifiConnect')
+assertTrue(wsent and wsent.cmd=='connect_wifi' and wsent.a=='12' and wsent.b=='123', 'wifi connect command')
 d.Dvs={{1,'Printer'},{4,'Keyboard'}}
 local sent
 function d:RunProgCommand(prog,cmd) sent={prog=prog,cmd=cmd} end

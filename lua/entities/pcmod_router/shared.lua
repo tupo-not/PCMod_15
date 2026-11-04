@@ -15,6 +15,7 @@ ENT.IsNetworkDevice = true
 
 ENT.DefaultSetupData = {
 	Wireless = false,
+	WirePass = "123",
 }
 
 if (SERVER) then AddCSLuaFile( "shared.lua" ) end
@@ -43,6 +44,7 @@ function ENT:Setup( setupdata )
 		return
 	end
 	dt.IsWireless = setupdata.Wireless
+	dt.WirePass = setupdata.WirePass or "123"
 	self:SetGVar( "wireless", setupdata.Wireless )
 	
 	// Update us

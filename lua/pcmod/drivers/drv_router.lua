@@ -14,6 +14,8 @@ DRV.OPorts = {}
 DRV.BSubnet = nil
 DRV.Subnet = nil
 DRV.Wireless = false
+// PCs ("stations") connected to this router over the air, keyed by ent index.
+DRV.WirelessClients = {}
 
 function DRV:Initialize()
 	if (!self.Entity) then return end
@@ -231,6 +233,8 @@ function DRV:ProcessPacket( pid, pass )
 				// Delivery successful!
 				return
 			end
+		elseif ((!port) && self:DeliverToWirelessClient( packet )) then
+			return
 		elseif (dest6 && route.OnLinkLAN) then
 			// IPv6 has no broadcast. An address on THIS router's LAN /64 that
 			// no attached host owns must not leak onto the rest of the network.
@@ -244,26 +248,6 @@ function DRV:ProcessPacket( pid, pass )
 
 	// If not, push it to all connected routers
 	self.Entity:FullPushData( { "deliver", pid, pass }, "optic" )
-	
-	// If we are wireless, push to every router in the area
-	local ets = {}
-	local range = PCMod.Cfg.WirelessRange
-	if (range > 0) then
-		ets = ents.FindInSphere( self.Entity:GetPos(), range )
-	else
-		ets = ents.FindByClass( self.Entity:GetClass() )
-	end
-	local myents = {}
-	for _, ent in pairs( ets ) do
-		if ((ent) && (ent:IsValid()) && (ent.IsPCMod) && (ent != self.Entity)) then
-			if (ent:Data().IsWireless) then
-				table.insert( myents, ent )
-			end
-		end
-	end
-	for _, ent in pairs( myents ) do
-		ent:DataRecieved( 0, { "deliver", pid, pass } )
-	end
 end
 
 function DRV:CallEvent( data )
@@ -331,6 +315,39 @@ function DRV:HasPC( ip )
 	return false
 end
 
+// Register a PC that connected to this router over Wi-Fi. It is assigned an
+// IP on this router's LAN subnet exactly like a cable-connected machine.
+function DRV:AddWirelessClient( pc )
+	if ((!pc) || (!pc:IsValid())) then return false end
+	if (!self.WirelessClients) then self.WirelessClients = {} end
+	self.WirelessClients[ pc:EntIndex() ] = pc
+	PCMod.Network.RegisterPC( pc, self.Entity:GetSubnet(), false )
+	return true
+end
+
+function DRV:RemoveWirelessClient( pc )
+	if (!pc) then return end
+	if (self.WirelessClients && self.WirelessClients[ pc:EntIndex() ]) then
+		self.WirelessClients[ pc:EntIndex() ] = nil
+		PCMod.Network.UnRegisterPC( pc, self.Entity:GetSubnet(), false )
+	end
+end
+
+// Deliver an in-flight packet to a Wi-Fi client on this router. Returns true
+// when a client claimed it (and the packet is marked delivered).
+function DRV:DeliverToWirelessClient( packet )
+	for _, pc in pairs( self.WirelessClients or {} ) do
+		if ((pc) && (pc:IsValid()) && (pc.IsAddressedTo) && (pc:IsAddressedTo( packet.Dest ))) then
+			packet.Delivered = true
+			local data = PCMod.Data[ pc:EntIndex() ]
+			local drv = data && data.Drivers && data.Drivers[ "gen_network" ]
+			if (drv) then drv:PacketRecieved( packet ) end
+			return true
+		end
+	end
+	return false
+end
+
 // Emulated IPv6 view of this router. The router's own address is the ::1
 // gateway of its LAN/backbone /64, and GetIPv6Prefix is that /64.
 function DRV:GetIPv6()
@@ -363,4 +380,5 @@ function DRV:OnRemove()
 	self.Subnet = self.Entity:GetSubnet()
 	self.NPorts = {}
 	self.OPorts = {}
+	self.WirelessClients = {}
 end

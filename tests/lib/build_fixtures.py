@@ -50,6 +50,8 @@ CHECK_ONLY = [
     "pcmod/themes/cl_pcmod15.lua",
     "pcmod/sh_config.lua",
     "autorun/sh_pcmod_launch.lua",
+    "pcmod/drivers/drv_network.lua",
+    "entities/pcmod_router/shared.lua",
 ]
 
 

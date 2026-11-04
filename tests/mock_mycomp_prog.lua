@@ -49,6 +49,29 @@ ents = {
     FindByClass = function() return {} end,
 }
 
+-- Wi-Fi connect machinery: a fake network driver on the PC and a fake wireless
+-- router the Control Panel can connect to.
+local netDrv = { WirelessEnt = nil, WirelessPass = "" }
+function netDrv:DisconnectWireless()
+    if (self.WirelessEnt) then
+        local r = PCMod.Data[ self.WirelessEnt:EntIndex() ].Drivers.webgr_router
+        if (r and r.RemoveWirelessClient) then r:RemoveWirelessClient( ent ) end
+    end
+    self.WirelessEnt = nil
+    self.WirelessPass = ""
+end
+local routerDrv = {}
+function routerDrv:AddWirelessClient( pc ) self.Added = pc end
+function routerDrv:RemoveWirelessClient( pc ) self.Added = nil end
+PCMod.Data[ 1 ].Drivers = { gen_network = netDrv }
+PCMod.Data[ 50 ] = { Drivers = { webgr_router = routerDrv } }
+local wifi = { IsPCMod = true }
+function wifi:IsValid() return true end
+function wifi:EntIndex() return 50 end
+function wifi:GetClass() return "pcmod_router" end
+function wifi:Data() return { IsWireless = true, WirePass = "123" } end
+ents.GetByIndex = function( idx ) if (idx == 50) then return wifi end return nil end
+
 local os = {}
 function os:GetIP() return 2 end
 function os:GetFullIP() return "192.168.1.2" end
@@ -95,6 +118,19 @@ assertEq( #prog.DeviceData.Wireless, 2, "only wireless routers in range returned
 assertEq( prog.DeviceData.Wireless[ 1 ].Distance, 120, "wireless distance" )
 assertEq( prog.DeviceData.Wireless[ 1 ].Signal, 88, "wireless signal percentage" )
 assertEq( prog.DeviceData.Wireless[ 1 ].Class, "pcmod_router", "wireless router class" )
+
+-- Wi-Fi connect: reject a wrong password, accept the default, then disconnect.
+prog:DoCommand( "connect_wifi", { "50", "wrong" } )
+assertTrue( prog.DeviceData.Wifi.BadPass, "wrong Wi-Fi password flagged" )
+assertTrue( netDrv.WirelessEnt == nil, "wrong password leaves no link" )
+prog:DoCommand( "connect_wifi", { "50", "123" } )
+assertTrue( prog.DeviceData.Wifi.Connected, "Wi-Fi connected" )
+assertEq( prog.DeviceData.Wifi.EntIndex, 50, "Wi-Fi router index" )
+assertTrue( netDrv.WirelessEnt == wifi, "network driver holds the link" )
+assertTrue( routerDrv.Added == ent, "router recorded the wireless client" )
+prog:DoCommand( "disconnect_wifi", {} )
+assertTrue( !prog.DeviceData.Wifi.Connected, "Wi-Fi disconnected" )
+assertTrue( netDrv.WirelessEnt == nil, "network driver cleared the link" )
 
 prog:DoCommand( "changepass", { "wrong", "new" } )
 assertEq( PCMod.Data[ 1 ].Password, "old", "wrong old password rejected" )

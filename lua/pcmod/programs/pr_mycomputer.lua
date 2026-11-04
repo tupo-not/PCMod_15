@@ -63,6 +63,75 @@ function PROG:RefreshWireless()
 	end
 	table.sort( out, function( a, b ) return (a.Distance < b.Distance) end )
 	self.DeviceData.Wireless = out
+	self:RefreshWifiStatus()
+end
+
+// The PC's network driver (server-side).
+function PROG:GetNetworkDriver()
+	local data = PCMod.Data[ self.Entity:EntIndex() ]
+	if (!data || !data.Drivers) then return nil end
+	return data.Drivers[ "gen_network" ]
+end
+
+// Reflect the current Wi-Fi link into the Control Panel payload.
+function PROG:RefreshWifiStatus()
+	local net = self:GetNetworkDriver()
+	if ((net) && (net.WirelessEnt) && (net.WirelessEnt:IsValid())) then
+		self.DeviceData.Wifi = {
+			Connected = true,
+			EntIndex = net.WirelessEnt:EntIndex(),
+			Class = net.WirelessEnt:GetClass()
+		}
+	else
+		self.DeviceData.Wifi = { Connected = false }
+	end
+end
+
+// Connect this computer to a wireless router, checking its Wi-Fi password
+// (each router is created with the default "123").
+function PROG:ConnectWireless( entIndex, pass )
+	if (!entIndex) then return end
+	pass = pass or ""
+	local target = ents.GetByIndex( entIndex )
+	if ((!target) || (!target:IsValid()) || (!target.IsPCMod)) then
+		self.DeviceData.Wifi = { Connected = false, Error = "Network unavailable." }
+		self:UpdateSS()
+		return
+	end
+	local tdata = target.Data && target:Data() or nil
+	if ((!tdata) || (!tdata.IsWireless)) then
+		self.DeviceData.Wifi = { Connected = false, Error = "Network unavailable." }
+		self:UpdateSS()
+		return
+	end
+	local expected = tdata.WirePass or "123"
+	if (pass != expected) then
+		self.DeviceData.Wifi = { Connected = false, BadPass = true }
+		self:UpdateSS()
+		return
+	end
+	local net = self:GetNetworkDriver()
+	if (!net) then
+		self.DeviceData.Wifi = { Connected = false, Error = "No network hardware." }
+		self:UpdateSS()
+		return
+	end
+	net:DisconnectWireless()
+	net.WirelessEnt = target
+	net.WirelessPass = pass
+	local rdata = PCMod.Data[ target:EntIndex() ]
+	local rdrv = rdata && rdata.Drivers && rdata.Drivers[ "webgr_router" ]
+	if (rdrv && rdrv.AddWirelessClient) then rdrv:AddWirelessClient( self.Entity ) end
+	self.DeviceData.Wifi = { Connected = true, EntIndex = target:EntIndex(), Class = target:GetClass() }
+	self:RefreshNetwork()
+	self:UpdateSS()
+end
+
+function PROG:DisconnectWireless()
+	local net = self:GetNetworkDriver()
+	if (net && net.DisconnectWireless) then net:DisconnectWireless() end
+	self.DeviceData.Wifi = { Connected = false }
+	self:UpdateSS()
 end
 
 function PROG:RefreshDevices()
@@ -109,6 +178,14 @@ function PROG:DoCommand( com, args )
 	if (com == "refresh_network") then
 		self:RefreshNetwork()
 		self:UpdateSS()
+		return
+	end
+	if (com == "connect_wifi") then
+		self:ConnectWireless( tonumber( args[1] ), args[2] )
+		return
+	end
+	if (com == "disconnect_wifi") then
+		self:DisconnectWireless()
 		return
 	end
 	if (com == "refresh_devices") then

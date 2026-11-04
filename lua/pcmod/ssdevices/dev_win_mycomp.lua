@@ -49,6 +49,9 @@ function DEV:SwitchSection( section )
 		self.OldPassDraft = self:GetTextboxText( "txtOldPass" )
 		self.NewPassDraft = self:GetTextboxText( "txtNewPass" )
 	end
+	if (self.Section == "network") then
+		self.WifiPassDraft = self:GetTextboxText( "txtWifiPass" )
+	end
 	self.Section = section
 	self:ReinitializeSelf()
 end
@@ -87,9 +90,13 @@ end
 
 function DEV:InitializeNetwork( x, y, w, h )
 	self:CreateListbox( self.Th, "lstNetInfo", x+(w*0.325), y+(h*0.21), w*0.28, h*0.50 ).LeftAlign = true
-	self:CreateListbox( self.Th, "lstWireless", x+(w*0.63), y+(h*0.21), w*0.335, h*0.50 ).LeftAlign = true
-	self:CreateButton2( self.Th, "btnRefreshNetwork", x+(w*0.325), y+(h*0.76), w*0.28, h*0.07, "Refresh" )
-	self:CreateButton2( self.Th, "btnNetTools", x+(w*0.63), y+(h*0.76), w*0.335, h*0.07, "Network Tools" )
+	self:CreateListbox( self.Th, "lstWireless", x+(w*0.63), y+(h*0.21), w*0.335, h*0.38 ).LeftAlign = true
+	self:CreateTextbox( self.Th, "txtWifiPass", x+(w*0.7975), y+(h*0.62), w*0.335, h*0.055, "Password:" )
+	self:CreateButton2( self.Th, "btnWifiConnect", x+(w*0.63), y+(h*0.69), w*0.16, h*0.07, "Connect" )
+	self:CreateButton2( self.Th, "btnWifiDisconnect", x+(w*0.805), y+(h*0.69), w*0.16, h*0.07, "Disconnect" )
+	self:CreateButton2( self.Th, "btnRefreshNetwork", x+(w*0.325), y+(h*0.88), w*0.28, h*0.07, "Refresh" )
+	self:CreateButton2( self.Th, "btnNetTools", x+(w*0.63), y+(h*0.88), w*0.335, h*0.07, "Network Tools" )
+	if (self.WifiPassDraft) then self:SetTextboxText( "txtWifiPass", self.WifiPassDraft ) end
 end
 
 function DEV:InitializeIO( x, y, w, h )
@@ -181,7 +188,17 @@ function DEV:Paint( x, y, w, h )
 		self:RenderText( x+(w*0.6425), y+(h*0.105), { "Network Settings & Status" }, Color( 0, 0, 0, 255 ), 1 )
 		self:RenderText( x+(w*0.465), y+(h*0.16), { "Status" }, Color( 0, 0, 0, 255 ), 1 )
 		self:RenderText( x+(w*0.7975), y+(h*0.16), { "Wireless Networks" }, Color( 0, 0, 0, 255 ), 1 )
-		self:RenderText( x+(w*0.6425), y+(h*0.90), { "Addresses are assigned by the connected router." }, Color( 0, 0, 0, 255 ), 1 )
+		self:RenderText( x+(w*0.465), y+(h*0.90), { "Addresses are assigned by the connected router." }, Color( 0, 0, 0, 255 ), 1 )
+		local wf = self.Wifi
+		local wstat = "Not connected."
+		if (wf && wf.Connected) then
+			wstat = "Connected to " .. tostring( wf.Class or "Router" ) .. " #" .. tostring( wf.EntIndex )
+		elseif (wf && wf.BadPass) then
+			wstat = "Incorrect password."
+		elseif (wf && wf.Error) then
+			wstat = tostring( wf.Error )
+		end
+		self:RenderText( x+(w*0.7975), y+(h*0.79), { wstat }, Color( 0, 0, 0, 255 ), 1 )
 	elseif (self.Section == "io") then
 		self:RenderText( x+(w*0.6425), y+(h*0.105), { "Input / Output Devices" }, Color( 0, 0, 0, 255 ), 1 )
 		self:RenderText( x+(w*0.6425), y+(h*0.90), { "Identified USB devices connected to this computer." }, Color( 0, 0, 0, 255 ), 1 )
@@ -222,6 +239,18 @@ function DEV:ButtonClick( btn )
 	end
 	if (btn == "btnRefreshNetwork") then
 		self:RunProgCommand( "mycomputer", "refresh_network" )
+		return
+	end
+	if (btn == "btnWifiConnect") then
+		local sel = self:GetListboxSelRow( "lstWireless" )
+		if ((sel) && (sel != "none")) then
+			self.WifiPassDraft = self:GetTextboxText( "txtWifiPass" )
+			self:RunProgCommand( "mycomputer", "connect_wifi", sel, self.WifiPassDraft or "" )
+		end
+		return
+	end
+	if (btn == "btnWifiDisconnect") then
+		self:RunProgCommand( "mycomputer", "disconnect_wifi" )
 		return
 	end
 	if (btn == "btnRefreshDevices") then

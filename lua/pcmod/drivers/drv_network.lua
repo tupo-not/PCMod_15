@@ -9,6 +9,8 @@ DRV.Type = "network"
 
 DRV.PTData = {}
 DRV.NetworkPort = 0
+DRV.WirelessEnt = nil
+DRV.WirelessPass = ""
 
 function DRV:Initialize()
 	if (!self.Entity) then return end
@@ -39,8 +41,41 @@ function DRV:SendPacket( dest, port, body )
 		self:PacketRecieved( pk )
 		return
 	end
+	// Wireless uplink: when connected to a router, send through it over the air
+	// instead of the cable port. Falls back to the cable when out of range.
+	if (self:WirelessConnected()) then
+		local src = self.Entity:GetFullIP() or self.Entity:GetFullBIP()
+		self.WirelessEnt:DataRecieved( 0, { "sendpacket", { src, dest, port, body } } )
+		return
+	end
 	if (self.NetworkPort == 0) then return end
 	return self.Entity:SendPacket( self.NetworkPort, dest, port, body )
+end
+
+// The PC has an active in-range wireless link to a router.
+function DRV:WirelessConnected()
+	local ent = self.WirelessEnt
+	if ((!ent) || (!ent:IsValid())) then return false end
+	if ((!self.Entity) || (!self.Entity:IsValid())) then return false end
+	local range = (PCMod.Cfg && PCMod.Cfg.WirelessRange) || 0
+	if (range > 0) then
+		local dist = (self.Entity:GetPos() - ent:GetPos()):Length()
+		if (dist > range) then return false end
+	end
+	return true
+end
+
+// Drop the current wireless link and unregister the PC from that router's
+// subnet (if it was registered through this link).
+function DRV:DisconnectWireless()
+	local ent = self.WirelessEnt
+	if ((ent) && (ent:IsValid())) then
+		local rdata = PCMod.Data[ ent:EntIndex() ]
+		local rdrv = rdata && rdata.Drivers && rdata.Drivers[ "webgr_router" ]
+		if (rdrv && rdrv.RemoveWirelessClient) then rdrv:RemoveWirelessClient( self.Entity ) end
+	end
+	self.WirelessEnt = nil
+	self.WirelessPass = ""
 end
 
 function DRV:GetIP()
