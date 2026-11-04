@@ -77,8 +77,8 @@ function DEV:Paint( x, y, w, h )
 	local c_tb_txt = PCMod.Gui.GetThemeColour( self.Th, "Textbox_Text" )
 	local c_link = Color( 30, 90, 220, 255 )
 
-	local ax, ay, aw = x+(w*0.02), y+(h*0.16), w*0.96
-	local maxBottom = y + (h * 0.78)
+	local ax, ay, aw, ah = x+(w*0.02), y+(h*0.16), w*0.96, h*0.74
+	local maxBottom = ay + ah - 2
 
 	surface.SetFont( "pcmod_3d2d" )
 	local tw, th = surface.GetTextSize( "Xq" )
@@ -126,12 +126,11 @@ function DEV:Paint( x, y, w, h )
 		advance( row )
 	end
 
-	// Box hugs the content (text + inline controls).
-	local bottom = ypix + 4
-	if (bottom < (ay + (th * 2))) then bottom = ay + (th * 2) end
+	// The content box always fills the window (empty or full); text flows from
+	// the top and is clipped by the box bounds.
 	surface.SetDrawColor( c_tbbg.r, c_tbbg.g, c_tbbg.b, c_tbbg.a )
-	surface.DrawRect( ax, ay, aw, bottom - ay )
-	surface.DrawOutline( ax, ay, aw, bottom - ay, c_bor )
+	surface.DrawRect( ax, ay, aw, ah )
+	surface.DrawOutline( ax, ay, aw, ah, c_bor )
 
 	self:RebuildControls()
 
