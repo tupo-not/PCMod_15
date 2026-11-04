@@ -750,7 +750,7 @@ end
 function DRV:HandleWebRequest( packet )
 	local path = (packet.Body && packet.Body[2]) or ""
 	self:ApplyWebQuery( path )
-	local page = self:GetWebPage()
+	local page = self:GetWebPage( path )
 	local src = self.Entity:GetSourceAddress( packet.Source ) or self.Entity:GetFullIP()
 	if (!src) then return false end
 	packet.Delivered = true

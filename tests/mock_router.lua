@@ -163,4 +163,9 @@ assertTrue( sent and sent.port == 80 and sent.body[1] == "http-response", "web r
 assertEq( sent.src, "192.168.5.1", "web reply sourced from router" )
 assertTrue( req.Delivered == true, "request marked delivered" )
 
+-- The request path selects the sub-page.
+local req2 = { Source = "10.0.1.2", Body = { "http", "/wifi" } }
+DRV:HandleWebRequest( req2 )
+assertTrue( string.find( sent.body[2], 'name="wpass"', 1, true ) ~= nil, "wifi sub-page served for /wifi" )
+
 print( "ALL ROUTER IPV6 TESTS PASSED" )
