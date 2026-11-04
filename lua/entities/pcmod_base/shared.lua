@@ -403,7 +403,7 @@ if (SERVER) then
 				PCMod.Data[ self:EntIndex() ].IP.Full = "192.168."..tmp.Sub.."."..tmp.Add
 				self:SetNWString( "IP", PCMod.Data[ self:EntIndex() ].IP.Full )
 				// Emulated dual-stack address (see PCMod.IPv6 in sh_common.lua).
-				// The LAN is a /64; .0 is the router/gateway, .1+ are hosts.
+				// The LAN is a /64; .1 is the router/gateway, .2+ are hosts.
 				tmp.V6 = PCMod.IPv6.FromIPv4( tmp.Full )
 				tmp.V6Prefix = tmp.V6 && PCMod.IPv6.GetPrefix( tmp.V6, 64 ) or false
 				tmp.V6Link = tmp.V6 && PCMod.IPv6.LinkLocal( tmp.V6 ) or false

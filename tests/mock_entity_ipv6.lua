@@ -75,18 +75,18 @@ local function assertTrue( v, msg )
 	if (not v) then error( "FAILED: " .. msg, 2 ) end
 end
 
--- LAN: 192.168.5.2 -> fd00:c0:a8:5::3 (gateway .0 -> ::1, hosts .1+ -> ::2+)
+-- LAN: 192.168.5.2 -> fd00:c0:a8:5::2 (gateway .1 -> ::1, hosts .2+ -> ::2+)
 ent:SetSubnet( 5 )
 ent:SetIP( 2 )
 assertEq( ent:GetFullIP(), "192.168.5.2", "IPv4 LAN address" )
-assertEq( ent:GetIPv6(), "fd00:c0:a8:5::3", "emulated IPv6 LAN address" )
+assertEq( ent:GetIPv6(), "fd00:c0:a8:5::2", "emulated IPv6 LAN address" )
 assertEq( ent:GetIPv6Prefix(), "fd00:c0:a8:5::/64", "LAN /64 prefix" )
 assertEq( ent:GetIPv6Gateway(), "fd00:c0:a8:5::1", "LAN gateway" )
-assertEq( ent:GetIPv6LinkLocal(), "fe80::3", "LAN link-local" )
+assertEq( ent:GetIPv6LinkLocal(), "fe80::2", "LAN link-local" )
 assertEq( nw[ "IP" ], "192.168.5.2", "IPv4 NW string" )
-assertEq( nw[ "IPv6" ], "fd00:c0:a8:5::3", "IPv6 NW string" )
+assertEq( nw[ "IPv6" ], "fd00:c0:a8:5::2", "IPv6 NW string" )
 assertEq( nw[ "IPv6.Prefix" ], "fd00:c0:a8:5::/64", "IPv6 prefix NW string" )
-assertEq( nw[ "IPv6.LinkLocal" ], "fe80::3", "IPv6 link-local NW string" )
+assertEq( nw[ "IPv6.LinkLocal" ], "fe80::2", "IPv6 link-local NW string" )
 
 -- Backbone: 10.0.3.1 -> fd00:a:0:3::2
 ent:SetBSubnet( 3 )
@@ -99,9 +99,9 @@ assertEq( ent:GetBIPv6LinkLocal(), "fe80::2", "backbone link-local" )
 
 -- Exact-address matching accepts every supported representation.
 assertTrue( ent:IsAddressedTo( "192.168.5.2" ), "LAN IPv4 matches" )
-assertTrue( ent:IsAddressedTo( "fd00:c0:a8:5::3" ), "LAN IPv6 matches" )
-assertTrue( ent:IsAddressedTo( "fd00:c0:a8:5:0:0:0:3" ), "expanded LAN IPv6 matches" )
-assertTrue( ent:IsAddressedTo( "[fd00:c0:a8:5::3]" ), "bracketed LAN IPv6 matches" )
+assertTrue( ent:IsAddressedTo( "fd00:c0:a8:5::2" ), "LAN IPv6 matches" )
+assertTrue( ent:IsAddressedTo( "fd00:c0:a8:5:0:0:0:2" ), "expanded LAN IPv6 matches" )
+assertTrue( ent:IsAddressedTo( "[fd00:c0:a8:5::2]" ), "bracketed LAN IPv6 matches" )
 assertTrue( ent:IsAddressedTo( "::ffff:192.168.5.2" ), "mapped LAN IPv4 matches" )
 assertTrue( ent:IsAddressedTo( "10.0.3.1" ), "backbone IPv4 matches" )
 assertTrue( ent:IsAddressedTo( "fd00:a:0:3::2" ), "backbone IPv6 matches" )
@@ -121,18 +121,18 @@ assertTrue( ent:IsInIPv6Subnet( "fd00:a:0:3::99", true ), "backbone prefix membe
 PCMod.Data[ 1 ].IP.V6 = nil
 PCMod.Data[ 1 ].IP.V6Prefix = nil
 PCMod.Data[ 1 ].IP.V6Link = nil
-assertEq( ent:GetIPv6(), "fd00:c0:a8:5::3", "lazy IPv6 derivation" )
+assertEq( ent:GetIPv6(), "fd00:c0:a8:5::2", "lazy IPv6 derivation" )
 assertEq( ent:GetIPv6Prefix(), "fd00:c0:a8:5::/64", "lazy prefix derivation" )
-assertEq( ent:GetIPv6LinkLocal(), "fe80::3", "lazy link-local derivation" )
+assertEq( ent:GetIPv6LinkLocal(), "fe80::2", "lazy link-local derivation" )
 PCMod.Data[ 1 ].IP.Back.V6 = nil
 PCMod.Data[ 1 ].IP.Back.V6Prefix = nil
 PCMod.Data[ 1 ].IP.Back.V6Link = nil
 assertEq( ent:GetBIPv6(), "fd00:a:0:3::2", "lazy backbone IPv6 derivation" )
 assertEq( ent:GetBIPv6Prefix(), "fd00:a:0:3::/64", "lazy backbone prefix" )
 
--- Router-style host 0 becomes the ::1 gateway.
-ent:SetIP( 0 )
-assertEq( ent:GetFullIP(), "192.168.5.0", "IPv4 gateway address" )
+-- Router-style host .1 becomes the ::1 gateway.
+ent:SetIP( 1 )
+assertEq( ent:GetFullIP(), "192.168.5.1", "IPv4 gateway address" )
 assertEq( ent:GetIPv6(), "fd00:c0:a8:5::1", "IPv6 gateway address" )
 
 -- Clearing an address must clear every derived field.

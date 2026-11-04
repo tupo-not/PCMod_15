@@ -85,6 +85,9 @@ PCMod Improvement TODO List
   an already-running program raises its existing window
 - DONE: Windows can be resized by dragging the bottom-right grip; the layout
   rebuilds live and "win_resize" stores the size/server-side
+- DONE: LAN addressing renumbered: the router is 192.168.x.1 (its IPv6 is the
+  /64's ::1 gateway) and PCs are assigned .2, .3, ...; dropped the legacy
+  one-octet-per-group IPv6 form and the old .0 gateway mapping
 - DONE: Control Panel Network page now scans and lists nearby wireless routers
   (name, distance, signal %), lets the user connect with the router's Wi-Fi
   password (default 123), and disconnect; the PC routes over the air through

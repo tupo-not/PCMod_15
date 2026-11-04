@@ -185,7 +185,7 @@ function PCMod.Network.RegisterRouter( ent )
 		end
 		PCMod.Network.Subnets[ id ] = rtr
 		rtr.Ent:SetSubnet( id )
-		rtr.Ent:SetIP( 0 )
+		rtr.Ent:SetIP( 1 )
 	end
 
 	PCMod.Msg( "Registered router "..ent:EntIndex()..back.." and aquired subnet "..id, true )
@@ -211,7 +211,7 @@ function PCMod.Network.UnRegisterRouter( ent )
 		PCMod.Network.Availible.Back[ res[ 1 ] ] = true
 		back = "(Backbone)"
 	else
-		for i = 1, 4 do
+		for i = 2, 5 do
 			if (PCMod.Network.Subnets[ res[ 1 ] ].LAN[ i ]) then
 				PCMod.Network.UnRegisterPC( PCMod.Network.Subnets[ res[ 1 ] ].LAN[ i ].Ent, res[ 1 ], false )
 			end
@@ -322,7 +322,7 @@ function PCMod.Network.RegisterPC( ent, subnet, backbone )
 					return
 				end
 			end
-			for i = 1, 4 do
+			for i = 2, 5 do
 				if (!PCMod.Network.Subnets[ subnet ].LAN[ i ]) then
 					PCMod.Network.Subnets[ subnet ].LAN[ i ] = pc
 					pc.Ent:SetSubnet( subnet )
@@ -364,7 +364,7 @@ function PCMod.Network.UnRegisterPC( ent, subnet, backbone )
 		end
 	else
 		if (!PCMod.Network.Subnets[ subnet ]) then return end
-		for i = 1, 4 do
+		for i = 2, 5 do
 			if (PCMod.Network.Subnets[ subnet ].LAN[ i ] && PCMod.Network.Subnets[ subnet ].LAN[ i ].EntID == ent:EntIndex()) then
 				PCMod.Network.Subnets[ subnet ].LAN[ i ] = nil
 				ent:SetSubnet( false )

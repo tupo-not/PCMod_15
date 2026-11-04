@@ -241,8 +241,8 @@ end
 //
 // Examples:
 //
-//   192.168.5.0 (router)  ->  fd00:c0:a8:5::1
-//   192.168.5.1 (first PC) ->  fd00:c0:a8:5::2
+//   192.168.5.1 (router)  ->  fd00:c0:a8:5::1
+//   192.168.5.2 (first PC) ->  fd00:c0:a8:5::2
 //   10.0.3.0    (router)  ->  fd00:a:0:3::1
 //   10.0.3.1    (first PC) ->  fd00:a:0:3::2
 //
@@ -372,7 +372,7 @@ function PCMod.IPv6.Normalize( addr )
 end
 
 // Build the emulated IPv6 address for an IPv4 address string.
-// Routers (.0) become the ::1 gateway, hosts are ::2, ::3, ...
+// Routers (.1) become the ::1 gateway, hosts are ::2, ::3, ...
 // Addresses outside PCMod's LAN/backbone space use the standard mapped form.
 function PCMod.IPv6.FromIPv4( ip )
 	if (type( ip ) != "string") then return nil end
@@ -382,12 +382,14 @@ function PCMod.IPv6.FromIPv4( ip )
 	if ((!a) || (!b) || (!c) || (!d)) then return nil end
 	if ((a > 255) || (b > 255) || (c > 255) || (d > 255)) then return nil end
 	if ((a == 127) && (b == 0) && (c == 0) && (d == 1)) then return "::1" end
-	// Same host numbering as the IPv4 network: .0 is the gateway, .1.. are PCs.
-	local iid = (d == 0) and 1 or (d + 1)
+	// Host numbering: on a LAN the router is .1 and hosts are .2.., and the
+	// IPv6 interface id uses the same octet. On the backbone the gateway stays
+	// .0 and hosts are .1.. so its id is the octet + 1.
 	if ((a == 192) && (b == 168)) then
-		return PCMod.IPv6.Format( { 0xfd00, 0xc0, 0xa8, c, 0, 0, 0, iid } )
+		return PCMod.IPv6.Format( { 0xfd00, 0xc0, 0xa8, c, 0, 0, 0, d } )
 	end
 	if ((a == 10) && (b == 0)) then
+		local iid = (d == 0) and 1 or (d + 1)
 		return PCMod.IPv6.Format( { 0xfd00, 0xa, 0, c, 0, 0, 0, iid } )
 	end
 	// Any other IPv4 address is represented in the standard mapped form.
@@ -413,15 +415,19 @@ function PCMod.IPv6.ToIPv4( addr )
 		return string.format( "%d.%d.%d.%d", math.floor( g[7] / 256 ), g[7] % 256, math.floor( g[8] / 256 ), g[8] % 256 )
 	end
 	// Emulated ULA space: fd00:c0:a8:<subnet>::<iid> (LAN) and
-	// fd00:a:0:<subnet>::<iid> (backbone). The older one-octet-per-group
-	// form (fd00:c0:a8:<subnet>:<host>::1) is still accepted.
+	// fd00:a:0:<subnet>::<iid> (backbone), in the compact form.
 	if (g[1] == 0xfd00) then
 		local subnet = g[4]
 		local host = nil
+		local lan = (g[2] == 0xc0) && (g[3] == 0xa8)
 		if ((g[5] == 0) && (g[6] == 0) && (g[7] == 0)) then
-			host = (g[8] == 1) and 0 or (g[8] - 1)
-		elseif ((g[6] == 0) && (g[7] == 0) && (g[8] == 1)) then
-			host = g[5]
+			// On a LAN the gateway is .1 and hosts are .2..; on the backbone
+			// the gateway stays .0 and hosts are .1..
+			if (lan) then
+				host = g[8]
+			else
+				host = (g[8] == 1) and 0 or (g[8] - 1)
+			end
 		end
 		if ((host != nil) && (subnet <= 255) && (host >= 0) && (host <= 255)) then
 			if ((g[2] == 0xc0) && (g[3] == 0xa8)) then

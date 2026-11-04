@@ -188,7 +188,6 @@ function DEV:Paint( x, y, w, h )
 		self:RenderText( x+(w*0.6425), y+(h*0.105), { "Network Settings & Status" }, Color( 0, 0, 0, 255 ), 1 )
 		self:RenderText( x+(w*0.465), y+(h*0.16), { "Status" }, Color( 0, 0, 0, 255 ), 1 )
 		self:RenderText( x+(w*0.7975), y+(h*0.16), { "Wireless Networks" }, Color( 0, 0, 0, 255 ), 1 )
-		self:RenderText( x+(w*0.465), y+(h*0.90), { "Addresses are assigned by the connected router." }, Color( 0, 0, 0, 255 ), 1 )
 		local wf = self.Wifi
 		local wstat = "Not connected."
 		if (wf && wf.Connected) then

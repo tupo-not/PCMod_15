@@ -176,7 +176,7 @@ function DRV:ProcessPacket( pid, pass )
 		local sip = "n/a"
 		local sid = "n/a"
 		if (self.Entity:GetClass() == "pcmod_router") then
-			sip = "192.168." .. tostring( self.Entity:GetSubnet() ) .. ".0"
+			sip = "192.168." .. tostring( self.Entity:GetSubnet() ) .. ".1"
 			sid = "RTR"
 		end
 		if (self.Entity:GetClass() == "pcmod_brouter") then
