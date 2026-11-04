@@ -86,9 +86,10 @@ function DEV:InitializeOS( x, y, w, h )
 end
 
 function DEV:InitializeNetwork( x, y, w, h )
-	self:CreateListbox( self.Th, "lstNetInfo", x+(w*0.325), y+(h*0.20), w*0.635, h*0.43 ).LeftAlign = true
-	self:CreateButton2( self.Th, "btnRefreshNetwork", x+(w*0.325), y+(h*0.68), w*0.30, h*0.07, "Refresh Information" )
-	self:CreateButton2( self.Th, "btnNetTools", x+(w*0.66), y+(h*0.68), w*0.30, h*0.07, "Network Tools" )
+	self:CreateListbox( self.Th, "lstNetInfo", x+(w*0.325), y+(h*0.21), w*0.28, h*0.50 ).LeftAlign = true
+	self:CreateListbox( self.Th, "lstWireless", x+(w*0.63), y+(h*0.21), w*0.335, h*0.50 ).LeftAlign = true
+	self:CreateButton2( self.Th, "btnRefreshNetwork", x+(w*0.325), y+(h*0.76), w*0.28, h*0.07, "Refresh" )
+	self:CreateButton2( self.Th, "btnNetTools", x+(w*0.63), y+(h*0.76), w*0.335, h*0.07, "Network Tools" )
 end
 
 function DEV:InitializeIO( x, y, w, h )
@@ -150,8 +151,26 @@ function DEV:BuildDevices()
 	if (count == 0) then self:AddListboxItem( "lstDevices", "none", "No identified USB devices." ) end
 end
 
+function DEV:BuildWireless()
+	if ((!self.Listboxes) || (!self.Listboxes[ "lstWireless" ])) then return end
+	self:ClearListbox( "lstWireless" )
+	local count = 0
+	for _, w in pairs( self.Wireless or {} ) do
+		if (w && w.EntIndex) then
+			count = count + 1
+			local key = tostring( w.EntIndex )
+			// Simplify the router class name into a friendly label.
+			local name = "Router"
+			if (w.Class == "pcmod_brouter") then name = "Backbone Router" end
+			self:AddListboxItem( "lstWireless", key, name .. " #" .. key .. "  |  " .. tostring( w.Distance or 0 ) .. "m  |  Signal " .. tostring( w.Signal or 0 ) .. "%" )
+		end
+	end
+	if (count == 0) then self:AddListboxItem( "lstWireless", "none", "No wireless networks in range." ) end
+end
+
 function DEV:OnUpdate()
 	self:BuildNetworkInfo()
+	self:BuildWireless()
 	self:BuildDevices()
 end
 
@@ -160,8 +179,9 @@ function DEV:Paint( x, y, w, h )
 	self:RenderText( x+(w*0.15), y+(h*0.105), { "Categories" }, Color( 0, 0, 0, 255 ), 1 )
 	if (self.Section == "network") then
 		self:RenderText( x+(w*0.6425), y+(h*0.105), { "Network Settings & Status" }, Color( 0, 0, 0, 255 ), 1 )
-		self:RenderText( x+(w*0.6425), y+(h*0.79), { "Use Network Tools for ping and route tracing." }, Color( 0, 0, 0, 255 ), 1 )
-		self:RenderText( x+(w*0.6425), y+(h*0.86), { "Addresses are assigned by the connected router." }, Color( 0, 0, 0, 255 ), 1 )
+		self:RenderText( x+(w*0.465), y+(h*0.16), { "Status" }, Color( 0, 0, 0, 255 ), 1 )
+		self:RenderText( x+(w*0.7975), y+(h*0.16), { "Wireless Networks" }, Color( 0, 0, 0, 255 ), 1 )
+		self:RenderText( x+(w*0.6425), y+(h*0.90), { "Addresses are assigned by the connected router." }, Color( 0, 0, 0, 255 ), 1 )
 	elseif (self.Section == "io") then
 		self:RenderText( x+(w*0.6425), y+(h*0.105), { "Input / Output Devices" }, Color( 0, 0, 0, 255 ), 1 )
 		self:RenderText( x+(w*0.6425), y+(h*0.90), { "Identified USB devices connected to this computer." }, Color( 0, 0, 0, 255 ), 1 )
@@ -170,7 +190,7 @@ function DEV:Paint( x, y, w, h )
 		self:RenderText( x+(w*0.475), y+(h*0.17), { "Theme" }, Color( 0, 0, 0, 255 ), 1 )
 		self:RenderText( x+(w*0.81), y+(h*0.17), { "GUI Scale" }, Color( 0, 0, 0, 255 ), 1 )
 		self:RenderText( x+(w*0.81), y+(h*0.59), { "Current: " .. ScaleLabel( CurrentGuiScale() ) }, Color( 0, 0, 0, 255 ), 1 )
-		self:RenderText( x+(w*0.485), y+(h*0.755), { "Security" }, Color( 0, 0, 0, 255 ), 1 )
+		self:RenderText( x+(w*0.485), y+(h*0.73), { "Security" }, Color( 0, 0, 0, 255 ), 1 )
 		if (self.PWE == 1) then self:RenderError( self.Th, x+(w*0.81), y+(h*0.90), "Old password wrong!" ) end
 		if (self.PWE == 2) then self:RenderText( x+(w*0.81), y+(h*0.90), { "Password changed!" }, Color( 0, 0, 0, 255 ), 1 ) end
 	end

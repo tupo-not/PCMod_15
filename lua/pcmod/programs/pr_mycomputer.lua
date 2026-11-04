@@ -29,6 +29,40 @@ function PROG:RefreshNetwork()
 		Gateway = os:GetIPv6Gateway(),
 		LinkLocal = os:GetIPv6LinkLocal()
 	}
+	self:RefreshWireless()
+end
+
+// Scan for wireless routers this computer could reach. The PC itself links to
+// a router by cable; these are the nearby Wi-Fi networks it is in range of.
+function PROG:RefreshWireless()
+	local selfEnt = self.Entity
+	if ((!selfEnt) || (!selfEnt:IsValid())) then self.DeviceData.Wireless = {} return end
+	local range = (PCMod.Cfg && PCMod.Cfg.WirelessRange) || 0
+	local ets
+	if (range > 0) then
+		ets = ents.FindInSphere( selfEnt:GetPos(), range )
+	else
+		ets = ents.FindByClass( "pcmod_router" )
+	end
+	local out = {}
+	for _, ent in pairs( ets or {} ) do
+		if ((ent) && (ent != selfEnt) && (ent:IsValid()) && (ent.IsPCMod)) then
+			local data = (ent.Data && ent:Data()) or nil
+			if (data && data.IsWireless) then
+				local dist = math.floor( (ent:GetPos() - selfEnt:GetPos()):Length() + 0.5 )
+				local signal = 100
+				if (range > 0) then signal = math.max( 0, math.floor( (1 - (dist / range)) * 100 ) ) end
+				table.insert( out, {
+					Class = ent:GetClass(),
+					EntIndex = ent:EntIndex(),
+					Distance = dist,
+					Signal = signal
+				} )
+			end
+		end
+	end
+	table.sort( out, function( a, b ) return (a.Distance < b.Distance) end )
+	self.DeviceData.Wireless = out
 end
 
 function PROG:RefreshDevices()

@@ -85,6 +85,9 @@ PCMod Improvement TODO List
   an already-running program raises its existing window
 - DONE: Windows can be resized by dragging the bottom-right grip; the layout
   rebuilds live and "win_resize" stores the size/server-side
+- DONE: Control Panel Network page now scans and lists nearby wireless routers
+  (name, distance, signal %), and the OS refresh command returns them alongside
+  the interface information
 - DONE: The Control Panel's Network page (and Net-Tools) now show the full
   dotted-quad IPv4 address via OS:GetFullIP / Network:GetFullIP instead of the
   bare host octet, the default GUI scale is 0.5 (50%), and the category list

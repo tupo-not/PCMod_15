@@ -24,11 +24,30 @@ function table.Copy( t )
     return o
 end
 
-PCMod = { Data = { [1] = { Password = "old", HardDrive = {} } }, Msg = function() end, Cfg = {} }
+PCMod = { Data = { [1] = { Password = "old", HardDrive = {} } }, Msg = function() end, Cfg = { WirelessRange = 1024 } }
 util = { Compress = function( s ) return s end }
 local ent = {}
 function ent:EntIndex() return 1 end
 function ent:IsValid() return true end
+
+-- Wireless scan helpers: two fake routers in range (FindInSphere is chosen
+-- because cfg.WirelessRange > 0).
+local VecMT = { __sub = function() return { Length = function() return 120 end } end }
+local function Vec() return setmetatable( {}, VecMT ) end
+function ent:GetPos() return Vec() end
+local function makeWireless( idx, cls, wireless )
+    local o = { IsPCMod = true, Idx = idx, Cls = cls, Wl = wireless }
+    function o:IsValid() return true end
+    function o:EntIndex() return self.Idx end
+    function o:GetClass() return self.Cls end
+    function o:Data() return { IsWireless = self.Wl } end
+    function o:GetPos() return Vec() end
+    return o
+end
+ents = {
+    FindInSphere = function() return { makeWireless( 11, "pcmod_router", true ), makeWireless( 12, "pcmod_router", false ), makeWireless( 13, "pcmod_router", true ) } end,
+    FindByClass = function() return {} end,
+}
 
 local os = {}
 function os:GetIP() return 2 end
@@ -72,6 +91,10 @@ assertEq( prog.DeviceData.Net.Prefix, "fd00:c0:a8:1::/64", "IPv6 prefix data" )
 assertEq( prog.DeviceData.Net.Gateway, "fd00:c0:a8:1::1", "gateway data" )
 assertEq( #prog.DeviceData.Dvs, 2, "only identified USB devices returned" )
 assertTrue( os.Refreshed, "USB data refreshed" )
+assertEq( #prog.DeviceData.Wireless, 2, "only wireless routers in range returned" )
+assertEq( prog.DeviceData.Wireless[ 1 ].Distance, 120, "wireless distance" )
+assertEq( prog.DeviceData.Wireless[ 1 ].Signal, 88, "wireless signal percentage" )
+assertEq( prog.DeviceData.Wireless[ 1 ].Class, "pcmod_router", "wireless router class" )
 
 prog:DoCommand( "changepass", { "wrong", "new" } )
 assertEq( PCMod.Data[ 1 ].Password, "old", "wrong old password rejected" )
