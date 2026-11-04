@@ -1,4 +1,8 @@
 VertexLitGeneric
 {
-	"$basetexture"	"models\PCMod\cddvd\CDDVD"
+	// The original CDDVD.vtf artwork was never shipped with the addon, so the
+	// disk label reuses the existing black texture from the same folder.
+	// If the original artwork is restored as cddvd.vtf, point this back to it.
+	"$basetexture"	"models\PCMod\cddvd\black"
+	"$envmap" "env_cubemap"
 }

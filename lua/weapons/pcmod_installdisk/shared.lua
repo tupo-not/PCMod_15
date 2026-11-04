@@ -13,8 +13,16 @@ if (CLIENT) then
 	SWEP.SlotPos = 1
 	
 	SWEP.DrawAmmo = false
-	SWEP.DrawCrosshair = false
-	
+	// DrawCrosshair must be true so that WEAPON:DoDrawCrosshair is called and
+	// draws our custom minimalistic crosshair instead of the default one.
+	// See https://wiki.facepunch.com/gmod/WEAPON:DoDrawCrosshair
+	SWEP.DrawCrosshair = true
+
+	// No hands: the CD model is used directly as the viewmodel and has no hand
+	// bones; do not let the gamemode draw the separate gmod_hands entity.
+	// See https://wiki.facepunch.com/gmod/Using_Viewmodel_Hands
+	SWEP.UseHands = false
+
 end
 
 if (SERVER) then
@@ -31,13 +39,18 @@ end
 SWEP.Spawnable = false
 SWEP.AdminSpawnable = false
 
-SWEP.ViewModel = "models/weapons/v_c4.mdl"
-SWEP.WorldModel = "models/weapons/w_c4.mdl"
+// The CD model itself is the viewmodel: no C4 mesh, no hands, and no need to
+// touch the shared viewmodel entity of other weapons.
+SWEP.ViewModel = "models/pcmod/pcmodinstall.mdl"
+SWEP.WorldModel = "models/pcmod/pcmodinstall.mdl"
 
 util.PrecacheModel( SWEP.ViewModel )
 util.PrecacheModel( SWEP.WorldModel )
 
-SWEP.HoldType = "pistol"
+// One-handed hold pose for the player model; the CD viewmodel has no
+// animations of its own, so the pose does not need viewmodel sequences.
+// See https://wiki.facepunch.com/gmod/Hold_Types
+SWEP.HoldType = "slam"
 
 SWEP.Primary.ClipSize = -1
 SWEP.Primary.DefaultClip = -1
@@ -62,12 +75,10 @@ SWEP.PackName = ""
 SWEP.LabelPos = 0
 SWEP.ZipRat = 0.25
 
-if (SERVER) then
-
-	function SWEP:Initialize()
+function SWEP:Initialize()
+	if (SERVER) then
 		self:SetWeaponHoldType( self.HoldType )
 	end
-	
 end
 
 function SWEP:Reset()
@@ -115,30 +126,71 @@ function SWEP:Think()
 	end
 end
 
+function SWEP:Holster()
+	return true
+end
+
+function SWEP:CalcViewModelView( vm, oldPos, oldAng, pos, ang )
+	// pcmodinstall.mdl geometry (parsed from the MDL hull): the disc is thin
+	// along local X (0.47) and wide in Y/Z (7.77 x 8.77), so the disc lies in
+	// its local YZ plane and the face normal is local +X, diameter ~8.8 units.
+	//
+	// Orientation: adding pitch -90 to the view angles maps local +X to world
+	// +Z, i.e. the face points straight up; the current offset Angle(-100,-18,-10)
+	// tilts the face toward the player and adds slight yaw/roll. If the labelled
+	// side turns out to face down, mirror the pitch sign (+90/+100).
+	//
+	// Position/size: at the default 62 viewmodel FOV, ~18 units in front of the
+	// camera puts the ~8.8-unit disc at roughly 20-25% of screen width (16:9).
+	// Right*5 + Up*-4 moves it to the lower-right corner, keeping the crosshair
+	// free. No SetModelScale on the shared viewmodel entity is used.
+	// Note: this hook only works if GM:CalcViewModelView is not overridden.
+	// See https://wiki.facepunch.com/gmod/WEAPON:CalcViewModelView
+	return pos + ang:Forward() * 18 + ang:Right() * 5 + ang:Up() * -4,
+		ang + Angle( -100, -18, -10 )
+end
+
 function SWEP:PrimaryAttack()
 	local tr = self.Owner:GetEyeTrace()
-	if ((tr.HitPos - self.Owner:GetPos()):Length() > 128) then return end
+	if ((tr.HitPos - self.Owner:GetPos()):Length() > 128) then
+		if (CLIENT) then PCMod.Gui.Notify( "Too far", true ) end
+		return
+	end
 	local ent = tr.Entity
 	if ((tr.HitWorld) || (!ent) || (!ent:IsValid())) then
-		if (CLIENT) then PCMod.Notice( "You must be looking at an object!" ) end
+		if (CLIENT) then PCMod.Gui.Notify( "Aim at a PC", true ) end
 		return
 	end
 	if ((!ent.IsPCMod) || ((ent.Class != "pcmod_tower") && (ent.Class != "pcmod_laptop"))) then
-		if (CLIENT) then PCMod.Notice( "You must be looking at a PC Tower!" ) end
+		if (CLIENT) then PCMod.Gui.Notify( "Aim at a PC", true ) end
 		return
 	end
-	if (CLIENT) then return true end -- Client stops here
+	if (CLIENT) then return true end -- Client stops here; the server decides
 	local prog = self.Programs[ self.SelProg ]
 	if ((!prog) || (prog == "")) then
-		PCMod.Notice( "No selected program!", self.Owner )
+		self.Owner:SendLua( 'PCMod.Gui.Notify( "No program selected", true );' )
 		return
 	end
+	// All install restrictions are enforced authoritatively on the server inside
+	// ENT:InstallProgram -> OS:InstallProgram (device/OS compatibility, OS
+	// presence, duplicates, validity). Here we only map its real result to the
+	// notification text: false = the target PC has no OS installed.
 	local result = ent:InstallProgram( prog )
-	if (type(result) == "string") then
-		PCMod.Notice( result, self.Owner )
+	if (result == false) then
+		self.Owner:SendLua( 'PCMod.Gui.Notify( "No operating system", true );' )
 		return
 	end
-	self.Owner:SendLua( "PCMod.Gui.FlashIcon( \"gui/icons/ico_app\", 1 );" )
+	if (type(result) == "string") then
+		local msg = "Installation failed"
+		if (string.find( result, "already" )) then msg = "Already installed"
+		elseif (string.find( result, "invalid" )) then msg = "Invalid program"
+		elseif (string.find( result, "operating system" )) then msg = "Incompatible device"
+		elseif (string.find( result, "denied" )) then msg = "No operating system"
+		end
+		self.Owner:SendLua( string.format( 'PCMod.Gui.Notify( "%s", true );', msg ) )
+		return
+	end
+	self.Owner:SendLua( 'PCMod.Gui.Notify( "Installed", false );' )
 	local snd = self.Primary.SoundEffect
 	if ((snd) && (snd != "")) then self:EmitSound( snd ) end
 end
@@ -153,23 +205,44 @@ function SWEP:SecondaryAttack()
 	if ((snd) && (snd != "")) then self:EmitSound( snd ) end
 end
 
+function SWEP:DoDrawCrosshair( x, y )
+	if (!CLIENT) then return true end
+	// Minimalistic PCMod-style crosshair: 4 teal corner brackets + a small light
+	// center dot, ~16 px total, thin lines, dark outline for readability on light
+	// surfaces. Pixel-fixed size, so it looks the same at any resolution.
+	// The old cross bars were removed from DrawHUD, and returning true here
+	// suppresses the default engine crosshair.
+	// See https://wiki.facepunch.com/gmod/WEAPON:DoDrawCrosshair
+	local s = 8 // half-size: brackets sit at +-8 px from the center
+	local a = 4 // bracket arm length
+	local teal = Color( 0, 255, 220, 255 )
+	local dark = Color( 0, 0, 0, 180 )
+	local dot = Color( 240, 255, 255, 255 )
+	local function brackets( ox, oy, col )
+		surface.SetDrawColor( col )
+		for _, dx in ipairs( { -1, 1 } ) do
+			for _, dy in ipairs( { -1, 1 } ) do
+				local cx = x + ox + dx * s
+				local cy = y + oy + dy * s
+				surface.DrawLine( cx, cy, cx - dx * a, cy ) // horizontal arm
+				surface.DrawLine( cx, cy, cx, cy - dy * a ) // vertical arm
+			end
+		end
+	end
+	brackets( 1, 1, dark ) // outline pass, offset by 1 px
+	brackets( 0, 0, teal )
+	surface.SetDrawColor( dark )
+	surface.DrawRect( x - 2, y - 2, 4, 4 ) // dot outline
+	surface.SetDrawColor( dot )
+	surface.DrawRect( x - 1, y - 1, 2, 2 ) // center dot
+	return true
+end
+
 function SWEP:DrawHUD()
 	if (SERVER) then return end
 	
 	local w = ScrW()
 	local h = ScrH()
-	
-	// Draw the crosshair
-	local tr = self.Owner:GetEyeTrace()
-	local sel = false
-	if ((tr.HitPos - self.Owner:GetPos()):Length() < 128) then
-		if ((!tr.HitWorld) && (tr.Entity) && (tr.Entity:IsValid()) && (tr.Entity.IsPCMod)) then sel = true end
-	end		
-	local col = Color( 255, 255, 255, 255 )
-	if (sel) then col = Color( 255, 0, 0, 255 ) end
-	surface.SetDrawColor( col.r, col.g, col.b, col.a )
-	surface.DrawRect( w * 0.475, h * 0.4975, w * 0.05, h * 0.005 )
-	surface.DrawRect( w * 0.4975, h * 0.475, w * 0.005, h * 0.05 )
 	
 	// Draw the select menu
 	if (#self.Programs > 0) then

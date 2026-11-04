@@ -1,3 +1,4 @@
+
 #!/usr/bin/env python3
 """Build the Lua 5.1 fixture copies used by the mock test suites.
 
@@ -57,6 +58,7 @@ CHECK_ONLY = [
     "pcmod/drivers/drv_network.lua",
     "entities/pcmod_router/shared.lua",
     "pcmod/ssdevices/dev_win_browser.lua",
+    "weapons/pcmod_installdisk/shared.lua",
 ]
 
 
