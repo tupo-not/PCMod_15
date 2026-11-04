@@ -68,10 +68,10 @@ function DEV:RebuildControls()
 		if (c.kind == "input") then
 			self:CreateTextbox( self.Th, c.gname, c.cx, c.cy, c.w, c.h, "" )
 			self:SetTextboxText( c.gname, c.value or "" )
-			table.insert( self.CreatedCtrl, { kind = "input", gname = c.gname, name = c.name } )
+			table.insert( self.CreatedCtrl, { kind = "input", gname = c.gname, name = c.name, form = c.form or 0 } )
 		elseif (c.kind == "submit") then
 			self:CreateButton2( self.Th, c.gname, c.x, c.y, c.w, c.h, c.t or "Save" )
-			table.insert( self.CreatedCtrl, { kind = "submit", gname = c.gname } )
+			table.insert( self.CreatedCtrl, { kind = "submit", gname = c.gname, form = c.form or 0 } )
 		end
 	end
 end
@@ -114,11 +114,11 @@ function DEV:Paint( x, y, w, h )
 			if (sp.kind == "input") then
 				inCount = inCount + 1
 				local gname = "inp_" .. inCount
-				table.insert( self.Ctrl, { kind = "input", gname = gname, name = sp.name, value = sp.value, cx = xcur + (inW * 0.5), cy = ypix + (th * 0.5), w = inW, h = th } )
+				table.insert( self.Ctrl, { kind = "input", gname = gname, name = sp.name, value = sp.value, form = sp.form or 0, cx = xcur + (inW * 0.5), cy = ypix + (th * 0.5), w = inW, h = th } )
 				xcur = xcur + inW + 4
 			elseif (sp.kind == "submit") then
 				btnCount = btnCount + 1
-				table.insert( self.Ctrl, { kind = "submit", gname = "btn_" .. btnCount, x = xcur, y = ypix, w = subW, h = th, t = sp.t } )
+				table.insert( self.Ctrl, { kind = "submit", gname = "btn_" .. btnCount, x = xcur, y = ypix, w = subW, h = th, t = sp.t, form = sp.form or 0 } )
 				xcur = xcur + subW + 4
 			else
 				table.insert( row.spans, sp )
@@ -190,11 +190,15 @@ function DEV:ButtonClick( btn )
 		self:RunProgCommand( "browser", "home" )
 		return
 	end
-	// Any submit button saves the form.
+	// Any submit button saves its own form's fields.
 	if (string.sub( btn, 1, 4 ) == "btn_") then
+		local formId = 0
+		for _, c in ipairs( self.Ctrl or {} ) do
+			if (c.kind == "submit") && (c.gname == btn) then formId = c.form or 0 end
+		end
 		local parts = {}
 		for _, c in ipairs( self.Ctrl or {} ) do
-			if (c.kind == "input") then
+			if (c.kind == "input") && ((c.form or 0) == formId) then
 				table.insert( parts, tostring( c.name ) .. "=" .. tostring( self:GetTextboxText( c.gname ) or "" ) )
 			end
 		end

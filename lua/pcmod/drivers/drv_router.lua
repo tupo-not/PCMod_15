@@ -56,21 +56,21 @@ end
 function DRV:DataRecieved( port, data )
 	PCMod.Msg( "[webgr]Checking Ports", true )
 	if (table.HasValue( self.NPorts, port )) then
-		// Data is from a network port (PC)
-		return self:Process( data )
+		// Data is from a network port (PC / LAN side).
+		return self:Process( data, "lan" )
 	end
 	if (table.HasValue( self.OPorts, port )) then
-		// Data is from a optic port (Router)
-		return self:Process( data )
+		// Data is from an optic port (router / WAN side).
+		return self:Process( data, "wan" )
 	end
 	if (port == 0) then
-		// Data is from wireless
-		if (self.Wireless) then self:Process( data ) end
+		// Data is from wireless (LAN side).
+		if (self.Wireless) then self:Process( data, "lan" ) end
 	end
 	// Data is from another port unrelated to us
 end
 
-function DRV:Process( data )
+function DRV:Process( data, side )
 	PCMod.Msg( "[webgr]Data check " .. self.Entity:GetClass() .. " " .. tostring(self.Subnet) .. " (" .. tostring(self.BSubnet) .. ")", true )
 	PCMod.Msg( table.ToString(data, "data", false), true )
 	// Round 28 (M-06): the old guard was
@@ -91,10 +91,10 @@ function DRV:Process( data )
 			PCMod.Msg( "Network packet dropped: all packet slots are in flight", true )
 			return false
 		end
-		return self:ProcessPacket( pid )
+		return self:ProcessPacket( pid, nil, side )
 	end
 	if ((tag == "deliver") && (type( body ) == "number")) then
-		return self:ProcessPacket( body, data[3] )
+		return self:ProcessPacket( body, data[3], side )
 	end
 end
 
@@ -144,7 +144,7 @@ function DRV:ClassifyDestination( dest )
 	}
 end
 
-function DRV:ProcessPacket( pid, pass )
+function DRV:ProcessPacket( pid, pass, side )
 	pass = (pass or 0) + 1
 	// Round 19 (AUDIT2 A-01): the nil guard must run BEFORE `pid > MaxNetworkPid` -
 	// comparing nil with a number raises a Lua error at language level. Order is
@@ -177,8 +177,8 @@ function DRV:ProcessPacket( pid, pass )
 		PCMod.Msg( "[webgr]Already delivered", true )
 		return
 	end -- Task completed by another router!
-	// Coarse firewall: drop traffic on non-web/non-ping ports before routing.
-	if (self:FirewallBlocks( packet.Port )) then
+	// Rules-based firewall: drop matching traffic arriving on a real interface.
+	if (side && self:FirewallBlocks( packet, side )) then
 		PCMod.Msg( "[webgr]Firewall dropped packet on port " .. tostring( packet.Port ), true )
 		return
 	end
@@ -599,6 +599,7 @@ function DRV:GetCfg()
 	if (c.Firewall == nil) then c.Firewall = false end
 	if (c.NAT == nil) then c.NAT = true end
 	if (c.Forwards == nil) then c.Forwards = {} end
+	if (c.FirewallRules == nil) then c.FirewallRules = {} end
 	return c
 end
 
@@ -612,12 +613,43 @@ function DRV:SetWireless( on )
 	if (self.Entity.SetGVar) then self.Entity:SetGVar( "wireless", on ) end
 end
 
-// Coarse firewall: when enabled the router only forwards web (80) and
-// ping/trace (0); everything else is dropped.
-function DRV:FirewallBlocks( port )
+// Rules-based firewall (blacklist). When enabled, traffic matching any rule
+// (direction + optional source/dest IP + optional port) is dropped; otherwise
+// everything passes.
+function DRV:FirewallBlocks( packet, side )
 	local c = self:GetCfg()
 	if (!c.Firewall) then return false end
-	return ((port != 0) && (port != 80))
+	local dir = (side == "wan") and "in" or "out"
+	for _, r in ipairs( c.FirewallRules or {} ) do
+		if ((r.dir == dir) || (r.dir == "any")) then
+			local m = true
+			if ((r.src != "") && (r.src != packet.Source)) then m = false end
+			if ((r.dst != "") && (r.dst != packet.Dest)) then m = false end
+			if ((r.port != 0) && (r.port != packet.Port)) then m = false end
+			if (m) then return true end
+		end
+	end
+	return false
+end
+
+function DRV:AddFirewallRule( dir, src, dst, port )
+	if ((dir != "in") && (dir != "out") && (dir != "any")) then return false end
+	src = tostring( src or "" )
+	dst = tostring( dst or "" )
+	if ((src != "") && (!PCMod.IPv6.IsIP( src ))) then return false end
+	if ((dst != "") && (!PCMod.IPv6.IsIP( dst ))) then return false end
+	local p = tonumber( port ) or 0
+	if (p < 0) then p = 0 end
+	local c = self:GetCfg()
+	c.FirewallRules = c.FirewallRules or {}
+	table.insert( c.FirewallRules, { dir = dir, src = src, dst = dst, port = p } )
+	return true
+end
+
+function DRV:DeleteFirewallRule( idx )
+	local c = self:GetCfg()
+	c.FirewallRules = c.FirewallRules or {}
+	table.remove( c.FirewallRules, idx )
 end
 
 function DRV:ApplyWebQuery( path )
@@ -634,6 +666,10 @@ function DRV:ApplyWebQuery( path )
 	if (parsed.delpf) then self:DeleteForward( parsed.delpf ) end
 	if (parsed.pfwan && parsed.pfip && parsed.pfport) then
 		self:AddForward( parsed.pfwan, parsed.pfip, parsed.pfport )
+	end
+	if (parsed.delfw) then self:DeleteFirewallRule( tonumber( parsed.delfw ) ) end
+	if (parsed.fwdir) then
+		self:AddFirewallRule( parsed.fwdir, parsed.fwsrc or "", parsed.fwdst or "", parsed.fwport or "" )
 	end
 	for k, v in pairs( parsed ) do
 		self:ApplyWebSetting( k, v )
@@ -718,7 +754,7 @@ end
 
 // Shared navigation bar linking the pages.
 function DRV:WebNav( current )
-	local items = { { "", "Home" }, { "wifi", "Wi-Fi" }, { "lan", "LAN" }, { "firewall", "Firewall" }, { "pf", "Forward" } }
+	local items = { { "", "Home" }, { "wifi", "Wi-Fi" }, { "lan", "LAN" }, { "firewall", "Firewall" } }
 	local parts = {}
 	for _, it in ipairs( items ) do
 		table.insert( parts, '<a href="/' .. it[ 1 ] .. '">' .. it[ 2 ] .. '</a>' )
@@ -806,34 +842,51 @@ end
 function DRV:PageFirewall()
 	local c = self:GetCfg()
 	local lines = {}
-	table.insert( lines, "<h1>Firewall</h1>" )
+	table.insert( lines, "<h1>Firewall & Port Forwarding</h1>" )
 	table.insert( lines, self:WebNav( "firewall" ) )
-	if (c.Firewall) then
-		table.insert( lines, '<p><b>Status:</b> on <a href="?firewall=0">[Disable]</a></p>' )
-	else
-		table.insert( lines, '<p><b>Status:</b> off <a href="?firewall=1">[Enable]</a></p>' )
-	end
-	table.insert( lines, "<p>When on, only web (80) and ping/trace (0) traffic is allowed.</p>" )
-	return table.concat( lines, "\n" )
-end
 
-function DRV:PageForward()
-	local c = self:GetCfg()
-	local lines = {}
-	table.insert( lines, "<h1>Port Forwarding</h1>" )
-	table.insert( lines, self:WebNav( "pf" ) )
-	table.insert( lines, "<h2>Rules</h2>" )
-	local count = 0
-	for wan, r in pairs( c.Forwards or {} ) do
-		count = count + 1
-		table.insert( lines, '<p>' .. tostring( wan ) .. ' -&gt; ' .. tostring( r.ip ) .. ':' .. tostring( r.port ) .. ' <a href="?delpf=' .. tostring( wan ) .. '">[Delete]</a></p>' )
+	if (c.Firewall) then
+		table.insert( lines, '<p><b>Firewall:</b> on <a href="?firewall=0">[Disable]</a></p>' )
+	else
+		table.insert( lines, '<p><b>Firewall:</b> off <a href="?firewall=1">[Enable]</a></p>' )
 	end
-	if (count == 0) then table.insert( lines, "<p>No rules.</p>" ) end
-	table.insert( lines, "<h2>Add rule</h2>" )
+	table.insert( lines, "<p>Rules block matching traffic when on (default: allow all).</p>" )
+
+	table.insert( lines, "<h2>Rules</h2>" )
+	local rc = 0
+	for i, r in ipairs( c.FirewallRules or {} ) do
+		rc = rc + 1
+		local desc = tostring( r.dir ) .. " "
+		if (r.src ~= "") then desc = desc .. r.src else desc = desc .. "any" end
+		desc = desc .. " -> "
+		if (r.dst ~= "") then desc = desc .. r.dst else desc = desc .. "any" end
+		if (r.port ~= 0) then desc = desc .. ":" .. r.port end
+		table.insert( lines, '<p>' .. desc .. ' <a href="?delfw=' .. i .. '">[Delete]</a></p>' )
+	end
+	if (rc == 0) then table.insert( lines, "<p>No rules.</p>" ) end
+	table.insert( lines, "<h3>Add rule</h3>" )
+	table.insert( lines, "<form>" )
+	table.insert( lines, '<p>Direction (in/out) <input type="text" name="fwdir" value=""></p>' )
+	table.insert( lines, '<p>Source IP (blank=any) <input type="text" name="fwsrc" value=""></p>' )
+	table.insert( lines, '<p>Dest IP (blank=any) <input type="text" name="fwdst" value=""></p>' )
+	table.insert( lines, '<p>Port (blank=any) <input type="text" name="fwport" value=""></p>' )
+	table.insert( lines, '<p><input type="submit" value="Add Rule"></p>' )
+	table.insert( lines, "</form>" )
+
+	table.insert( lines, "<h2>Port Forwarding</h2>" )
+	local pc = 0
+	for wan, r in pairs( c.Forwards or {} ) do
+		pc = pc + 1
+		table.insert( lines, '<p>' .. tostring( wan ) .. ' -> ' .. tostring( r.ip ) .. ':' .. tostring( r.port ) .. ' <a href="?delpf=' .. tostring( wan ) .. '">[Delete]</a></p>' )
+	end
+	if (pc == 0) then table.insert( lines, "<p>No rules.</p>" ) end
+	table.insert( lines, "<form>" )
 	table.insert( lines, '<p>WAN port <input type="text" name="pfwan" value=""></p>' )
 	table.insert( lines, '<p>Local IP <input type="text" name="pfip" value=""></p>' )
 	table.insert( lines, '<p>Local port <input type="text" name="pfport" value=""></p>' )
-	table.insert( lines, '<p><input type="submit" value="Add"></p>' )
+	table.insert( lines, '<p><input type="submit" value="Add Forward"></p>' )
+	table.insert( lines, "</form>" )
+
 	return table.concat( lines, "\n" )
 end
 
@@ -843,7 +896,6 @@ function DRV:GetWebPage( path )
 	if (page == "wifi") then return self:PageWifi() end
 	if (page == "lan") then return self:PageLAN() end
 	if (page == "firewall") then return self:PageFirewall() end
-	if (page == "pf") then return self:PageForward() end
 	return self:PageHome()
 end
 

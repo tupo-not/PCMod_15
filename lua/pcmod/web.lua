@@ -7,8 +7,9 @@ PCMod.Web = PCMod.Web or {}
 
 // PCMod.Web.Parse( html ) -> list of lines. Each line is a list of spans:
 //   text  : { kind="text",  t=text, bold=false/true, href=nil or target }
-//   input : { kind="input", name=..., value=... }
-//   submit: { kind="submit", t=label }
+//   input : { kind="input", name=..., value=..., form=<n> }
+//   submit: { kind="submit", t=label, form=<n> }
+// Multiple <form> sections are tracked; a submit only submits its own form.
 PCMod.Web.Parse = function( html )
 	html = tostring( html or "" )
 	local lines = {}
@@ -16,6 +17,7 @@ PCMod.Web.Parse = function( html )
 	local bold = false
 	local href = nil
 	local bullet = false
+	local formId = 0
 
 	local function appendLine()
 		if (#spans > 0) then table.insert( lines, spans ) end
@@ -79,13 +81,17 @@ PCMod.Web.Parse = function( html )
 			href = string.match( rawtag, "href=[\"'](.-)[\"']" ) or href
 		elseif (tag == "/a") then
 			href = nil
+		elseif (tag == "form") then
+			formId = formId + 1
+		elseif (tag == "/form") then
+			if (formId > 0) then formId = formId - 1 end
 		elseif ((tag == "input") || (string.sub( tag, 1, 6 ) == "input ")) then
 			local itype = string.match( rawtag, "type=[\"'](.-)[\"']" ) or "text"
 			local name = string.match( rawtag, "name=[\"'](.-)[\"']" )
 			if (itype == "submit") then
-				table.insert( spans, { kind = "submit", t = string.match( rawtag, "value=[\"'](.-)[\"']" ) or "Save" } )
+				table.insert( spans, { kind = "submit", t = string.match( rawtag, "value=[\"'](.-)[\"']" ) or "Save", form = formId } )
 			elseif (name) then
-				table.insert( spans, { kind = "input", name = name, value = string.match( rawtag, "value=[\"'](.-)[\"']" ) or "" } )
+				table.insert( spans, { kind = "input", name = name, value = string.match( rawtag, "value=[\"'](.-)[\"']" ) or "", form = formId } )
 			end
 		end
 	end

@@ -159,11 +159,19 @@ DRV:ApplyWebQuery( "?pfwan=8080&pfip=192.168.0.2&pfport=80" )
 local pfrule = DRV:GetForwardRule( 8080 )
 assertTrue( pfrule ~= nil and pfrule.ip == "192.168.0.2" and pfrule.port == 80, "forward rule added" )
 assertTrue( DRV:GetForwardRule( 9999 ) == nil, "missing rule returns nil" )
-local pfpage = DRV:GetWebPage( "/pf" )
-assertTrue( string.find( pfpage, 'name="pfwan"', 1, true ) ~= nil, "pf page has input fields" )
-assertTrue( string.find( pfpage, "8080", 1, true ) ~= nil, "pf page lists the rule" )
+local fwpage2 = DRV:GetWebPage( "/firewall" )
+assertTrue( string.find( fwpage2, 'name="pfwan"', 1, true ) ~= nil, "firewall page has port-forward input fields" )
+assertTrue( string.find( fwpage2, "8080", 1, true ) ~= nil, "firewall page lists the forward rule" )
 DRV:ApplyWebQuery( "?delpf=8080" )
 assertTrue( DRV:GetForwardRule( 8080 ) == nil, "forward rule deleted" )
+
+-- Firewall rules: add, list, delete.
+DRV:ApplyWebQuery( "?fwdir=in&fwsrc=10.0.0.9&fwdst=&fwport=75" )
+assertTrue( routData.RouterCfg.FirewallRules[ 1 ].dir == "in", "firewall rule added" )
+assertTrue( routData.RouterCfg.FirewallRules[ 1 ].src == "10.0.0.9", "firewall rule source" )
+assertTrue( routData.RouterCfg.FirewallRules[ 1 ].port == 75, "firewall rule port" )
+DRV:ApplyWebQuery( "?delfw=1" )
+assertTrue( #(routData.RouterCfg.FirewallRules) == 0, "firewall rule deleted" )
 
 local sent
 PCMod.Network.CreatePacket = function( src, dst, port, body ) sent = { src = src, dst = dst, port = port, body = body } end
