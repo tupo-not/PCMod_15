@@ -110,6 +110,9 @@ PCMod Improvement TODO List
   (Wi-Fi password, DHCP start/end) and toggle links (Wi-Fi, Firewall, NAT), all
   stored per-router and applied via ?key=value query; firewall drops non-web/
   non-ping ports
+- DONE: Router port forwarding (DNAT/SNAT): add/delete lan rules via the web
+  page (wan port -> local ip:port), inbound traffic to a forwarded port is
+  re-targeted at the internal host and replies are NAT'ed back to the peer
 - DONE: Router web UI is split into pages (home/status + Wi-Fi/LAN/firewall
   sub-pages) with a shared navigation bar of relative links; the browser tracks
   the current path so toggling a setting reloads the same page and the Home

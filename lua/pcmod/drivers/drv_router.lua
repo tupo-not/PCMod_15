@@ -182,6 +182,33 @@ function DRV:ProcessPacket( pid, pass )
 		PCMod.Msg( "[webgr]Firewall dropped packet on port " .. tostring( packet.Port ), true )
 		return
 	end
+	// Port forwarding (NAT). A reply from a forwarded internal host is source-
+	// NAT'ed back to the original peer; an inbound packet to a forwarded port is
+	// destination-NAT'ed to the internal host.
+	local isSelf = (self.Entity.IsAddressedTo && self.Entity:IsAddressedTo( packet.Dest ))
+	if (isSelf) then
+		local flow = self:GetForwardFlow( packet.Source, packet.Port )
+		if (flow) then
+			local wanSrc = self.Entity:GetFullIP() or self.Entity:GetIPv6()
+			if (wanSrc) then
+				packet.Delivered = true
+				local rpid = PCMod.Network.CreatePacket( wanSrc, flow.src, flow.port, packet.Body )
+				if (rpid) then self:ProcessPacket( rpid ) end
+			end
+			return
+		end
+		local rule = self:GetForwardRule( packet.Port )
+		if (rule) then
+			local lanSrc = self.Entity:GetFullIP() or self.Entity:GetIPv6()
+			if (lanSrc) then
+				self:RememberForwardFlow( rule, packet.Source, packet.Port )
+				packet.Delivered = true
+				local dpid = PCMod.Network.CreatePacket( lanSrc, rule.ip, rule.port, packet.Body )
+				if (dpid) then self:ProcessPacket( dpid ) end
+			end
+			return
+		end
+	end
 	// Minimal web server: a request to port 80 addressed to the router itself
 	// (body { "http", path }) is answered with a plain-text config page.
 	if ((packet.Port == 80) && (packet.Body) && (packet.Body[1] == "http") && (self.Entity.IsAddressedTo && self.Entity:IsAddressedTo( packet.Dest ))) then
@@ -571,6 +598,7 @@ function DRV:GetCfg()
 	if (c.DHCPEnd == nil) then c.DHCPEnd = tonumber( PCMod.Cfg.DHCPEnd ) or 254 end
 	if (c.Firewall == nil) then c.Firewall = false end
 	if (c.NAT == nil) then c.NAT = true end
+	if (c.Forwards == nil) then c.Forwards = {} end
 	return c
 end
 
@@ -596,10 +624,62 @@ function DRV:ApplyWebQuery( path )
 	path = tostring( path or "" )
 	local q = string.match( path, "%?(.*)$" )
 	if (!q) then return end
+	local parsed = {}
 	for _, pair in ipairs( string.Explode( "&", q ) ) do
 		local k, v = string.match( pair, "^(.-)=(.*)$" )
-		if (k) then self:ApplyWebSetting( k, v ) end
+		if (k) then parsed[ k ] = v end
 	end
+	// Port-forwarding rules are multi-field; handle atomically before the
+	// generic single-key settings.
+	if (parsed.delpf) then self:DeleteForward( parsed.delpf ) end
+	if (parsed.pfwan && parsed.pfip && parsed.pfport) then
+		self:AddForward( parsed.pfwan, parsed.pfip, parsed.pfport )
+	end
+	for k, v in pairs( parsed ) do
+		self:ApplyWebSetting( k, v )
+	end
+end
+
+// Port forwarding (DNAT): wanPort -> lanIP:lanPort. A matching inbound packet
+// addressed to the router is re-targeted at the internal host.
+function DRV:AddForward( wan, ip, port )
+	local wanN = tonumber( wan )
+	local portN = tonumber( port )
+	if ((!wanN) || (!portN) || (wanN < 1) || (portN < 1)) then return false end
+	if (!PCMod.IPv6.IsIP( ip )) then return false end
+	local c = self:GetCfg()
+	c.Forwards = c.Forwards or {}
+	c.Forwards[ tostring( wanN ) ] = { ip = ip, port = portN }
+	return true
+end
+
+function DRV:DeleteForward( wan )
+	local c = self:GetCfg()
+	c.Forwards = c.Forwards or {}
+	c.Forwards[ tostring( wan ) ] = nil
+end
+
+function DRV:GetForwardRule( wanPort )
+	local c = self:GetCfg()
+	return c.Forwards && c.Forwards[ tostring( wanPort ) ]
+end
+
+// NAT reply tracking: the internal host replies on (ip, port); remember the
+// original peer so the router can rewrite the reply's source back to itself.
+function DRV:RememberForwardFlow( rule, src, port )
+	self.ForwardFlows = self.ForwardFlows or {}
+	self.ForwardFlows[ tostring( rule.ip ) .. ":" .. tostring( rule.port ) ] = { src = src, port = port, time = CurTime() }
+	if (table.Count( self.ForwardFlows ) > 64) then self.ForwardFlows = {} end
+end
+
+function DRV:GetForwardFlow( src, port )
+	local f = self.ForwardFlows && self.ForwardFlows[ tostring( src ) .. ":" .. tostring( port ) ]
+	if (!f) then return nil end
+	if (f.time < (CurTime() - 120)) then
+		self.ForwardFlows[ tostring( src ) .. ":" .. tostring( port ) ] = nil
+		return nil
+	end
+	return f
 end
 
 function DRV:ApplyWebSetting( key, value )
@@ -638,7 +718,7 @@ end
 
 // Shared navigation bar linking the pages.
 function DRV:WebNav( current )
-	local items = { { "", "Home" }, { "wifi", "Wi-Fi" }, { "lan", "LAN" }, { "firewall", "Firewall" } }
+	local items = { { "", "Home" }, { "wifi", "Wi-Fi" }, { "lan", "LAN" }, { "firewall", "Firewall" }, { "pf", "Forward" } }
 	local parts = {}
 	for _, it in ipairs( items ) do
 		table.insert( parts, '<a href="/' .. it[ 1 ] .. '">' .. it[ 2 ] .. '</a>' )
@@ -737,12 +817,33 @@ function DRV:PageFirewall()
 	return table.concat( lines, "\n" )
 end
 
+function DRV:PageForward()
+	local c = self:GetCfg()
+	local lines = {}
+	table.insert( lines, "<h1>Port Forwarding</h1>" )
+	table.insert( lines, self:WebNav( "pf" ) )
+	table.insert( lines, "<h2>Rules</h2>" )
+	local count = 0
+	for wan, r in pairs( c.Forwards or {} ) do
+		count = count + 1
+		table.insert( lines, '<p>' .. tostring( wan ) .. ' -&gt; ' .. tostring( r.ip ) .. ':' .. tostring( r.port ) .. ' <a href="?delpf=' .. tostring( wan ) .. '">[Delete]</a></p>' )
+	end
+	if (count == 0) then table.insert( lines, "<p>No rules.</p>" ) end
+	table.insert( lines, "<h2>Add rule</h2>" )
+	table.insert( lines, '<p>WAN port <input type="text" name="pfwan" value=""></p>' )
+	table.insert( lines, '<p>Local IP <input type="text" name="pfip" value=""></p>' )
+	table.insert( lines, '<p>Local port <input type="text" name="pfport" value=""></p>' )
+	table.insert( lines, '<p><input type="submit" value="Add"></p>' )
+	return table.concat( lines, "\n" )
+end
+
 // A config/status "web page" served to the in-game browser (port 80).
 function DRV:GetWebPage( path )
 	local page = self:WebPage( path )
 	if (page == "wifi") then return self:PageWifi() end
 	if (page == "lan") then return self:PageLAN() end
 	if (page == "firewall") then return self:PageFirewall() end
+	if (page == "pf") then return self:PageForward() end
 	return self:PageHome()
 end
 
@@ -772,4 +873,5 @@ function DRV:OnRemove()
 	self.ChildLan = {}
 	self.Neighbors = {}
 	self.Uplink = nil
+	self.ForwardFlows = {}
 end
