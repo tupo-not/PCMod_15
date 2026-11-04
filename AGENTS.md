@@ -40,3 +40,6 @@ See `tests/README.md`. Never edit `tests/.build/` — it is generated.
 
 - Keep generated files out of git (see `.gitignore`).
 - Run the full test suite before committing.
+- Commit small, focused changes frequently: one logical fix per commit keeps the
+  history reviewable and minimizes merge/rebase conflicts when several people
+  (or agents) work on the addon at once.

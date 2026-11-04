@@ -78,9 +78,9 @@ function DEV:InitializeOS( x, y, w, h )
 	self:SetListboxSelRow( "lstGuiScale", bestkey )
 	self:CreateButton2( self.Th, "btnApplyScale", x+(w*0.66), y+(h*0.51), w*0.30, h*0.07, "Apply Scale" )
 
-	self:CreateTextbox( self.Th, "txtOldPass", x+(w*0.48), y+(h*0.80), w*0.31, h*0.055, "Old Password:" )
-	self:CreateTextbox( self.Th, "txtNewPass", x+(w*0.48), y+(h*0.88), w*0.31, h*0.055, "New Password:" )
-	self:CreateButton2( self.Th, "btnApplyPass", x+(w*0.66), y+(h*0.80), w*0.30, h*0.07, "Change Password" )
+	self:CreateTextbox( self.Th, "txtOldPass", x+(w*0.485), y+(h*0.81), w*0.31, h*0.055, "Old Password:" )
+	self:CreateTextbox( self.Th, "txtNewPass", x+(w*0.485), y+(h*0.89), w*0.31, h*0.055, "New Password:" )
+	self:CreateButton2( self.Th, "btnApplyPass", x+(w*0.66), y+(h*0.81), w*0.30, h*0.07, "Change Password" )
 	if (self.OldPassDraft) then self:SetTextboxText( "txtOldPass", self.OldPassDraft ) end
 	if (self.NewPassDraft) then self:SetTextboxText( "txtNewPass", self.NewPassDraft ) end
 end
@@ -170,7 +170,7 @@ function DEV:Paint( x, y, w, h )
 		self:RenderText( x+(w*0.475), y+(h*0.17), { "Theme" }, Color( 0, 0, 0, 255 ), 1 )
 		self:RenderText( x+(w*0.81), y+(h*0.17), { "GUI Scale" }, Color( 0, 0, 0, 255 ), 1 )
 		self:RenderText( x+(w*0.81), y+(h*0.59), { "Current: " .. ScaleLabel( CurrentGuiScale() ) }, Color( 0, 0, 0, 255 ), 1 )
-		self:RenderText( x+(w*0.6425), y+(h*0.75), { "Security" }, Color( 0, 0, 0, 255 ), 1 )
+		self:RenderText( x+(w*0.485), y+(h*0.755), { "Security" }, Color( 0, 0, 0, 255 ), 1 )
 		if (self.PWE == 1) then self:RenderError( self.Th, x+(w*0.81), y+(h*0.90), "Old password wrong!" ) end
 		if (self.PWE == 2) then self:RenderText( x+(w*0.81), y+(h*0.90), { "Password changed!" }, Color( 0, 0, 0, 255 ), 1 ) end
 	end
