@@ -130,8 +130,11 @@ assertTrue( string.find( page, "Wi-Fi clients: 2", 1, true ) ~= nil, "page shows
 
 local sent
 PCMod.Network.CreatePacket = function( src, dst, port, body ) sent = { src = src, dst = dst, port = port, body = body } end
-DRV:HandleWebRequest( { Source = "10.0.1.2" } )
+DRV.ProcessPacket = function() end
+local req = { Source = "10.0.1.2" }
+DRV:HandleWebRequest( req )
 assertTrue( sent and sent.port == 80 and sent.body[1] == "http-response", "web reply packet created" )
 assertEq( sent.src, "192.168.5.1", "web reply sourced from router" )
+assertTrue( req.Delivered == true, "request marked delivered" )
 
 print( "ALL ROUTER IPV6 TESTS PASSED" )

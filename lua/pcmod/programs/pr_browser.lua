@@ -22,9 +22,13 @@ end
 
 function PROG:OnStart()
 	self:GetOS():OpenNetPort( 80, "prog", self.Name )
-	if (!self.DeviceData.Content) then self.DeviceData.Content = self.Home end
-	if (!self.DeviceData.Status) then self.DeviceData.Status = "" end
-	self.DeviceData.Url = self.DeviceData.Url or ""
+	// Reset every visit: close/reopen and power toggles must not leave a stale
+	// page, status, address or pending request behind.
+	self.DeviceData.Url = ""
+	self.DeviceData.Content = self.Home
+	self.DeviceData.Status = ""
+	self.Pending = false
+	self.Timeout = nil
 end
 
 function PROG:OnEnd()

@@ -584,7 +584,9 @@ function DRV:HandleWebRequest( packet )
 	local page = self:GetWebPage()
 	local src = self.Entity:GetSourceAddress( packet.Source ) or self.Entity:GetFullIP()
 	if (!src) then return false end
-	PCMod.Network.CreatePacket( src, packet.Source, 80, { "http-response", page } )
+	packet.Delivered = true
+	local pid = PCMod.Network.CreatePacket( src, packet.Source, 80, { "http-response", page } )
+	if (pid) then self:ProcessPacket( pid ) end
 	return true
 end
 
