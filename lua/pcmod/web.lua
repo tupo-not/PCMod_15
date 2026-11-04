@@ -89,3 +89,30 @@ PCMod.Web.Parse = function( html )
 	appendLine()
 	return lines
 end
+
+// Extract a single <form> from html: { action, fields = { {name, label, value}, ... } }.
+// Only text inputs are returned (submit/checkbox handling lives in the device).
+PCMod.Web.ParseForm = function( html )
+	html = tostring( html or "" )
+	local action = string.match( html, "<form[^>]-action=[\"'](.-)[\"']" ) or ""
+	local fields = {}
+	local i = 1
+	while (true) do
+		local lt = string.find( html, "<input", i )
+		if (!lt) then break end
+		local gt = string.find( html, ">", lt )
+		if (!gt) then break end
+		local tag = string.sub( html, lt + 1, gt - 1 )
+		local itype = string.match( tag, "type=[\"'](.-)[\"']" ) or "text"
+		local name = string.match( tag, "name=[\"'](.-)[\"']" )
+		if (name && (itype != "submit")) then
+			table.insert( fields, {
+				name = name,
+				label = string.match( tag, "label=[\"'](.-)[\"']" ) or name,
+				value = string.match( tag, "value=[\"'](.-)[\"']" ) or "",
+			} )
+		end
+		i = gt + 1
+	end
+	return { action = action, fields = fields }
+end

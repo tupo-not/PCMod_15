@@ -37,4 +37,12 @@ local plain = PCMod.Web.Parse( "line one\nline two<br>line three" )
 assertEq( #plain, 3, "newline + br split lines" )
 assertEq( plain[ 2 ][ 1 ].t, "line two", "newline line kept" )
 
+-- Form parsing: text inputs with labels and values, submit excluded.
+local form = PCMod.Web.ParseForm( '<form action="?"><input type="text" name="wpass" label="Wi-Fi password" value="123"><input type="text" name="dhcpstart" label="DHCP start" value="2"><input type="submit" value="Save"></form>' )
+assertEq( #form.fields, 2, "two text fields" )
+assertEq( form.fields[ 1 ].name, "wpass", "field name" )
+assertEq( form.fields[ 1 ].value, "123", "field value" )
+assertEq( form.fields[ 1 ].label, "Wi-Fi password", "field label" )
+assertEq( form.fields[ 2 ].name, "dhcpstart", "second field name" )
+
 print( "ALL WEB TESTS PASSED" )

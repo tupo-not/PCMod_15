@@ -640,15 +640,19 @@ function DRV:GetWebPage()
 	if (bb) then table.insert( lines, "<p><b>Backbone:</b> fd00:" .. tostring( bb ) .. "::/32</p>" ) else table.insert( lines, "<p><b>Backbone:</b> none (standalone)</p>" ) end
 
 	// ------------------------------------------------------------------
-	// Configuration panel (all controls are links; the browser follows them).
+	// Configuration panel: booleans are toggle links, free-form values are
+	// text inputs the browser renders as editable fields.
 	// ------------------------------------------------------------------
 	table.insert( lines, "<h2>Configuration</h2>" )
+	table.insert( lines, "<form action=\"?\">" )
 	if (c.Wireless) then
 		table.insert( lines, '<p><b>Wi-Fi:</b> enabled <a href="?wireless=0">[Disable]</a></p>' )
-		table.insert( lines, '<p><b>Wi-Fi password:</b> ' .. tostring( c.WirePass ) .. ' <a href="?wpass=random">[Regenerate]</a></p>' )
 	else
 		table.insert( lines, '<p><b>Wi-Fi:</b> disabled <a href="?wireless=1">[Enable]</a></p>' )
 	end
+	table.insert( lines, '<p><b>Wi-Fi password:</b> <input type="text" name="wpass" label="Wi-Fi password" value="' .. tostring( c.WirePass ) .. '"></p>' )
+	table.insert( lines, '<p><b>DHCP start:</b> <input type="text" name="dhcpstart" label="DHCP start" value="' .. tostring( c.DHCPStart ) .. '"></p>' )
+	table.insert( lines, '<p><b>DHCP end:</b> <input type="text" name="dhcpend" label="DHCP end" value="' .. tostring( c.DHCPEnd ) .. '"></p>' )
 	if (c.Firewall) then
 		table.insert( lines, '<p><b>Firewall:</b> on <a href="?firewall=0">[Disable]</a></p>' )
 	else
@@ -659,8 +663,8 @@ function DRV:GetWebPage()
 	else
 		table.insert( lines, '<p><b>NAT:</b> off <a href="?nat=1">[Enable]</a></p>' )
 	end
-	table.insert( lines, '<p><b>DHCP start:</b> ' .. tostring( c.DHCPStart ) .. ' <a href="?dhcpstart=' .. tostring( c.DHCPStart - 1 ) .. '">[-]</a> <a href="?dhcpstart=' .. tostring( c.DHCPStart + 1 ) .. '">[+]</a></p>' )
-	table.insert( lines, '<p><b>DHCP end:</b> ' .. tostring( c.DHCPEnd ) .. ' <a href="?dhcpend=' .. tostring( c.DHCPEnd - 1 ) .. '">[-]</a> <a href="?dhcpend=' .. tostring( c.DHCPEnd + 1 ) .. '">[+]</a></p>' )
+	table.insert( lines, '<p><input type="submit" value="Save"></p>' )
+	table.insert( lines, "</form>" )
 
 	local wc = 0
 	for _, v in pairs( self.WirelessClients or {} ) do if (v) then wc = wc + 1 end end

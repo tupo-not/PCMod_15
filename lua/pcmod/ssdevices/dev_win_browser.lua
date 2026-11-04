@@ -10,19 +10,14 @@ DEV.Th = "basic"
 DEV.Url = ""
 DEV.Content = ""
 DEV.Status = ""
-DEV.LineY = {}
-DEV.LineHref = {}
-DEV.LineH = 0
+DEV.Links = {}
+DEV.Form = { action = "", fields = {} }
+DEV.FormSig = ""
 
 function DEV:Initialize( x, y, w, h )
-	// Exit button
 	self:CreateButton2( self.Th, "btnExit", (x+w)-(h*0.06), y, h*0.06, h*0.06, "X" )
-
-	// Address bar + Go
 	self:CreateTextbox( self.Th, "txtUrl", x+(w*0.41), y+(h*0.11), w*0.82, h*0.06, "Address:" )
 	self:CreateButton2( self.Th, "btnGo", x+(w*0.85), y+(h*0.10), w*0.13, h*0.06, "Go" )
-
-	// Home
 	self:CreateButton2( self.Th, "btnHome", x+(w*0.02), y+(h*0.94), w*0.14, h*0.05, "Home" )
 
 	self:OnUpdate()
@@ -31,6 +26,39 @@ function DEV:Initialize( x, y, w, h )
 	self.WinY = y
 	self.WinW = w
 	self.WinH = h
+end
+
+function DEV:FormSignature( form )
+	local s = tostring( #(form.fields or {}) ) .. ":"
+	for _, f in ipairs( form.fields or {} ) do
+		s = s .. tostring( f.name ) .. "=" .. tostring( f.value ) .. ";"
+	end
+	return s .. "|" .. tostring( form.action or "" )
+end
+
+function DEV:RemoveFormControls()
+	for i = 1, 8 do self:RemoveTextbox( "frm_" .. i ) end
+	self:RemoveElement( "btnFormSave" )
+end
+
+// (Re)build editable fields from the page's single <form>. Only runs when the
+// form signature changes, so the controls persist across frames.
+function DEV:BuildForm( x, y, w, h )
+	local form = PCMod.Web.ParseForm( self.Content or "" )
+	local sig = self:FormSignature( form )
+	if (sig == self.FormSig) then return end
+	self.FormSig = sig
+	self.Form = form
+	self:RemoveFormControls()
+	for i, f in ipairs( form.fields ) do
+		local ynorm = 0.60 + ((i-1) * 0.085)
+		self:CreateTextbox( self.Th, "frm_" .. i, x+(w*0.45), y+(h*ynorm), w*0.5, h*0.06, f.label or f.name )
+		self:SetTextboxText( "frm_" .. i, f.value )
+	end
+	if (#(form.fields) > 0) then
+		local yn = 0.60 + (#(form.fields) * 0.085) + 0.01
+		self:CreateButton2( self.Th, "btnFormSave", x+(w*0.78), y+(h*yn), w*0.2, h*0.06, "Save" )
+	end
 end
 
 function DEV:Paint( x, y, w, h )
@@ -42,7 +70,7 @@ function DEV:Paint( x, y, w, h )
 	local c_link = Color( 30, 90, 220, 255 )
 
 	// Content area (pixels).
-	local ax, ay, aw, ah = x+(w*0.02), y+(h*0.20), w*0.96, h*0.70
+	local ax, ay, aw, ah = x+(w*0.02), y+(h*0.18), w*0.96, h*0.40
 	surface.SetDrawColor( c_tbbg.r, c_tbbg.g, c_tbbg.b, c_tbbg.a )
 	surface.DrawRect( ax, ay, aw, ah )
 	surface.DrawOutline( ax, ay, aw, ah, c_bor )
@@ -51,29 +79,28 @@ function DEV:Paint( x, y, w, h )
 	local tw, th = surface.GetTextSize( "Xq" )
 	local doc = PCMod.Web.Parse( self.Content )
 
-	self.LineY = {}
-	self.LineHref = {}
-	self.LineH = (th + 1) / h
-
+	self.Links = {}
 	local ypix = ay + 2
-	local lineIndex = 0
 	for _, line in ipairs( doc ) do
 		if ((ypix + th) > (ay + ah - 2)) then break end
-		lineIndex = lineIndex + 1
-		self.LineY[ lineIndex ] = (ypix - y) / h
 		local xcur = ax + 2
 		for _, sp in ipairs( line ) do
 			local txt = sp.t or ""
+			local sx = surface.GetTextSize( txt )
 			local col = sp.href and c_link or c_tb_txt
 			draw.SimpleText( txt, "pcmod_3d2d", xcur, ypix, col, TEXT_ALIGN_LEFT, TEXT_ALIGN_TOP )
 			if (sp.bold) then
 				draw.SimpleText( txt, "pcmod_3d2d", xcur+1, ypix, col, TEXT_ALIGN_LEFT, TEXT_ALIGN_TOP )
 			end
-			xcur = xcur + surface.GetTextSize( txt )
-			if (sp.href) then self.LineHref[ lineIndex ] = sp.href end
+			if (sp.href) then
+				table.insert( self.Links, { x1 = (xcur - x) / w, y1 = (ypix - y) / h, x2 = (xcur + sx - x) / w, y2 = (ypix + th - y) / h, href = sp.href } )
+			end
+			xcur = xcur + sx
 		end
 		ypix = ypix + th + 1
 	end
+
+	self:BuildForm( x, y, w, h )
 
 	if (self.Status != "") then
 		self:RenderText( x+(w*0.5), y+(h*0.92), { self.Status }, Color( 0, 0, 0, 255 ), 1 )
@@ -86,13 +113,12 @@ function DEV:OnUpdate()
 	self:SetTextboxText( "txtUrl", self.Url )
 end
 
-// Clicks arrive normalised (0..1) within the window. A click on a link line
-// navigates; anything else falls through to the textbox/buttons.
+// Clicks arrive normalised (0..1) in the window. Hit-test links by their exact
+// rectangle; anything else falls through to the textboxes/buttons.
 function DEV:DoClick( x, y )
-	for i, href in pairs( self.LineHref or {} ) do
-		local ly = self.LineY[ i ]
-		if (ly && (y >= ly) && (y < (ly + self.LineH))) then
-			self:RunProgCommand( "browser", "go", href )
+	for _, l in ipairs( self.Links or {} ) do
+		if ((x >= l.x1) && (x <= l.x2) && (y >= l.y1) && (y <= l.y2)) then
+			self:RunProgCommand( "browser", "go", l.href )
 			return
 		end
 	end
@@ -110,6 +136,16 @@ function DEV:ButtonClick( btn )
 	end
 	if (btn == "btnHome") then
 		self:RunProgCommand( "browser", "home" )
+		return
+	end
+	if (btn == "btnFormSave") then
+		local parts = {}
+		for i, f in ipairs( self.Form.fields or {} ) do
+			table.insert( parts, tostring( f.name ) .. "=" .. tostring( self:GetTextboxText( "frm_" .. i ) or "" ) )
+		end
+		if (#parts > 0) then
+			self:RunProgCommand( "browser", "go", "?" .. table.concat( parts, "&" ) )
+		end
 	end
 end
 
