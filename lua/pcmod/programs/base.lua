@@ -98,8 +98,6 @@ end
 
 function PROG:TriggerState( st )
 	if (!self.SimpleMode) then return end
-	if (!self.DeviceData) then self.DeviceData = {} end
-	if (self:GetOS()) then self.DeviceData.Th = self:GetOS():GetTheme() end
 	if (st == 0) then
 		if (self.OS == "server") then
 			self:GetOS().CP = nil
@@ -111,12 +109,19 @@ function PROG:TriggerState( st )
 		ss:RemoveDevice( "win_" .. self.Name .. "_openfile" )
 		ss:RemoveDevice( "win_" .. self.Name .. "_printloc" )
 		self:SetScreenSpace( ss )
+		// Drop the whole device payload so a reopen (or a power cycle) starts
+		// with a clean window instead of a stale page/status/edit.
+		self.DeviceData = {}
+		return
 	end
 	if (st == 1) then
 		if (self.OS == "server") then
 			self:GetOS().CP = self.Title
 			self:GetOS():BuildDesktop()
 		end
+		// Fresh payload on every start; OnStart re-populates what it needs.
+		self.DeviceData = {}
+		if (self:GetOS()) then self.DeviceData.Th = self:GetOS():GetTheme() end
 		self:OnStart()
 		self:UpdateSS()
 	end

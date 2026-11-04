@@ -103,6 +103,9 @@ PCMod Improvement TODO List
   { "http", path } to port 80 of the router gets a plain-text config page
   (IPv4/IPv6, prefix, backbone, DHCP pool, Wi-Fi status/password, client
   count). The browser itself is deferred
+- DONE: All programs now reset their window payload (DeviceData) on every open
+  and close, so no app keeps a stale page/status/edit across close-reopen or a
+  power toggle
 - DONE: Added a Browser program (address bar + Go/Home) that fetches a page
   over the network: it sends { "http", path } to port 80 and renders the reply,
   so a PC can open a router's built-in web page
