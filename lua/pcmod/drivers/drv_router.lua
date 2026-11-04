@@ -83,6 +83,10 @@ function DRV:Process( data )
 	PCMod.Msg( "[webgr] Body datatype: " .. type( data ) .. " " .. tostring(body), true )
 	if ((tag == "sendpacket") && (type( body ) == "table")) then
 		local pid = PCMod.Network.CreatePacket( body[1], body[2], body[3], body[4] )
+		if (!pid) then
+			PCMod.Msg( "Network packet dropped: all packet slots are in flight", true )
+			return false
+		end
 		return self:ProcessPacket( pid )
 	end
 	if ((tag == "deliver") && (type( body ) == "number")) then

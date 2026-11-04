@@ -10,7 +10,7 @@ DEV.LastFrame = 0
 // same text footprint as before (7 lines, max 49 chars).
 DEV.StepText = {
 	{ "Welcome to the Personal OS!", "This is the first time you have turned your PC on.", "You may set some options in the next screen.", "Click 'Next' to continue." },
-	{ "PCMod now offers PCMod 1.5 - a modernized", "interface: flat dark windows with a teal accent.", "Try it with the button below. If you prefer the", "original look, choose Basic instead. The theme", "can be changed at any time in the Control Panel", "(My Computer). The listbox shows how selections", "will look. Click 'Next' to continue." },
+	{ "PCMod now offers PCMod 1.5 - a modernized", "interface: flat dark windows with a teal accent.", "Try it with the button below. If you prefer the", "original look, choose Basic instead. The theme", "can be changed at any time in the Control Panel.", "The listbox shows how selections", "will look. Click 'Next' to continue." },
 	{ "Please enter a password to use.", "You can leave it blank for no password.", "Once you have finished, click 'Finish' to continue." }
 }
 

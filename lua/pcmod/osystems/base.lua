@@ -359,6 +359,11 @@ function OS:GetIP()
 	return self:Network():GetIP()
 end
 
+// Dotted-quad IPv4 address (GetIP returns only the host octet).
+function OS:GetFullIP()
+	return self:Network():GetFullIP()
+end
+
 // Emulated IPv6 address of this machine (see PCMod.IPv6 in sh_common.lua).
 function OS:GetIPv6()
 	return self:Network():GetIPv6()

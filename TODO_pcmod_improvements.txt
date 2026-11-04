@@ -1,0 +1,240 @@
+PCMod Improvement TODO List
+
+=== OPTION 4: Refactor the OS state machine ===
+- Extract common OS state machine logic from os_personal.lua and os_server.lua
+- Use the existing shared module osystems/base.lua instead of a second base file
+- DONE: Added OS:SetupDataFolders( datafolder ) to osystems/base.lua; personal and
+  server OS now share the system/data/ link + lock and only pass their own folder
+- DONE: Removed the duplicate/harmful osystems/base_os.lua (it shadowed methods
+  already provided by osystems/base.lua)
+- TODO: Move the remaining duplicated boot-state blocks (states 1-12) into a
+  shared helper with per-OS hooks
+- TODO: Standardize state transition patterns and callback methods across both OS types
+- TODO: Move OS:RunCommand command dispatch into a shared table-driven handler
+
+=== OPTION 6: Feature Enhancements ===
+- Add more theme options and improve typography support for better UX
+- Expose more settings through the in-game menu rather than requiring config file edits
+- Improve driver auto-loading with dependency tracking to avoid loading unnecessary drivers
+- Standardize error handling across the codebase (mix of PCMod.Error(), ErrorNoHalt(), ply:PrintMessage())
+- DONE: Made RPCost and FullProgramList configurable in sh_config.lua
+- DONE: Added cfg.BootSpeed (default 0.25) and scaled all BIOS/OS boot and
+  shutdown delays through OS:BootDelay()/DRV:BootDelay(); set it to 1 for the
+  original pacing or lower for an even faster boot
+- DONE: Monitor use no longer plays a camera fly-in: locking/unlocking snaps
+  straight to/from the screen view
+- DONE: Locked screens are drawn fullscreen at native resolution (HUDPaint)
+  instead of as a 3D monitor close-up; input maps directly to the mouse and the
+  monitor's UI reflows to the window aspect
+- DONE: Added cfg.GuiScale (default 1, 0.5-3) for the fullscreen UI and the
+  pc_guiscale <n> command; GUI scale now scales program windows and their
+  controls (buttons, layout, theme fonts, text) around each window's top-left,
+  while the desktop/taskbar stay fullscreen; hit-testing applies the same
+  per-device scale
+- DONE: Notepad has a Font settings panel (family: Tahoma/Arial/Verdana/
+  Courier New/Times New Roman/Georgia; size 75-200%): the editor textbox now
+  supports a per-textbox font used by wrapping, cursor placement, click-to-char
+  mapping and scrolling, and applying a font keeps the unsaved document
+- DONE: The Notepad browse button is now square and sits to the right of the
+  filename textbox; the textbox width is derived from the button position so
+  the two no longer overlap, and the button stays left of the resize grip
+- DONE: Buttons no longer hover through overlapping windows: DrawSpace now
+  does a full pre-pass to mark the topmost device under the cursor before any
+  window is painted (the old in-loop marker let lower windows see themselves at
+  draw time), and button hover requires that marker
+- DONE: Windows can no longer render past the viewport/taskbar in a corner at
+  scaled sizes: GetDeviceVisualRect clamps the visual rect (also fixing stale
+  sizes after a scale change, and keeping hover/click aligned), and resizing
+  near an edge caps the minimum to the remaining space instead of forcing the
+  window off-screen
+- DONE: Removed the invisible drag/resize borders at GUI scales below 100%:
+  the server clamped win_move/win_resize against the unscaled window size, so
+  scaled windows snapped back to a monitor-sized boundary. The server now
+  keeps absolute bounds and the client enforces its own visual limits
+- DONE: Window z-order updates now actually reach the client: the screen-space
+  delta sender cached only Rev, so in-place priority/geometry changes
+  (win_move/focus) were dropped; the cache signature now includes Priority,
+  position and size
+- DONE: Dragging or resizing a window now raises it immediately (local
+  priority 150, below pickers/menus) and sends focus when the grab ends, so
+  windows no longer stay buried under neighbours while being dragged
+- DONE: Fixed buttons staying behind while dragging windows: theme-drawn
+  buttons read a geometry struct that was cached on first paint; GetStruct()
+  now refreshes X/Y/W/H each call so theme backgrounds follow TranslateWindow()
+- DONE: Fixed scaled windows stopping at invisible borders while dragging or
+  resizing: the drag clamp now uses the visually scaled width/height, mouse
+  movement maps through the viewport, and resize limits use the real pixel
+  space (right edge = viewport edge, bottom = taskbar top)
+- DONE: Start menu and All Programs now follow cfg.GuiScale like program
+  windows; both stay a bottom-left block (bottom edge on the taskbar) with All
+  Programs sitting right next to the Start menu instead of floating at the top.
+  Drawing and click hit-testing share GetDeviceVisualRect() so they stay aligned
+- DONE: GUI Scale presets now include 25% and 50% (floor is 0.25); the font
+  helper uses the same floor so small scales stay consistent
+- DONE: Fixed the Start button / taskbar needing pixel-hunting: the HackyClicky
+  click-catcher no longer subtracts the on-screen keyboard's height while the
+  keyboard is hidden, so the whole screen (including the taskbar and Start
+  menu's lower buttons) receives clicks; it shrinks again only while the
+  keyboard is actually visible
+- DONE: Window drag/resize now starts on the actual mouse-press edge (GMod's
+  button clicks only fire on release), so dragging works; release clicks are
+  suppressed globally so a drag cannot activate controls underneath
+- DONE: Multi-window support: personal-OS programs open as cascaded desktop
+  windows instead of fullscreen, with per-program positions, click-to-focus
+  z-order, title-bar dragging and "win_move"/"focus" window commands; starting
+  an already-running program raises its existing window
+- DONE: Windows can be resized by dragging the bottom-right grip; the layout
+  rebuilds live and "win_resize" stores the size/server-side
+- DONE: The Control Panel's Network page (and Net-Tools) now show the full
+  dotted-quad IPv4 address via OS:GetFullIP / Network:GetFullIP instead of the
+  bare host octet, the default GUI scale is 0.5 (50%), and the category list
+  labels no longer carry bracketed prefixes
+- DONE: Reworked My Computer into a Control Panel with a File Manager-style
+  category pane: OS (theme, GUI scale, password), Network (dual-stack address,
+  subnet, gateway, link-local information and Network Tools), and I/O
+  (identified USB devices, refresh and Device Manager). Internal program and
+  device names remain mycomputer/window_mycomp for compatibility
+- DONE: Control Panel (My Computer) now has a GUI Scale preset list with an
+  Apply Scale button (75%-200%); changing it rebuilds the UI without dropping
+  unsaved textbox text
+- DONE: Added cfg.RPCostDefaults and the pc_reset_rpcost concommand
+- DONE: Added the pc_setprogramlist concommand and hooked it to the settings button
+- DONE: Settings menu now exposes "Reset RPCost to Defaults" and "Full Program List Editor"
+- DONE: Added a real virtual filesystem API on pcmod_base entities:
+    * MakeFolder, ListDir, GetItemInfo, RenameItem, CopyItem, DeleteItem,
+      IsPathLocked; all path-aware, lock-aware and folder-recursive where needed
+    * ReadFile/FileFolderExist/IsLocked now find folder keys with or without a
+      trailing slash, so old data keeps working
+- DONE: Exposed the same operations to programs in programs/base.lua:
+    * CreateFolder, ListDir, GetItemInfo, RenameItem/RenameFile/MoveItem,
+      CopyItem/CopyFile, DeleteItem/DeleteFolder, JoinPath, GetParentPath,
+      GetBaseName
+- DONE: Added the File Manager (programs/pr_files.lua +
+  ssdevices/dev_win_files.lua): generic two-pane layout with disks/places on the
+  left and folder contents on the right, double-click to open folders/files/
+  disks, shared right-click context menu (Open, New Folder, Rename, confirmed
+  Delete, Refresh) and an inline name editor instead of bottom action buttons
+- DONE: File Manager is installed by os_personal and auto-installed on existing
+  personal PCs when the desktop is built
+- DONE: Client hot-reload hardening: PCMod.Gui is preserved instead of being
+  recreated, HackyClicky tolerates a missing on-screen keyboard, and the
+  keyboard callback guards KBRegisterKeyPress
+- DONE: pc_kickstart now releases the camera lock, screen clicker, HackyClicky,
+  lock frame, keyboard and frozen player before reloading, so it cannot leave
+  the laptop control UI stuck on screen
+- DONE: File Manager breadcrumb moved to its own line above the pane headers and
+  truncated to the window width (no longer overlaps the "Contents" title)
+- DONE: File Manager navigation pane is now a folder tree of the whole PC (root,
+  indented children, expand/collapse arrows, current path auto-expanded and
+  selected) instead of a flat list of top-level disks
+- DONE: File Manager tree keeps the current nested path selected (e.g.
+  system/os) even when an old program only sends the flat Places list
+- DONE: Double-click uses RealTime() with a 0.55s window and ignores duplicate
+  events from the same physical click, so two real clicks trigger the action
+- DONE: File browser API centralized in programs/base.lua:
+    * ShowFilePicker( path, mode ) / ShowOpenFile( path ) / CloseOpenFile()
+    * ProcessCommand handles picker_nav / picker_sel / picker_close
+    * OnFilePicked( path ) hook (defaults to DoCommand( "openpath" ))
+    * BuildFileTree() / GetPlaces() / NormalizePath() shared with the File Manager
+- DONE: Notepad's file picker now browses the whole virtual drive (root folder
+  tree + contents) instead of an empty mydocs/text list, and opens the selected
+  file by its full path
+- DONE: Theme colours are fail-safe: GetThemeColour falls back to Basic and then
+  to a default colour, and Basic/Server are reloaded if a client is missing them
+  (fixes the first-run window's nil Secondary spam)
+- DONE: Notepad can open files outside mydocs/text (openpath) and saves them
+  back to the original path unless the filename is changed
+- DONE: IPv6 "Emulation" with real subnet semantics:
+    * every router LAN owns one /64, fd00:c0:a8:<subnet>::/64
+    * every backbone owns one /64, fd00:a:0:<subnet>::/64
+    * .0 is the gateway (::1), PCs are ::2, ::3, ... on that /64
+    * every entity exposes GetIPv6, GetIPv6Prefix/Network, GetIPv6Gateway,
+      GetIPv6LinkLocal, IsInIPv6Subnet and the matching Back* methods
+    * PCMod.IPv6 provides Expand/Format, GetPrefix, Network, SubnetOf,
+      InSubnet, Gateway, LinkLocal, Equal, AddressType, IsIPv4/IsIPv6
+    * routers route IPv6 by /64 prefix (on-link LAN vs backbone) and translate
+      to the IPv4 core for delivery; unknown on-link IPv6 hosts are dropped
+      instead of being flooded (IPv6 has no broadcast)
+    * IPv4, IPv4-mapped IPv6 (::ffff:a.b.c.d and ::ffff:hhhh:hhhh),
+      ::1/localhost and bracketed literals all keep working
+    * old emulated addresses (fd00:c0:a8:<s>:<h>::1) are still parsed
+
+=== PROGRAM AUTHORING / OS PROGRAM API ===
+- Goal: make it easy to write new PCMod programs without having to copy the
+  internals of an existing program.
+- DONE: programs/base.lua keeps every original lifecycle/OS method and adds
+  documented helpers:
+    * lifecycle: OnActivate, OnDeactivate, OnLoad, OnUnload, OnUninstall
+    * commands: ProcessCommand (handles exit/close + forwards to DoCommand)
+    * persistence: GetDataPath, SaveData, LoadData (JSON + util.Compress)
+    * files: FileExists, FolderExists, ReadFile, WriteFile, DeleteFile, ListFiles
+    * theme: GetTheme, GetThemeColor
+    * network: SendNetworkPacket, ProcessNetworkPacket
+    * devices/USB: GetUSBDevicePorts, SendUSBData, ReceiveUSBData
+    * audio: PlaySound, StopSounds
+    * timers: Timer, KillTimer
+    * misc: Toggle, GetInfo, DbgMsg
+- DONE: OS prog_command dispatch now calls ProcessCommand, so programs that do
+  not implement their own exit handling still close cleanly.
+- DONE: pr_notepad.lua demonstrates the new API.
+- DONE: Added lua/pcmod/programs/PROGRAM_API.txt (full author guide) and
+  lua/pcmod/programs/_template.lua (safe, not auto-loaded).
+- DONE: Added the pc_prog_check concommand, which compiles a program file with
+  CompileString and reports syntax errors in-game (GLua accepts // and !/&&/||,
+  so a plain Lua parser cannot validate these files).
+- TODO: Let programs register keyboard shortcuts through the OS/GUI instead of
+  only logging RegisterShortcut calls.
+
+=== ADDITIONAL HIGH-PRIORITY ITEMS ===
+- DONE: BSOD now clears through ScreenSpace:ClearAll (with a missing-screen
+  guard) instead of calling the nonexistent Clear method
+- DONE: Program writes use lock-aware Entity:WriteFileChecked and return
+  success/error results; trusted OS/entity writes retain their separate path.
+  Notepad no longer bypasses inherited locks or reports failed saves as saved,
+  and a failed update preserves the client's unsaved document/filename
+- DONE: VFS rename/copy/delete use the resolved stored casing for recursive
+  mutations, existing case-variant writes reuse the stored file key, and
+  program FileExists/FolderExists use the same resolver as entity reads
+- DONE: Wiring UnlinkPort rejects an invalid port before touching rope/cable
+  fields instead of dereferencing nil
+- DONE: Packet ids are never reused while still in flight; saturation now
+  backpressures CreatePacket, routers drop safely, and SendNetworkPacket
+  returns false. Added BIOS/network/wiring and mixed-case/locked-save mocks
+- Fix the net.Receive "Nope" security hole in sv_rp.lua - validate player is PC Technician properly
+- Consolidate duplicate config files sh_baseconfig.lua and sh_config.lua
+- Add buffer size limits even when logging is disabled to prevent memory leaks
+- Add proper validation to all concommand handlers for NULL player cases
+- Fix pc_dumpdir ListDir function to not remove files with dots in names
+- Improve router wireless handling to filter more carefully when range is 0 (unlimited)
+
+=== MEDIUM PRIORITY ===
+- Clean up obsolete "Round X (M-Y)" audit comments or move to changelog
+- Add max size trimming to PCMod.MsgDebugBuffer and PCMod.MsgBuffer even when logging is off
+- Improve network packet ID allocation performance (FindFreePacketSlot linear scans)
+- Standardize config accessors instead of direct PCMod.Cfg.xxx access throughout codebase
+
+=== LOW PRIORITY ===
+- Enhance VGUI system readability (BindPress function nested if-statements)
+- Add more derma theme options and color schemes
+- Improve documentation comments throughout Lua files
+
+=== FILES MODIFIED ===
+- lua/pcmod/osystems/base.lua (UPDATED - added OS:SetupDataFolders)
+- lua/pcmod/osystems/os_personal.lua (UPDATED - uses shared SetupDataFolders; ProcessCommand)
+- lua/pcmod/osystems/os_server.lua (UPDATED - uses shared SetupDataFolders; ProcessCommand)
+- lua/pcmod/osystems/base_os.lua (REMOVED - duplicated osystems/base.lua)
+- lua/pcmod/programs/base.lua (UPDATED - original API restored + program-author helpers)
+- lua/pcmod/programs/pr_notepad.lua (UPDATED - demonstrates the new API)
+- lua/pcmod/programs/PROGRAM_API.txt (NEW - program author guide)
+- lua/pcmod/programs/_template.lua (NEW - copyable template, not auto-loaded)
+- lua/pcmod/sv_programs.lua (UPDATED - added pc_prog_check)
+- lua/pcmod/sh_config.lua (UPDATED - RPCostDefaults + comments)
+- lua/pcmod/sh_settings.lua (UPDATED - RPCost reset and program list editor)
+- lua/entities/pcmod_base/shared.lua (UPDATED - full VFS helpers)
+- lua/pcmod/programs/base.lua (UPDATED - program-level filesystem helpers)
+- lua/pcmod/programs/pr_files.lua (NEW - File Manager program)
+- lua/pcmod/ssdevices/dev_win_files.lua (NEW - File Manager window)
+- lua/pcmod/programs/pr_notepad.lua (UPDATED - openpath and save-back path)
+- lua/pcmod/ssdevices/dev_win_notepad.lua (UPDATED - shows opened filename)
+- lua/pcmod/osystems/os_personal.lua (UPDATED - installs File Manager)
+- tests/ (NEW - static GLua checks and mock suites moved out of /tmp; run tests/run_tests.sh)

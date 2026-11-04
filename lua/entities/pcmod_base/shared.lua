@@ -790,7 +790,7 @@ if (SERVER) then
 			if (!key) then return nil end
 			local item = hd[ key ]
 			if (!item) then return nil end
-			local norm = FS_NormalizePath( path )
+			local norm = FS_NormalizePath( key )
 			local info = {}
 			info.Name = FS_Basename( norm )
 			info.Path = norm
@@ -812,6 +812,9 @@ if (SERVER) then
 			if ((oldnorm == "") || (newnorm == "") || (oldnorm == newnorm)) then return false end
 			local oldkey = FS_FindKey( hd, oldnorm )
 			if (!oldkey) then return false end
+			// Lookup is case-insensitive; use the stored spelling for every
+			// descendant mutation as well or a case-variant path matches nothing.
+			oldnorm = FS_NormalizePath( oldkey )
 			if (self:IsPathLocked( oldnorm ) || self:IsPathLocked( newnorm )) then
 				PCMod.Msg( "Tried to rename a locked path: " .. oldnorm .. " (" .. tostring( self:EntIndex() ) .. ")", true )
 				return false
@@ -853,7 +856,9 @@ if (SERVER) then
 			local oldnorm = FS_NormalizePath( oldpath )
 			local newnorm = FS_NormalizePath( newpath )
 			if ((oldnorm == "") || (newnorm == "") || (oldnorm == newnorm)) then return false end
-			if (!FS_FindKey( hd, oldnorm )) then return false end
+			local oldkey = FS_FindKey( hd, oldnorm )
+			if (!oldkey) then return false end
+			oldnorm = FS_NormalizePath( oldkey )
 			if (self:IsPathLocked( oldnorm ) || self:IsPathLocked( newnorm )) then
 				PCMod.Msg( "Tried to copy a locked path: " .. oldnorm .. " (" .. tostring( self:EntIndex() ) .. ")", true )
 				return false
@@ -892,7 +897,9 @@ if (SERVER) then
 			if (!hd) then return false end
 			local norm = FS_NormalizePath( path )
 			if (norm == "") then return false end
-			if (!FS_FindKey( hd, norm )) then return false end
+			local key = FS_FindKey( hd, norm )
+			if (!key) then return false end
+			norm = FS_NormalizePath( key )
 			if (self:IsPathLocked( norm )) then
 				PCMod.Msg( "Tried to delete a locked path: " .. norm .. " (" .. tostring( self:EntIndex() ) .. ")", true )
 				return false
@@ -968,30 +975,47 @@ if (SERVER) then
 		
 		function ENT:WriteFile( filename, content )
 			local hd = FS_HardDrive( self )
-			if (!hd) then return end
+			if (!hd) then return false, "no_drive" end
 			local norm = FS_NormalizePath( filename )
-			if (norm == "") then return end
-			// The OS and the entity Setup legitimately write *into* locked
-			// folders (system/boot.sys, system/data/pcdata.dat, ...). Only a
-			// file entry that is itself locked is protected here; the BIOS
-			// write_file command enforces folder locks for untrusted input.
+			if (norm == "") then return false, "invalid_path" end
+			// Trusted entity/OS writes may still target locked folders during
+			// setup and persistence. Untrusted program writes use
+			// WriteFileChecked below, which enforces inherited locks too.
 			local existing = FS_FindKey( hd, norm )
 			if (existing && hd[ existing ].Locked) then
 				PCMod.Msg( "Tried to overwrite locked file: " .. norm .. " (" .. tostring( self:EntIndex() ) .. ")", true )
-				return
+				return false, "locked"
+			end
+			if (existing && (hd[ existing ].ItemType != "file")) then
+				return false, "not_file"
 			end
 			local dir = FS_ParentPath( norm )
 			local dirkey = FS_FindKey( hd, dir )
 			if (dirkey && (hd[ dirkey ].ItemType == "file")) then
 				PCMod.Msg( "Tried to use file as a folder: " .. dir .. " (" .. tostring( self:EntIndex() ) .. ")", true )
-				return
+				return false, "parent_is_file"
 			end
+			// Preserve the stored key when an existing file was found through
+			// case-insensitive lookup instead of creating a duplicate.
+			local stored = existing and FS_NormalizePath( existing ) or norm
 			local tmp = {}
 			tmp.ItemType = "file"
-			tmp.ItemName = norm
+			tmp.ItemName = stored
 			tmp.ItemContent = content
 			tmp.Locked = false
-			hd[ "/" .. norm ] = tmp
+			hd[ existing or ( "/" .. norm ) ] = tmp
+			return true
+		end
+
+		// Lock-aware write for player/program input. Entity and OS internals keep
+		// using WriteFile because they legitimately populate system/data during
+		// setup and save PC state while those folders are locked to users.
+		function ENT:WriteFileChecked( filename, content )
+			if (self:IsPathLocked( filename )) then
+				PCMod.Msg( "Tried to write inside locked path: " .. tostring( filename ) .. " (" .. tostring( self:EntIndex() ) .. ")", true )
+				return false, "locked"
+			end
+			return self:WriteFile( filename, content )
 		end
 		
 		function ENT:ReadFile( filename )

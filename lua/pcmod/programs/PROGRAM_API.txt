@@ -136,7 +136,9 @@ Virtual file system
 FileExists( name )      true if the file exists
 FolderExists( name )    true if the folder exists
 ReadFile( name )        raw file contents ("" when missing)
-WriteFile( name, data ) write/replace a file
+WriteFile( name, data ) write/replace a file through the lock-aware program API;
+                        returns true, or false plus an error code ("locked",
+                        "invalid_path", "parent_is_file", ...) without changing data
 DeleteFile( name )      remove a file/folder (fails when locked)
 ListFiles( folder )     table of direct child names (files and folders)
 
@@ -174,6 +176,7 @@ GetThemeColor( key, default )  theme colour; on the server this safely returns
 Networking
 ----------
 SendNetworkPacket( entIndex, port, body )
+    Returns the packet id, or false when every packet slot is still in flight.
 ProcessNetworkPacket( sourceEnt, port, body )
 
     The target OS must have the port open (OpenNetPort) or the packet is

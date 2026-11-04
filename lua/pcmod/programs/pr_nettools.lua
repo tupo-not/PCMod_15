@@ -28,7 +28,12 @@ function PROG:DoCommand( com, args )
 	end
 	if (com == "ip") then
 		local os = self:GetOS()
-		self.DeviceData.St = "IPv4: " .. tostring( os:GetIP() )
+		local ipv4 = os:GetIP()
+		if (os.GetFullIP) then
+			local full = os:GetFullIP()
+			if (full) then ipv4 = full end
+		end
+		self.DeviceData.St = "IPv4: " .. tostring( ipv4 )
 		self.DeviceData.IP = "IPv6: " .. tostring( os:GetIPv6() or "none" )
 		self.DeviceData.Tg = "Subnet: " .. tostring( os:GetIPv6Prefix() or "none" )
 		self:UpdateSS()

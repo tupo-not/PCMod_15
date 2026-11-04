@@ -47,6 +47,10 @@ function DRV:GetIP()
 	return self.Entity:GetIP()
 end
 
+function DRV:GetFullIP()
+	return self.Entity:GetFullIP()
+end
+
 function DRV:GetIPv6()
 	return self.Entity:GetIPv6()
 end

@@ -29,6 +29,28 @@ function PROG:GetSaveTarget( filename )
 	return self.SaveRoot .. filename
 end
 
+// Save through the lock-aware program API. A failed save must not advance TC
+// or OpenPath: those describe the last successfully saved document.
+function PROG:SaveDocument( filename, text )
+	if (text == nil) then text = "" end
+	local target = self:GetSaveTarget( filename )
+	local ok, err = self:WriteFile( target, util.Compress( text ) )
+	self.DeviceData.SaveFailed = !ok
+	if (!ok) then
+		self.DeviceData.St = (err == "locked") and 6 or 7
+		self:UpdateSS()
+		return false, err
+	end
+	self.DeviceData.TC = text
+	self.OpenPath = target
+	self.DeviceData.FN = self:GetBaseName( target )
+	self.DeviceData.St = 1 // "File saved."
+	// Push the new TC back to the client so the "Unsaved Changes" marker
+	// compares against the saved text and disappears.
+	self:UpdateSS()
+	return true
+end
+
 // ==========================================
 // OnInstall - called when program is installed
 // ==========================================
@@ -88,16 +110,8 @@ function PROG:DoCommand( com, args )
 		end
 		if (text == nil) then text = "" end
 		PCMod.Msg( "Recieved content to save! (" .. text .. ")", true )
-		self.DeviceData.TC = text
 		// Save raw compressed text - the "open" command reads the same format.
-		local target = self:GetSaveTarget( filename )
-		self.Entity:WriteFile( target, util.Compress( text ) )
-		self.OpenPath = target
-		self.DeviceData.FN = self:GetBaseName( target )
-		self.DeviceData.St = 1 // "File saved."
-		// Push the new TC back to the client so the "Unsaved Changes" marker
-		// compares against the saved text and disappears.
-		self:UpdateSS()
+		self:SaveDocument( filename, text )
 		return
 	end
 	if (com == "update") then
@@ -109,15 +123,11 @@ function PROG:DoCommand( com, args )
 		if (!txt) then txt = "" end
 		local fname = args[1]
 		if (!fname) then fname = "untitled.txt" end
-		local fn = self:GetSaveTarget( fname )
-		self.Entity:WriteFile( fn, util.Compress(txt))
-		self.OpenPath = fn
-		self.DeviceData.FN = self:GetBaseName( fn )
-		self.DeviceData.St = 1
-		self:UpdateSS()
+		self:SaveDocument( fname, txt )
 		return
 	end
 	if (com == "open") then
+		self.DeviceData.SaveFailed = false
 		local fname = args[1]
 		if (!fname) then fname = "untitled.txt" end
 		local fn = self.SaveRoot .. fname
@@ -144,6 +154,7 @@ function PROG:DoCommand( com, args )
 		return
 	end
 	if (com == "openpath") then
+		self.DeviceData.SaveFailed = false
 		local fn = args[1]
 		if (!fn) then return end
 		fn = string.gsub( tostring( fn ), "\\", "/" )

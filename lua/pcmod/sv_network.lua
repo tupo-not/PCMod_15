@@ -76,7 +76,11 @@ function PCMod.Network.CreatePacket( source, dest, port, body )
 	local pid = PCMod.Network.NextID
 	if ((pid < 1) || (pid > maxpid) || PCMod.Network.Packets[ pid ]) then
 		pid = PCMod.Network.FindFreePacketSlot( maxpid, pid )
-		// The slot held a previous packet - routers remember every pid they
+		// Never alias a new packet onto an in-flight id. Routers keep
+		// asynchronous references to these ids, so reuse is only safe after
+		// delivery (or when the slot was already empty).
+		if (!pid) then return nil end
+		// The slot held a delivered packet - routers remember every pid they
 		// processed (drv_router mem.P), so forget it everywhere or the new
 		// packet would be dropped as "Already processed".
 		if (PCMod.Network.Packets[ pid ]) then
@@ -90,7 +94,8 @@ function PCMod.Network.CreatePacket( source, dest, port, body )
 end
 
 // ---------------------------------------------------------------------------------------------------------
-// FindFreePacketSlot - Picks a free/recyclable packet id <= maxpid (never fails)
+// FindFreePacketSlot - Picks a free/recyclable packet id <= maxpid.
+// Returns nil when every slot is still in flight; callers must backpressure.
 // ---------------------------------------------------------------------------------------------------------
 function PCMod.Network.FindFreePacketSlot( maxpid, start )
 	if (!start || start < 1 || start > maxpid) then start = 1 end
@@ -112,15 +117,9 @@ function PCMod.Network.FindFreePacketSlot( maxpid, start )
 	end
 	if (ge) then return ge end
 	if (all) then return all end
-	// 3) pathological (all slots undelivered): rotate over occupied ids >= start,
-	//    then from 1 - memory stays bounded, the network stays up, the oldest id
-	//    in the rotation is sacrificed (its in-flight delivery may be misrouted).
-	ge, all = nil, nil
-	for k in pairs(PCMod.Network.Packets) do
-		if (k >= start && (!ge || k < ge)) then ge = k end
-		if (!all || k < all) then all = k end
-	end
-	return ge or all or 1
+	// 3) Every slot is still in flight. Reusing one would let stale router
+	//    references deliver the new packet as if it were the old one.
+	return nil
 end
 
 // ---------------------------------------------------------------------------------------------------------

@@ -195,13 +195,20 @@ function DEV:OnUpdate()
 	if (st == 3) then self.Status = "File does not exist." end
 	if (st == 4) then self.Status = "No printer hardware." end
 	if (st == 5) then self.Status = "File printed." end
-	if ((self.FN) && (self.FN != "")) then
-		self:SetTextboxText( "txtFilename", self.FN )
+	if (st == 6) then self.Status = "Save failed: file or folder is locked." end
+	if (st == 7) then self.Status = "Save failed." end
+	// A failed save still sends the previous TC/FN so the unsaved marker keeps
+	// working. Do not push those stale values into the editor and discard the
+	// text the player was actually trying to save.
+	if (!self.SaveFailed) then
+		if ((self.FN) && (self.FN != "")) then
+			self:SetTextboxText( "txtFilename", self.FN )
+		end
 	end
 	if (self.Textboxes[ "txtMain" ]) then
 		self:SetTextboxFont( "txtMain", self:GetEditorFontName() )
 	end
-	if (!self.TC) then return end
+	if ((!self.TC) || (self.SaveFailed)) then return end
 	self:SetTextboxText( "txtMain", self.TC )
 end
 

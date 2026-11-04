@@ -70,6 +70,7 @@ end
 function PCMod.Wiring.UnlinkPort( srcent, srcprt )
 	if ((!srcent) || (!srcent:IsValid()) || (!srcent.IsPCMod)) then return false end
 	local source = srcent:Ports()[srcprt]
+	if (!source) then return false end
 	if (source.RopeTable) then PCMod.Wiring.UnlinkRopeTable( source.RopeTable ) end
 	source.RopeTable = nil
 	if (source.CableTies) then
@@ -79,7 +80,6 @@ function PCMod.Wiring.UnlinkPort( srcent, srcprt )
 			end
 		end
 	end
-	if (!source) then return false end
 	if (!source.Connected) then return false end
 	local destent = source.ConEnt
 	if ((!destent) || (!destent:IsValid()) || (!destent.IsPCMod)) then return false end

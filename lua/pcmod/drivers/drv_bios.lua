@@ -234,7 +234,8 @@ function DRV:TriggerState( state )
 		self.NextUpdate = CurTime()+self:BootDelay( 1 )
 		local display = self:GetOSDriver( "gen_display" )
 		local ss = display:GetScreen()
-		ss:Clear()
+		if (!ss) then return end
+		ss:ClearAll()
 		local dev = ss:MakeDevice( "bsod", 0, 0, 1, 1, { Text = {} }, 2 )
 		ss:AddDevice( "win_bsod", dev )
 	end

@@ -77,7 +77,7 @@ cfg.QuickType = 3 -- 0 = Completely disabled, 1 = debug mode only, 2 = keyboard 
 
 cfg.BootSpeed = 0.25 -- PC boot pacing multiplier (1 = original speed, 0.25 = fast). Applies to BIOS/OS boot stages and shutdown.
 
-cfg.GuiScale = 1 -- PC UI scale (0.25/0.5 = smaller, 1 = default, 1.5/2 = larger). Fullscreen monitor UI keeps a consistent size on any resolution.
+cfg.GuiScale = 0.5 -- PC UI scale (0.25 = smallest, 0.5 = default, 1/1.5/2 = larger). Fullscreen monitor UI keeps a consistent size on any resolution.
 
 cfg.PrintTime = 5 -- How long does it take to print a document? (Seconds)
 

@@ -539,7 +539,8 @@ function PROG:SaveData( filename, data )
 	data = data or self.DeviceData
 	if (!data) then return false end
 	local fn = self:GetDataPath( filename )
-	self.Entity:WriteFile( fn, util.Compress( PCMod.TableToString( data ) ) )
+	local ok, err = self:WriteFile( fn, util.Compress( PCMod.TableToString( data ) ) )
+	if (!ok) then return false, err end
 	PCMod.Msg( "Program data saved to " .. fn, true )
 	return true
 end
@@ -580,11 +581,13 @@ end
 // Network helpers
 // ------------------------------------------------------------------------------------------------
 function PROG:SendNetworkPacket( destEntIndex, port, body )
-	if (!destEntIndex) then return end
+	if (!destEntIndex) then return false end
 	if (!port) then port = 0 end
 	if (!body) then body = {} end
-	PCMod.Network.CreatePacket( self.Entity:EntIndex(), destEntIndex, port, body )
+	local pid = PCMod.Network.CreatePacket( self.Entity:EntIndex(), destEntIndex, port, body )
+	if (!pid) then return false end
 	PCMod.Msg( "Program sent network packet to entity " .. tostring( destEntIndex ), true )
+	return pid
 end
 
 function PROG:ProcessNetworkPacket( sourceEnt, port, body )
@@ -612,12 +615,11 @@ end
 
 local function PCProgItem( ent, path )
 	if ((!ent) || (!ent:IsValid())) then return nil end
-	local data = PCMod.Data[ ent:EntIndex() ]
-	if ((!data) || (!data.HardDrive)) then return nil end
 	local norm = PCProgPath( path )
 	if (norm == "") then return nil end
-	local key = "/" .. norm
-	return (data.HardDrive[ key ] or data.HardDrive[ key .. "/" ])
+	// GetItemInfo uses the entity's canonical (case-insensitive) resolver, so
+	// program existence checks agree with ReadFile and the VFS mutations.
+	return ent:GetItemInfo( norm )
 end
 
 local function PCProgBasename( path )
@@ -628,12 +630,12 @@ end
 
 function PROG:FileExists( filename )
 	local item = PCProgItem( self.Entity, filename )
-	return (item != nil) && (item.ItemType == "file")
+	return (item != nil) && (item.Type == "file")
 end
 
 function PROG:FolderExists( foldername )
 	local item = PCProgItem( self.Entity, foldername )
-	return (item != nil) && (item.ItemType == "folder")
+	return (item != nil) && (item.Type == "folder")
 end
 
 function PROG:ReadFile( filename )
@@ -642,8 +644,8 @@ function PROG:ReadFile( filename )
 end
 
 function PROG:WriteFile( filename, content )
-	if (!self.Entity) then return false end
-	return self.Entity:WriteFile( PCProgPath( filename ), content )
+	if (!self.Entity) then return false, "no_entity" end
+	return self.Entity:WriteFileChecked( PCProgPath( filename ), content )
 end
 
 function PROG:DeleteFile( filename )
