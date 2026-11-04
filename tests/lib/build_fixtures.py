@@ -25,6 +25,7 @@ FIXTURES = {
     "pcmod_ss_base.lua": "pcmod/ssdevices/base.lua",
     "mycomp.lua": "pcmod/ssdevices/dev_win_mycomp.lua",
     "pcmod_mycomp_prog.lua": "pcmod/programs/pr_mycomputer.lua",
+    "pcmod_browser.lua": "pcmod/programs/pr_browser.lua",
     "pcmod_files_ui.lua": "pcmod/ssdevices/dev_win_files.lua",
     "pcmod_open_ui.lua": "pcmod/ssdevices/dev_win_open.lua",
     "pcmod_files.lua": "pcmod/programs/pr_files.lua",
@@ -52,6 +53,7 @@ CHECK_ONLY = [
     "autorun/sh_pcmod_launch.lua",
     "pcmod/drivers/drv_network.lua",
     "entities/pcmod_router/shared.lua",
+    "pcmod/ssdevices/dev_win_browser.lua",
 ]
 
 

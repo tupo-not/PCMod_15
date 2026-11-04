@@ -278,7 +278,7 @@ function DRV:CallEvent( data )
 			// WAN backbone address, then renumber its LAN.
 			self.BLAN[ data[ 1 ] ] = port
 			local bb = self.Entity:GetBSubnet()
-			PCMod.Network.RegisterPC( port.ConEnt, bb, true )
+			PCMod.Network.RegisterPC( port.ConEnt, bb )
 			local lanid = self:NextLanID()
 			port.ConEnt:SetUpBB( bb )
 			port.ConEnt:SetLanID( lanid )
@@ -316,7 +316,7 @@ function DRV:CallEvent( data )
 
 		if ((cls == "pcmod_brouter") && (peer == "pcmod_router")) then
 			local lanid = self.Children && self.Children[ port.ConEnt:EntIndex() ]
-			PCMod.Network.UnRegisterPC( port.ConEnt, self.Entity:GetBSubnet(), true )
+			PCMod.Network.UnRegisterPC( port.ConEnt, self.Entity:GetBSubnet() )
 			if (lanid && self.ChildLan) then self.ChildLan[ lanid ] = nil end
 			if (self.Children) then self.Children[ port.ConEnt:EntIndex() ] = nil end
 			// The detached LAN becomes standalone again.

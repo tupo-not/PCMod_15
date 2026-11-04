@@ -103,6 +103,12 @@ PCMod Improvement TODO List
   { "http", path } to port 80 of the router gets a plain-text config page
   (IPv4/IPv6, prefix, backbone, DHCP pool, Wi-Fi status/password, client
   count). The browser itself is deferred
+- DONE: Added a Browser program (address bar + Go/Home) that fetches a page
+  over the network: it sends { "http", path } to port 80 and renders the reply,
+  so a PC can open a router's built-in web page
+- DONE: Removed the dead LAN branch of PCMod.Network.RegisterPC/UnRegisterPC,
+  the Subnets/Availible.Sub registries and the global LAN-subnet allocator,
+  plus its mock - LAN addressing is now wholly the router's per-router DHCP
 - DONE: Backbones run a distance-vector routing protocol: each learns every
   reachable /32 (next hop + hop count) and reconverges whenever a backbone link
   is added/removed, so IPv6 routes across any number of backbones. LAN routers

@@ -47,13 +47,13 @@ TESTS=(
     mock_router
     mock_bios
     mock_network
-    mock_dhcp
     mock_leases
     mock_routing
     mock_wiring
     mock_windows
     mock_mycomp
     mock_mycomp_prog
+    mock_browser
     mock_ui_scale
     mock_hackyclicky
     mock_elements
