@@ -93,6 +93,16 @@ PCMod Improvement TODO List
   slots; when the pool is full the client is still admitted as IPv6-only (the
   Control Panel shows "IPv6 only"), mirroring a real DHCP server. cfg.LanNetmask
   is 24 for now; /16 depends on the IPv6-only addressing pass
+- DONE: IPv6 renumbered to a real hierarchical scheme: one global fd00::/16,
+  one /32 per backbone router (fd00:<bb>::/32) and one /64 per LAN router
+  (fd00:<bb>:0:<net>::/64); a standalone LAN uses fd00:0:0:<net>::/64. LANs no
+  longer know about the WAN/backbones, the old flat fd00:c0:a8 / fd00:a:0
+  formats were dropped, and routers match destinations against their /64 then
+  /32 prefixes
+- DONE: Routers expose a minimal web server: any in-game computer that sends
+  { "http", path } to port 80 of the router gets a plain-text config page
+  (IPv4/IPv6, prefix, backbone, DHCP pool, Wi-Fi status/password, client
+  count). The browser itself is deferred
 - DONE: Control Panel Network page now scans and lists nearby wireless routers
   (name, distance, signal %), lets the user connect with the router's Wi-Fi
   password (default 123), and disconnect; the PC routes over the air through

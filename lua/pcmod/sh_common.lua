@@ -233,27 +233,25 @@ end
 // ---------------------------------------------------------------------------------------------------------
 // PCMod's network is IPv4 based. To let programs be written and tested against
 // IPv6, every PC also gets a deterministic unique-local address. The emulation
-// follows IPv6 subnetting instead of mapping one IPv4 octet per group:
+// follows real hierarchical subnetting:
 //
-//   * each router LAN is one /64,  fd00:c0:a8:<subnet>::/64
-//   * each backbone is one /64,    fd00:a:0:<subnet>::/64
-//   * the router/gateway is ::1, the PCs are ::2, ::3, ...
+//   * the whole internet is one ULA /16:            fd00::/16
+//   * each backbone router owns one /32:            fd00:<bb>::/32
+//   * each LAN router owns one /64 of that /32:     fd00:<bb>:0:<subnet>::/64
+//   * the router/gateway of a /64 is ::1, hosts are ::2, ::3, ...
 //
-// Examples:
-//
-//   192.168.5.1 (router)  ->  fd00:c0:a8:5::1
-//   192.168.5.2 (first PC) ->  fd00:c0:a8:5::2
-//   10.0.3.0    (router)  ->  fd00:a:0:3::1
-//   10.0.3.1    (first PC) ->  fd00:a:0:3::2
+// A standalone LAN (not connected to a backbone) uses fd00:0:0:<subnet>::/64,
+// so a LAN never needs to know about the wider network to get an address.
 //
 // The normal IPv4 addresses keep working, and the standard IPv4-mapped form
 // (::ffff:192.168.5.2 and ::ffff:c0a8:0502) plus ::1/localhost/link-local
 // addresses are understood everywhere an address is accepted. Routers match
-// IPv6 destinations against their /64 prefixes and translate them back to IPv4
-// for delivery, so no separate IPv6 packet format is needed.
+// IPv6 destinations against their /64 LAN and /32 backbone prefixes and
+// translate the result back to IPv4 for delivery.
 //
-// This block also provides the prefix helpers (GetPrefix, InSubnet, Gateway,
-// LinkLocal, AddressType) used by routers, programs and the entity class.
+// This block also provides the prefix helpers (BackbonePrefix, LANPrefix,
+// GetPrefix, InSubnet, Gateway, LinkLocal, AddressType) used by routers,
+// programs and the entity class.
 PCMod.IPv6 = PCMod.IPv6 or {}
 
 // Split one textual group and validate it (1-4 hex digits).
@@ -371,9 +369,22 @@ function PCMod.IPv6.Normalize( addr )
 	return string.lower( addr )
 end
 
-// Build the emulated IPv6 address for an IPv4 address string.
-// Routers (.1) become the ::1 gateway, hosts are ::2, ::3, ...
-// Addresses outside PCMod's LAN/backbone space use the standard mapped form.
+// Hierarchical allocation helpers. The whole PCMod internet is one ULA /16:
+//   * one /32 per backbone router:  fd00:<bb>::/32
+//   * one /64 per LAN router:       fd00:<bb>:0:<subnet>::/64
+// LANs only know their own /64 (they know nothing about the WAN / backbones);
+// a standalone LAN (no backbone) uses fd00:0:0:<subnet>::/64.
+function PCMod.IPv6.BackbonePrefix( bb )
+	return PCMod.IPv6.Format( { 0xfd00, bb, 0, 0, 0, 0, 0, 0 } ) .. "/32"
+end
+
+function PCMod.IPv6.LANPrefix( bb, subnet )
+	return PCMod.IPv6.Format( { 0xfd00, bb, 0, subnet, 0, 0, 0, 0 } ) .. "/64"
+end
+
+// Build the emulated IPv6 address for an IPv4 address string. Only the backbone
+// (10.0.bb.host) and loopback have a stateless mapping; a LAN's /64 depends on
+// its upstream backbone, so LAN addresses are stored rather than derived here.
 function PCMod.IPv6.FromIPv4( ip )
 	if (type( ip ) != "string") then return nil end
 	local a, b, c, d = string.match( ip, "^(%d+)%.(%d+)%.(%d+)%.(%d+)$" )
@@ -382,15 +393,9 @@ function PCMod.IPv6.FromIPv4( ip )
 	if ((!a) || (!b) || (!c) || (!d)) then return nil end
 	if ((a > 255) || (b > 255) || (c > 255) || (d > 255)) then return nil end
 	if ((a == 127) && (b == 0) && (c == 0) && (d == 1)) then return "::1" end
-	// Host numbering: on a LAN the router is .1 and hosts are .2.., and the
-	// IPv6 interface id uses the same octet. On the backbone the gateway stays
-	// .0 and hosts are .1.. so its id is the octet + 1.
-	if ((a == 192) && (b == 168)) then
-		return PCMod.IPv6.Format( { 0xfd00, 0xc0, 0xa8, c, 0, 0, 0, d } )
-	end
 	if ((a == 10) && (b == 0)) then
-		local iid = (d == 0) and 1 or (d + 1)
-		return PCMod.IPv6.Format( { 0xfd00, 0xa, 0, c, 0, 0, 0, iid } )
+		// Backbone gateway .0 -> ::1, routers .1.. -> ::2, ::3, ...
+		return PCMod.IPv6.Format( { 0xfd00, c, 0, 0, 0, 0, 0, d + 1 } )
 	end
 	// Any other IPv4 address is represented in the standard mapped form.
 	return PCMod.IPv6.Format( { 0, 0, 0, 0, 0, 0xffff, (a * 256) + b, (c * 256) + d } )
@@ -414,27 +419,18 @@ function PCMod.IPv6.ToIPv4( addr )
 	if ((g[1] == 0) && (g[2] == 0) && (g[3] == 0) && (g[4] == 0) && (g[5] == 0) && (g[6] == 0xffff)) then
 		return string.format( "%d.%d.%d.%d", math.floor( g[7] / 256 ), g[7] % 256, math.floor( g[8] / 256 ), g[8] % 256 )
 	end
-	// Emulated ULA space: fd00:c0:a8:<subnet>::<iid> (LAN) and
-	// fd00:a:0:<subnet>::<iid> (backbone), in the compact form.
 	if (g[1] == 0xfd00) then
+		local bb = g[2]
 		local subnet = g[4]
-		local host = nil
-		local lan = (g[2] == 0xc0) && (g[3] == 0xa8)
 		if ((g[5] == 0) && (g[6] == 0) && (g[7] == 0)) then
-			// On a LAN the gateway is .1 and hosts are .2..; on the backbone
-			// the gateway stays .0 and hosts are .1..
-			if (lan) then
-				host = g[8]
-			else
-				host = (g[8] == 1) and 0 or (g[8] - 1)
-			end
-		end
-		if ((host != nil) && (subnet <= 255) && (host >= 0) && (host <= 255)) then
-			if ((g[2] == 0xc0) && (g[3] == 0xa8)) then
-				return string.format( "192.168.%d.%d", subnet, host )
-			end
-			if ((g[2] == 0xa) && (g[3] == 0)) then
-				return string.format( "10.0.%d.%d", subnet, host )
+			if ((g[3] == 0) && (subnet == 0)) then
+				// Backbone host fd00:<bb>:0:0::<iid> -> 10.0.<bb>.<iid-1>
+				if ((g[8] >= 1) && (g[8] <= 256)) then
+					return string.format( "10.0.%d.%d", bb, g[8] - 1 )
+				end
+			elseif ((g[3] == 0) && (subnet >= 1) && (subnet <= 255) && (g[8] <= 255)) then
+				// LAN host fd00:<bb>:0:<subnet>::<iid> -> 192.168.<subnet>.<iid>
+				return string.format( "192.168.%d.%d", subnet, g[8] )
 			end
 		end
 	end

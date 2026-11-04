@@ -403,10 +403,10 @@ if (SERVER) then
 				PCMod.Data[ self:EntIndex() ].IP.Full = "192.168."..tmp.Sub.."."..tmp.Add
 				self:SetNWString( "IP", PCMod.Data[ self:EntIndex() ].IP.Full )
 				// Emulated dual-stack address (see PCMod.IPv6 in sh_common.lua).
-				// The LAN is a /64; .1 is the router/gateway, .2+ are hosts.
-				tmp.V6 = PCMod.IPv6.FromIPv4( tmp.Full )
-				tmp.V6Prefix = tmp.V6 && PCMod.IPv6.GetPrefix( tmp.V6, 64 ) or false
-				tmp.V6Link = tmp.V6 && PCMod.IPv6.LinkLocal( tmp.V6 ) or false
+				// Hierarchical LAN: fd00:<bb>:0:<subnet>::<host>.
+				tmp.V6 = PCMod.IPv6.Format( { 0xfd00, tmp.UpBB or 0, 0, tmp.Sub, 0, 0, 0, tmp.Add } )
+				tmp.V6Prefix = PCMod.IPv6.LANPrefix( tmp.UpBB or 0, tmp.Sub )
+				tmp.V6Link = PCMod.IPv6.LinkLocal( tmp.V6 )
 				self:SetNWString( "IPv6", tmp.V6 or "" )
 				self:SetNWString( "IPv6.Prefix", tmp.V6Prefix or "" )
 				self:SetNWString( "IPv6.LinkLocal", tmp.V6Link or "" )
@@ -428,8 +428,8 @@ if (SERVER) then
 				PCMod.Data[ self:EntIndex() ].IP.Back.Full = "10.0."..tmp.Sub.."."..tmp.Add
 				self:SetNWString( "IP.Back", PCMod.Data[ self:EntIndex() ].IP.Back.Full )
 				tmp.V6 = PCMod.IPv6.FromIPv4( tmp.Full )
-				tmp.V6Prefix = tmp.V6 && PCMod.IPv6.GetPrefix( tmp.V6, 64 ) or false
-				tmp.V6Link = tmp.V6 && PCMod.IPv6.LinkLocal( tmp.V6 ) or false
+				tmp.V6Prefix = PCMod.IPv6.BackbonePrefix( tmp.Sub )
+				tmp.V6Link = PCMod.IPv6.LinkLocal( tmp.V6 )
 				self:SetNWString( "IPv6.Back", tmp.V6 or "" )
 				self:SetNWString( "IPv6.Back.Prefix", tmp.V6Prefix or "" )
 				self:SetNWString( "IPv6.Back.LinkLocal", tmp.V6Link or "" )
@@ -445,11 +445,15 @@ if (SERVER) then
 			end
 		end
 
-		// Emulated IPv6 accessors. The address is derived lazily as well, so
-		// entities created before the IPv6 fields existed still report one.
+		// Emulated IPv6 accessors. The address is derived lazily so entities
+		// created before the IPv6 fields existed still report one.
+		// LAN addressing is hierarchical: fd00:<bb>:0:<subnet>::<host>.
 		function ENT:GetIPv6()
 			local ip = self:Data().IP
-			if (ip.V6 == nil) then ip.V6 = ip.Full && PCMod.IPv6.FromIPv4( ip.Full ) end
+			if ((!ip.Sub) || (!ip.Add)) then return false end
+			if (ip.V6 == nil) then
+				ip.V6 = PCMod.IPv6.Format( { 0xfd00, ip.UpBB or 0, 0, ip.Sub, 0, 0, 0, ip.Add } )
+			end
 			return ip.V6
 		end
 
@@ -457,9 +461,13 @@ if (SERVER) then
 			return self:GetIPv6()
 		end
 
+		// Backbone interface: fd00:<bb>::<host+1> (gateway .0 -> ::1).
 		function ENT:GetBIPv6()
 			local ip = self:Data().IP.Back
-			if (ip.V6 == nil) then ip.V6 = ip.Full && PCMod.IPv6.FromIPv4( ip.Full ) end
+			if ((!ip.Sub) || (!ip.Add)) then return false end
+			if (ip.V6 == nil) then
+				ip.V6 = PCMod.IPv6.Format( { 0xfd00, ip.Sub, 0, 0, 0, 0, 0, ip.Add + 1 } )
+			end
 			return ip.V6
 		end
 
@@ -467,12 +475,11 @@ if (SERVER) then
 			return self:GetBIPv6()
 		end
 
-		// The /64 prefix shared by every machine on this LAN.
+		// The /64 LAN prefix fd00:<bb>:0:<subnet>::/64.
 		function ENT:GetIPv6Prefix()
-			local v6 = self:GetIPv6()
-			if (!v6) then return false end
 			local ip = self:Data().IP
-			if (!ip.V6Prefix) then ip.V6Prefix = PCMod.IPv6.GetPrefix( v6, 64 ) end
+			if ((!ip.Sub) || (!ip.Add)) then return false end
+			if (!ip.V6Prefix) then ip.V6Prefix = PCMod.IPv6.LANPrefix( ip.UpBB or 0, ip.Sub ) end
 			return ip.V6Prefix
 		end
 
@@ -500,11 +507,11 @@ if (SERVER) then
 			return ip.V6Link
 		end
 
+		// The /32 backbone prefix fd00:<bb>::/32.
 		function ENT:GetBIPv6Prefix()
-			local v6 = self:GetBIPv6()
-			if (!v6) then return false end
 			local ip = self:Data().IP.Back
-			if (!ip.V6Prefix) then ip.V6Prefix = PCMod.IPv6.GetPrefix( v6, 64 ) end
+			if ((!ip.Sub) || (!ip.Add)) then return false end
+			if (!ip.V6Prefix) then ip.V6Prefix = PCMod.IPv6.BackbonePrefix( ip.Sub ) end
 			return ip.V6Prefix
 		end
 
@@ -528,6 +535,17 @@ if (SERVER) then
 			local ip = self:Data().IP.Back
 			if (!ip.V6Link) then ip.V6Link = PCMod.IPv6.LinkLocal( v6 ) end
 			return ip.V6Link
+		end
+
+		// Which backbone /32 this LAN hangs off (0 = standalone). Used to build
+		// the LAN /64; set by the network core when the PC joins a router.
+		function ENT:SetUpBB( bb )
+			local ip = self:Data().IP
+			ip.UpBB = bb
+			ip.V6 = nil
+			ip.V6Prefix = nil
+			ip.V6Link = nil
+			self:SetIPText()
 		end
 
 		// Is addr part of this entity's LAN (or backbone) /64?

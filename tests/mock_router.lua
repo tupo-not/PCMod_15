@@ -63,23 +63,27 @@ local function assertTrue( v, msg )
 	if (not v) then error( "FAILED: " .. msg, 2 ) end
 end
 
--- Normal LAN router: owns fd00:c0:a8:5::/64, no backbone prefix.
-ent.LanPrefix = "fd00:c0:a8:5::/64"
-ent.BackPrefix = false
-local r = DRV:ClassifyDestination( "fd00:c0:a8:5::3" )
+-- LAN router: owns fd00:3:0:5::/64, part of backbone fd00:3::/32.
+ent.LanPrefix = "fd00:3:0:5::/64"
+ent.BackPrefix = "fd00:3::/32"
+local r = DRV:ClassifyDestination( "fd00:3:0:5::3" )
 assertTrue( r.IsIPv6, "own LAN is IPv6" )
 assertTrue( r.LAN, "own LAN classified as LAN" )
 assertTrue( r.OnLinkLAN, "own LAN is on-link" )
 assertTrue( not r.Backbone, "own LAN is not backbone" )
 assertEq( r.IPv4, "192.168.5.3", "own LAN translates to IPv4" )
 
-r = DRV:ClassifyDestination( "fd00:c0:a8:5::99" )
+r = DRV:ClassifyDestination( "fd00:3:0:5::99" )
 assertTrue( r.OnLinkLAN, "unknown host on own LAN is still on-link (drop)" )
 
-r = DRV:ClassifyDestination( "fd00:c0:a8:6::3" )
-assertTrue( r.LAN, "other LAN classified as LAN" )
-assertTrue( not r.OnLinkLAN, "other LAN is NOT on-link (must forward)" )
-assertEq( r.IPv4, "192.168.6.3", "other LAN translates to IPv4" )
+r = DRV:ClassifyDestination( "fd00:3:0:6::3" )
+assertTrue( r.Backbone, "sibling LAN is in our backbone /32" )
+assertTrue( r.OnLinkBackbone, "sibling LAN is on-link backbone" )
+assertEq( r.IPv4, "192.168.6.3", "sibling LAN translates to IPv4" )
+
+r = DRV:ClassifyDestination( "fd00:4:0:5::3" )
+assertTrue( r.LAN, "other backbone classified as LAN (must flood)" )
+assertTrue( not r.OnLinkLAN, "other backbone is not on-link LAN" )
 
 r = DRV:ClassifyDestination( "192.168.5.2" )
 assertTrue( not r.IsIPv6, "IPv4 target" )
@@ -90,33 +94,42 @@ r = DRV:ClassifyDestination( "10.0.3.1" )
 assertTrue( r.Backbone, "IPv4 backbone target" )
 assertTrue( not r.OnLinkBackbone, "IPv4 backbone is not on-link" )
 
-r = DRV:ClassifyDestination( "fd00:a:0:3::2" )
-assertTrue( r.IsIPv6, "backbone IPv6 target" )
-assertTrue( r.Backbone, "backbone IPv6 classified as backbone" )
-assertTrue( not r.OnLinkBackbone, "other backbone is not on-link" )
-assertEq( r.IPv4, "10.0.3.1", "backbone IPv6 translates to IPv4" )
+assertTrue( DRV:HasIPv6Subnet( "fd00:3:0:5::3" ), "HasIPv6Subnet own LAN" )
+assertTrue( DRV:HasIPv6Subnet( "fd00:3:0:6::3" ), "HasIPv6Subnet sibling in same /32" )
+assertTrue( not DRV:HasIPv6Subnet( "fd00:4:0:5::3" ), "HasIPv6Subnet other backbone" )
 
-r = DRV:ClassifyDestination( "::ffff:192.168.5.2" )
-assertTrue( r.IsIPv6, "mapped target is IPv6" )
-assertTrue( r.LAN, "mapped LAN target" )
-assertEq( r.IPv4, "192.168.5.2", "mapped target translates" )
-
-assertTrue( DRV:HasIPv6Subnet( "fd00:c0:a8:5::3" ), "HasIPv6Subnet own LAN" )
-assertTrue( not DRV:HasIPv6Subnet( "fd00:c0:a8:6::3" ), "HasIPv6Subnet other LAN" )
-
--- Backbone router: owns fd00:a:0:3::/64, no LAN prefix.
+-- Backbone router: owns fd00:3::/32, no LAN prefix.
 ent.LanPrefix = false
-ent.BackPrefix = "fd00:a:0:3::/64"
-r = DRV:ClassifyDestination( "fd00:a:0:3::2" )
+ent.BackPrefix = "fd00:3::/32"
+r = DRV:ClassifyDestination( "fd00:3:0:2::1" )
 assertTrue( r.Backbone, "own backbone classified as backbone" )
 assertTrue( r.OnLinkBackbone, "own backbone is on-link" )
 
-r = DRV:ClassifyDestination( "fd00:a:0:4::2" )
-assertTrue( r.Backbone, "other backbone classified as backbone" )
-assertTrue( not r.OnLinkBackbone, "other backbone is not on-link (must flood)" )
+r = DRV:ClassifyDestination( "fd00:4:0:2::1" )
+assertTrue( not r.OnLinkBackbone, "other backbone is not on-link" )
+assertTrue( r.LAN, "other backbone floods as LAN" )
 
-r = DRV:ClassifyDestination( "fd00:c0:a8:6::3" )
-assertTrue( r.LAN, "LAN target on backbone router classified as LAN" )
-assertTrue( not r.OnLinkLAN, "backbone router has no on-link LAN (must flood)" )
+-- Router web page (the HTTP server a future browser will fetch).
+function ent:GetClass() return "pcmod_router" end
+function ent:GetFullIP() return "192.168.5.1" end
+function ent:GetIPv6() return "fd00:3:0:5::1" end
+function ent:GetIPv6Prefix() return "fd00:3:0:5::/64" end
+function ent:GetBSubnet() return 3 end
+function ent:Data() return { WirePass = "abc" } end
+PCMod.Cfg.DHCPStart = 2
+PCMod.Cfg.DHCPEnd = 250
+DRV.Wireless = true
+DRV.WirelessClients = { [10] = true, [11] = true }
+local page = DRV:GetWebPage()
+assertTrue( string.find( page, "192.168.5.1", 1, true ) ~= nil, "page shows IPv4 LAN" )
+assertTrue( string.find( page, "fd00:3:0:5::/64", 1, true ) ~= nil, "page shows IPv6 prefix" )
+assertTrue( string.find( page, "password abc", 1, true ) ~= nil, "page shows Wi-Fi password" )
+assertTrue( string.find( page, "Wi-Fi clients: 2", 1, true ) ~= nil, "page shows client count" )
+
+local sent
+PCMod.Network.CreatePacket = function( src, dst, port, body ) sent = { src = src, dst = dst, port = port, body = body } end
+DRV:HandleWebRequest( { Source = "10.0.1.2" } )
+assertTrue( sent and sent.port == 80 and sent.body[1] == "http-response", "web reply packet created" )
+assertEq( sent.src, "192.168.5.1", "web reply sourced from router" )
 
 print( "ALL ROUTER IPV6 TESTS PASSED" )

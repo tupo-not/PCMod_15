@@ -115,12 +115,13 @@ function DRV:ClassifyDestination( dest )
 	if (dest6) then
 		local bp = self:GetBIPv6Prefix()
 		local lp = self:GetIPv6Prefix()
-		if (bp && PCMod.IPv6.InSubnet( dest, bp )) then
-			toBackbone = true
-			onLinkBackbone = true
-		elseif (lp && PCMod.IPv6.InSubnet( dest, lp )) then
+		// Most specific first: a LAN's /64 lives inside its backbone /32.
+		if (lp && PCMod.IPv6.InSubnet( dest, lp )) then
 			toLAN = true
 			onLinkLAN = true
+		elseif (bp && PCMod.IPv6.InSubnet( dest, bp )) then
+			toBackbone = true
+			onLinkBackbone = true
 		end
 	end
 	if ((!onLinkLAN) && (!onLinkBackbone) && (type( dest4 ) == "string")) then
@@ -170,6 +171,12 @@ function DRV:ProcessPacket( pid, pass )
 		PCMod.Msg( "[webgr]Already delivered", true )
 		return
 	end -- Task completed by another router!
+	// Minimal web server: a request to port 80 addressed to the router itself
+	// (body { "http", path }) is answered with a plain-text config page.
+	if ((packet.Port == 80) && (packet.Body) && (packet.Body[1] == "http") && (self.Entity.IsAddressedTo && self.Entity:IsAddressedTo( packet.Dest ))) then
+		self:HandleWebRequest( packet )
+		return
+	end
 	// See if its a traceroute
 	PCMod.Msg( "[webgr]The packet was not delivered, begin target checks", true )
 	if ((packet.Body) && (packet.Body[1]) && (packet.Body[1] == "netTrace")) then
@@ -268,7 +275,7 @@ function DRV:CallEvent( data )
 
 		if (self.Entity:GetClass() == "pcmod_router" && port.ConEnt:GetClass() != "pcmod_router" && port.ConEnt:GetClass() != "pcmod_brouter") then
 			table.insert( self.LAN, data[ 1 ], port )
-			PCMod.Network.RegisterPC( port.ConEnt, self.Entity:GetSubnet(), false )
+			PCMod.Network.RegisterPC( port.ConEnt, self.Entity:GetSubnet(), false, self.Entity:GetBSubnet() )
 		end
 	end
 	if (e == "unlinked") then
@@ -323,7 +330,7 @@ function DRV:AddWirelessClient( pc )
 	if ((!pc) || (!pc:IsValid())) then return false end
 	if (!self.WirelessClients) then self.WirelessClients = {} end
 	self.WirelessClients[ pc:EntIndex() ] = pc
-	return PCMod.Network.RegisterPC( pc, self.Entity:GetSubnet(), false )
+	return PCMod.Network.RegisterPC( pc, self.Entity:GetSubnet(), false, self.Entity:GetBSubnet() )
 end
 
 function DRV:RemoveWirelessClient( pc )
@@ -372,6 +379,43 @@ function DRV:HasIPv6Subnet( addr )
 	if (PCMod.IPv6.InSubnet( addr, self:GetIPv6Prefix() )) then return true end
 	if (PCMod.IPv6.InSubnet( addr, self:GetBIPv6Prefix() )) then return true end
 	return false
+end
+
+// A plain-text config/status "web page" served by the router (the browser is a
+// later milestone; any client can fetch this over the network on port 80).
+function DRV:GetWebPage()
+	local e = self.Entity
+	local data = e.Data && e:Data() or nil
+	local bb = e:GetBSubnet()
+	local lines = {}
+	table.insert( lines, "WebGear Router" )
+	table.insert( lines, "=================" )
+	table.insert( lines, "Model: " .. tostring( e:GetClass() ) )
+	table.insert( lines, "IPv4 LAN: " .. tostring( e:GetFullIP() or "unassigned" ) )
+	table.insert( lines, "IPv6 LAN: " .. tostring( e:GetIPv6() or "unassigned" ) )
+	if (e.GetIPv6Prefix && e:GetIPv6Prefix()) then table.insert( lines, "IPv6 prefix: " .. tostring( e:GetIPv6Prefix() ) ) end
+	if (bb) then table.insert( lines, "Backbone: fd00:" .. tostring( bb ) .. "::/32" ) else table.insert( lines, "Backbone: none (standalone)" ) end
+	local dhcpS = tonumber( PCMod.Cfg.DHCPStart ) or 2
+	local dhcpE = tonumber( PCMod.Cfg.DHCPEnd ) or 254
+	table.insert( lines, "DHCP pool: ." .. tostring( dhcpS ) .. " - ." .. tostring( dhcpE ) )
+	if (self.Wireless) then
+		table.insert( lines, "Wi-Fi: enabled (password " .. tostring( (data && data.WirePass) or "123" ) .. ")" )
+	else
+		table.insert( lines, "Wi-Fi: disabled" )
+	end
+	local wc = 0
+	for _, v in pairs( self.WirelessClients or {} ) do if (v) then wc = wc + 1 end end
+	table.insert( lines, "Wi-Fi clients: " .. tostring( wc ) )
+	return table.concat( lines, "\n" )
+end
+
+// Reply to an in-game HTTP request with the page body.
+function DRV:HandleWebRequest( packet )
+	local page = self:GetWebPage()
+	local src = self.Entity:GetFullIP() or self.Entity:GetIPv6()
+	if (!src) then return false end
+	PCMod.Network.CreatePacket( src, packet.Source, 80, { "http-response", page } )
+	return true
 end
 
 function DRV:OnRemove()

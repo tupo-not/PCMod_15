@@ -284,10 +284,11 @@ end
 // ---------------------------------------------------------------------------------------------------------
 // RegisterPC - Registers a tower with the network system
 // ---------------------------------------------------------------------------------------------------------
-function PCMod.Network.RegisterPC( ent, subnet, backbone )
+function PCMod.Network.RegisterPC( ent, subnet, backbone, bb )
 	local pc = {}
 	pc.Ent = ent
 	pc.EntID = ent:EntIndex()
+	pc.BB = bb or 0
 	local tmp
 	local good = true
 	PCMod.Msg( "Attempt RegisterPC("..ent:EntIndex()..", "..tostring( subnet )..", "..tostring( backbone )..")", true )
@@ -344,6 +345,7 @@ function PCMod.Network.RegisterPC( ent, subnet, backbone )
 		table.insert( tmp.LAN, pc )
 		pc.Ent:SetSubnet( subnet )
 		pc.Ent:SetIP( host )
+		if (pc.Ent.SetUpBB) then pc.Ent:SetUpBB( bb or 0 ) end
 		PCMod.Msg( "Registered pc "..ent:EntIndex().." to router and aquired ip 192.168."..subnet.."."..host, true )
 		return "assigned"
 	end

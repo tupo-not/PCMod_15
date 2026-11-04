@@ -185,15 +185,20 @@ ProcessNetworkPacket( sourceEnt, port, body )
 IPv6 (emulated dual stack)
 --------------------------
 The routing core is still IPv4, but every PC also has a deterministic IPv6
-address on a real /64 subnet:
+address from a hierarchical address space:
 
-    LAN:       fd00:c0:a8:<subnet>::/64   gateway ::1, hosts ::2, ::3, ...
-    Backbone:  fd00:a:0:<subnet>::/64     gateway ::1, hosts ::2, ::3, ...
+    global    fd00::/16
+    backbone  fd00:<bb>::/32        one per backbone router
+    LAN       fd00:<bb>:0:<net>::/64 one per LAN router under a backbone
+    gateway   ::1 of the /64, hosts ::2, ::3, ...
+    standalone LAN (no backbone): fd00:0:0:<net>::/64
 
-Send to either family. Routers match IPv6 destinations against their /64
-prefixes and translate them back to IPv4 for delivery, so no separate packet
-format is needed. IPv4, IPv4-mapped IPv6 (::ffff:a.b.c.d and
-::ffff:hhhh:hhhh), ::1/localhost and bracketed literals are all accepted.
+A LAN only knows its own /64 - it knows nothing about the WAN/backbones, like
+the real internet. Send to either family. Routers match IPv6 destinations
+against their /64 LAN and /32 backbone prefixes and translate them back to IPv4
+for delivery, so no separate packet format is needed. IPv4, IPv4-mapped IPv6
+(::ffff:a.b.c.d and ::ffff:hhhh:hhhh), ::1/localhost and bracketed literals
+are all accepted.
 
 OS helpers:
 
@@ -203,12 +208,14 @@ GetIPv6Prefix()            own LAN /64 in CIDR form
                            (GetIPv6Subnet/GetIPv6Network are aliases)
 GetIPv6Gateway()           LAN gateway (::1 of that /64)
 GetIPv6LinkLocal()         interface link-local address (fe80::/64)
-GetBIPv6Prefix()           backbone /64 (server/router machines)
+GetBIPv6Prefix()           backbone /32 (server/router machines)
 GetAddressType( addr )     "ipv4", "ipv4-mapped", "unique-local", ...
 
 Address helpers (PCMod.IPv6):
 
-FromIPv4( ip )             IPv4 -> emulated IPv6
+BackbonePrefix( bb )       backbone /32 for a backbone id
+LANPrefix( bb, net )       LAN /64 under backbone bb (bb 0 = standalone)
+FromIPv4( ip )             IPv4 -> emulated IPv6 (backbone/loopback/mapped only)
 ToIPv4( addr )             any supported form -> IPv4 (nil if unroutable)
 IsIP( addr )               accepts both IPv4 and IPv6
 IsIPv4( addr ) / IsIPv6( addr )
