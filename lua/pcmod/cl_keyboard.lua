@@ -367,26 +367,6 @@ function PANEL:MakeKey( key, w, h, x, y, txt, txtonshift, shift, isCaps )
 	pn.TextOnShift = txtonshift
 	pn.IsShift = shift
 	pn.IsCaps = isCaps
-	pn.Paint = function( self )
-		//local sid = PCMod.Res.Mats[ "gui/keyboard_key" ]
-		//surface.SetTexture( sid )
-		local col = Color( 255, 255, 255, 255 )
-		if ((self.Depressed) || (PCMod.SDraw.KB_Shift && self.IsShift && (!PCMod.SDraw.KB_UnShift || self.IsCaps))) then
-			if((self.IsCaps && PCMod.SDraw.KB_Caps) || !self.IsCaps) then
-				col = Color( 100, 100, 255, 255 )
-			end
-		end
-		//surface.SetDrawColor( col.r, col.g, col.b, col.a )
-		//surface.DrawTexturedRect( 0, 0, self:GetWide(), self:GetTall() )
-		draw.RoundedBox( 6, 0, 0, self:GetWide(), self:GetTall(), col )
-		local t = self.Text
-		if (PCMod.SDraw.KB_Shift && (!PCMod.SDraw.KB_UnShift || self.IsCaps)) then
-			if((self.IsCaps && PCMod.SDraw.KB_Caps) || !self.IsCaps) then
-				t = self.TextOnShift
-			end
-		end
-		draw.SimpleText( t, "ScoreboardText", self:GetWide()/2, self:GetTall()/2, Color( 0, 0, 0, 255 ), 1, 1 )
-	end
 	pn.Key = key
 	pn.DoClick = function( self )
 		local t = self.Text
@@ -405,8 +385,5 @@ function PANEL:MakeKey( key, w, h, x, y, txt, txtonshift, shift, isCaps )
 		tmp.Y = yp
 	self.Keys[ key ] = tmp
 	return pn
-end
-function PANEL:Paint()
-	draw.RoundedBox( 6, 0, 0, self:GetWide(), self:GetTall(), Color( 128, 128, 255, 255 ) )
 end
 vgui.Register( "Keyboard", PANEL, "PANEL" )
