@@ -177,6 +177,11 @@ function DRV:ProcessPacket( pid, pass )
 		PCMod.Msg( "[webgr]Already delivered", true )
 		return
 	end -- Task completed by another router!
+	// Coarse firewall: drop traffic on non-web/non-ping ports before routing.
+	if (self:FirewallBlocks( packet.Port )) then
+		PCMod.Msg( "[webgr]Firewall dropped packet on port " .. tostring( packet.Port ), true )
+		return
+	end
 	// Minimal web server: a request to port 80 addressed to the router itself
 	// (body { "http", path }) is answered with a plain-text config page.
 	if ((packet.Port == 80) && (packet.Body) && (packet.Body[1] == "http") && (self.Entity.IsAddressedTo && self.Entity:IsAddressedTo( packet.Dest ))) then
@@ -384,9 +389,10 @@ function DRV:AssignLease( pc )
 	if ((!pc) || (!pc:IsValid())) then return nil end
 	if (!self.Leases) then self.Leases = {} end
 	self:ReleaseLease( pc )
+	local c = self:GetCfg()
 	local mask = (tonumber( PCMod.Cfg.LanNetmask ) == 16) and 16 or 24
-	local start = tonumber( PCMod.Cfg.DHCPStart ) or 2
-	local finish = tonumber( PCMod.Cfg.DHCPEnd ) or ((mask == 16) and 65534 or 254)
+	local start = c.DHCPStart
+	local finish = c.DHCPEnd
 	if (finish > 65534) then finish = 65534 end
 	local host = nil
 	for h = start, finish do
@@ -551,11 +557,79 @@ function DRV:HasIPv6Subnet( addr )
 	return false
 end
 
+// ---------------------------------------------------------------------------
+// Router configuration (editable from the web page). Stored per-router in the
+// entity data, seeded from cfg defaults / setup data on first read.
+// ---------------------------------------------------------------------------
+function DRV:GetCfg()
+	local d = self.Entity:Data()
+	d.RouterCfg = d.RouterCfg or {}
+	local c = d.RouterCfg
+	if (c.Wireless == nil) then c.Wireless = (self.Wireless == true) end
+	if (c.WirePass == nil) then c.WirePass = d.WirePass or "123" end
+	if (c.DHCPStart == nil) then c.DHCPStart = tonumber( PCMod.Cfg.DHCPStart ) or 2 end
+	if (c.DHCPEnd == nil) then c.DHCPEnd = tonumber( PCMod.Cfg.DHCPEnd ) or 254 end
+	if (c.Firewall == nil) then c.Firewall = false end
+	if (c.NAT == nil) then c.NAT = true end
+	return c
+end
+
+function DRV:SetWireless( on )
+	on = (on == true)
+	self.Wireless = on
+	local d = self.Entity:Data()
+	d.IsWireless = on
+	local c = self:GetCfg()
+	c.Wireless = on
+	if (self.Entity.SetGVar) then self.Entity:SetGVar( "wireless", on ) end
+end
+
+// Coarse firewall: when enabled the router only forwards web (80) and
+// ping/trace (0); everything else is dropped.
+function DRV:FirewallBlocks( port )
+	local c = self:GetCfg()
+	if (!c.Firewall) then return false end
+	return ((port != 0) && (port != 80))
+end
+
+function DRV:ApplyWebQuery( path )
+	path = tostring( path or "" )
+	local q = string.match( path, "%?(.*)$" )
+	if (!q) then return end
+	for _, pair in ipairs( string.Explode( "&", q ) ) do
+		local k, v = string.match( pair, "^(.-)=(.*)$" )
+		if (k) then self:ApplyWebSetting( k, v ) end
+	end
+end
+
+function DRV:ApplyWebSetting( key, value )
+	local c = self:GetCfg()
+	if (key == "wireless") then
+		self:SetWireless( (value == "1") || (value == "on") )
+	elseif (key == "wpass") then
+		if (value == "random") then
+			c.WirePass = tostring( math.random( 100000, 999999 ) )
+		else
+			c.WirePass = tostring( value or "" )
+		end
+	elseif (key == "dhcpstart") then
+		local n = tonumber( value )
+		if (n) then c.DHCPStart = math.Clamp( n, 1, 65534 ) end
+	elseif (key == "dhcpend") then
+		local n = tonumber( value )
+		if (n) then c.DHCPEnd = math.Clamp( n, 1, 65534 ) end
+	elseif (key == "firewall") then
+		c.Firewall = (value == "1") || (value == "on")
+	elseif (key == "nat") then
+		c.NAT = (value == "1") || (value == "on")
+	end
+end
+
 // A config/status "web page" served by the router to the in-game browser
 // (port 80). Marked up with PCMod.Web's tiny HTML subset.
 function DRV:GetWebPage()
 	local e = self.Entity
-	local data = e.Data && e:Data() or nil
+	local c = self:GetCfg()
 	local bb = e:GetBSubnet()
 	local lines = {}
 	table.insert( lines, "<h1>WebGear Router</h1>" )
@@ -564,14 +638,30 @@ function DRV:GetWebPage()
 	table.insert( lines, "<p><b>IPv6:</b> " .. tostring( e:GetIPv6() or "unassigned" ) .. "</p>" )
 	if (e.GetIPv6Prefix && e:GetIPv6Prefix()) then table.insert( lines, "<p><b>Prefix:</b> " .. tostring( e:GetIPv6Prefix() ) .. "</p>" ) end
 	if (bb) then table.insert( lines, "<p><b>Backbone:</b> fd00:" .. tostring( bb ) .. "::/32</p>" ) else table.insert( lines, "<p><b>Backbone:</b> none (standalone)</p>" ) end
-	local dhcpS = tonumber( PCMod.Cfg.DHCPStart ) or 2
-	local dhcpE = tonumber( PCMod.Cfg.DHCPEnd ) or 254
-	table.insert( lines, "<p><b>DHCP pool:</b> ." .. tostring( dhcpS ) .. " - ." .. tostring( dhcpE ) .. "</p>" )
-	if (self.Wireless) then
-		table.insert( lines, "<p><b>Wi-Fi:</b> enabled (password " .. tostring( (data && data.WirePass) or "123" ) .. ")</p>" )
+
+	// ------------------------------------------------------------------
+	// Configuration panel (all controls are links; the browser follows them).
+	// ------------------------------------------------------------------
+	table.insert( lines, "<h2>Configuration</h2>" )
+	if (c.Wireless) then
+		table.insert( lines, '<p><b>Wi-Fi:</b> enabled <a href="?wireless=0">[Disable]</a></p>' )
+		table.insert( lines, '<p><b>Wi-Fi password:</b> ' .. tostring( c.WirePass ) .. ' <a href="?wpass=random">[Regenerate]</a></p>' )
 	else
-		table.insert( lines, "<p><b>Wi-Fi:</b> disabled</p>" )
+		table.insert( lines, '<p><b>Wi-Fi:</b> disabled <a href="?wireless=1">[Enable]</a></p>' )
 	end
+	if (c.Firewall) then
+		table.insert( lines, '<p><b>Firewall:</b> on <a href="?firewall=0">[Disable]</a></p>' )
+	else
+		table.insert( lines, '<p><b>Firewall:</b> off <a href="?firewall=1">[Enable]</a></p>' )
+	end
+	if (c.NAT) then
+		table.insert( lines, '<p><b>NAT:</b> on <a href="?nat=0">[Disable]</a></p>' )
+	else
+		table.insert( lines, '<p><b>NAT:</b> off <a href="?nat=1">[Enable]</a></p>' )
+	end
+	table.insert( lines, '<p><b>DHCP start:</b> ' .. tostring( c.DHCPStart ) .. ' <a href="?dhcpstart=' .. tostring( c.DHCPStart - 1 ) .. '">[-]</a> <a href="?dhcpstart=' .. tostring( c.DHCPStart + 1 ) .. '">[+]</a></p>' )
+	table.insert( lines, '<p><b>DHCP end:</b> ' .. tostring( c.DHCPEnd ) .. ' <a href="?dhcpend=' .. tostring( c.DHCPEnd - 1 ) .. '">[-]</a> <a href="?dhcpend=' .. tostring( c.DHCPEnd + 1 ) .. '">[+]</a></p>' )
+
 	local wc = 0
 	for _, v in pairs( self.WirelessClients or {} ) do if (v) then wc = wc + 1 end end
 	table.insert( lines, "<p><b>Wi-Fi clients:</b> " .. tostring( wc ) .. "</p>" )
@@ -600,8 +690,10 @@ function DRV:GetWebPage()
 	return table.concat( lines, "\n" )
 end
 
-// Reply to an in-game HTTP request with the page body.
+// Reply to an in-game HTTP request: apply any ?query settings, then serve.
 function DRV:HandleWebRequest( packet )
+	local path = (packet.Body && packet.Body[2]) or ""
+	self:ApplyWebQuery( path )
 	local page = self:GetWebPage()
 	local src = self.Entity:GetSourceAddress( packet.Source ) or self.Entity:GetFullIP()
 	if (!src) then return false end

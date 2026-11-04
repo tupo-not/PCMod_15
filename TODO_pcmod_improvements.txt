@@ -106,6 +106,12 @@ PCMod Improvement TODO List
 - DONE: All programs now reset their window payload (DeviceData) on every open
   and close, so no app keeps a stale page/status/edit across close-reopen or a
   power toggle
+- DONE: Router web page has a clickable Configuration panel: toggle Wi-Fi,
+  regenerate the Wi-Fi password, toggle the (coarse) Firewall and NAT, and bump
+  DHCP start/end - all stored per-router and applied via ?key=value query links
+  the browser follows; firewall drops non-web/non-ping ports
+- DONE: Browser resolves relative links ("/path", "?query") against the current
+  address, so config links just work
 - DONE: Browser now renders a tiny HTML subset (h1-h3, p, br, b/strong,
   a href, ul/li) via PCMod.Web.Parse; links are clickable and navigate, and the
   router's web page is marked up with links to its LAN routers and peer

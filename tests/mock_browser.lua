@@ -74,6 +74,11 @@ assertEq( sent.body[1], "http", "go sends an http request" )
 prog:DoCommand( "go", { "10.0.0.9" } ) -- not validated as routable by the stub
 assertEq( prog.DeviceData.Status, "Invalid address.", "unknown address rejected" )
 
+-- Relative links resolve against the last-visited address.
+prog:DoCommand( "go", { "?wireless=0" } )
+assertEq( sent.addr, "192.168.0.1", "relative link resolves to current address" )
+assertEq( sent.body[2], "?wireless=0", "relative query preserved" )
+
 prog:ProcessPacket( 80, { "http-response", "hello world" }, {} )
 assertEq( prog.DeviceData.Content, "hello world", "response content stored" )
 

@@ -104,7 +104,7 @@ function PROG:ConnectWireless( entIndex, pass )
 		self:UpdateSS()
 		return
 	end
-	local expected = tdata.WirePass or "123"
+	local expected = (tdata.RouterCfg && tdata.RouterCfg.WirePass) or tdata.WirePass or "123"
 	if (pass != expected) then
 		self.DeviceData.Wifi = { Connected = false, BadPass = true }
 		self:UpdateSS()

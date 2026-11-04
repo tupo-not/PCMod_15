@@ -45,6 +45,7 @@ PCMod.Warning = function() end
 PCMod.Cfg = { MaxNetworkPid = 500, MaxNetworkPass = 10, WirelessRange = 0 }
 PCMod.Network = { Packets = {} }
 PCMod.DeriveDriver = function() return {} end
+math.Clamp = function( v, a, b ) if (v < a) then return a end if (v > b) then return b end return v end
 
 dofile( "pcmod_sh_common.lua" )
 dofile( "pcmod_drv_router.lua" )
@@ -117,7 +118,8 @@ function ent:GetIPv6() return "fd00:3:0:5::1" end
 function ent:GetIPv6Prefix() return "fd00:3:0:5::/64" end
 function ent:GetBSubnet() return 3 end
 function ent:GetSourceAddress() return "192.168.5.1" end
-function ent:Data() return { WirePass = "abc" } end
+local routData = { WirePass = "abc", IsWireless = true }
+function ent:Data() return routData end
 PCMod.Cfg.DHCPStart = 2
 PCMod.Cfg.DHCPEnd = 250
 DRV.Wireless = true
@@ -126,13 +128,23 @@ local page = DRV:GetWebPage()
 assertTrue( string.find( page, "<h1>WebGear Router</h1>", 1, true ) ~= nil, "page has an h1 heading" )
 assertTrue( string.find( page, "192.168.5.1", 1, true ) ~= nil, "page shows IPv4 LAN" )
 assertTrue( string.find( page, "fd00:3:0:5::/64", 1, true ) ~= nil, "page shows IPv6 prefix" )
-assertTrue( string.find( page, "password abc", 1, true ) ~= nil, "page shows Wi-Fi password" )
+assertTrue( string.find( page, "Wi-Fi password:", 1, true ) ~= nil, "page shows Wi-Fi password field" )
 assertTrue( string.find( page, "Wi-Fi clients:", 1, true ) ~= nil, "page shows client count" )
+assertTrue( string.find( page, "Configuration", 1, true ) ~= nil, "page has a configuration section" )
+assertTrue( string.find( page, "Firewall:", 1, true ) ~= nil, "page shows firewall" )
+assertTrue( string.find( page, "NAT:", 1, true ) ~= nil, "page shows NAT" )
+
+-- Query-string config application.
+DRV:ApplyWebQuery( "?wireless=0&dhcpstart=5&firewall=1&wpass=random" )
+assertTrue( routData.RouterCfg.Wireless == false, "wireless toggled off" )
+assertTrue( routData.RouterCfg.DHCPStart == 5, "DHCP start updated" )
+assertTrue( routData.RouterCfg.Firewall == true, "firewall enabled" )
+assertTrue( routData.RouterCfg.WirePass ~= "abc", "password regenerated" )
 
 local sent
 PCMod.Network.CreatePacket = function( src, dst, port, body ) sent = { src = src, dst = dst, port = port, body = body } end
 DRV.ProcessPacket = function() end
-local req = { Source = "10.0.1.2" }
+local req = { Source = "10.0.1.2", Body = { "http", "/" } }
 DRV:HandleWebRequest( req )
 assertTrue( sent and sent.port == 80 and sent.body[1] == "http-response", "web reply packet created" )
 assertEq( sent.src, "192.168.5.1", "web reply sourced from router" )
