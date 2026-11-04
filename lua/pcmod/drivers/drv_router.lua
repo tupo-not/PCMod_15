@@ -158,7 +158,7 @@ function DRV:ProcessPacket( pid, pass )
 		PCMod.Msg( "[webgr]WARNING: Packet reached maximum pass! (id " .. tostring( pid ) .. ")" )
 		return
 	else
-		PCMod.Msg( "[webgr]Parsed packet with pass: " .. pass .. " (id " .. tostring( pid ) .. ")" )
+		PCMod.Msg( "[webgr]Parsed packet with pass: " .. pass .. " (id " .. tostring( pid ) .. ")", true )
 	end
 	local mem = self.Entity:Memory()
 	if (!mem.P) then mem.P = {} end
