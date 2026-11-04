@@ -37,7 +37,9 @@ function DEV:WrapContent( text, width )
 	for _, line in ipairs( string.Explode( "\n", text ) ) do
 		local wrapped = PCMod.Gui.CalcTextWrap( line, "pcmod_3d2d", width )
 		for _, wl in ipairs( wrapped ) do
-			table.insert( out, string.gsub( wl, "\n", "" ) )
+			// string.gsub returns (result, count); a bare call feeds both into
+			// table.insert (3-arg form). string.Replace returns a single string.
+			table.insert( out, string.Replace( wl, "\n", "" ) )
 		end
 	end
 	return out
