@@ -211,9 +211,12 @@ function PCMod.Network.UnRegisterRouter( ent )
 		PCMod.Network.Availible.Back[ res[ 1 ] ] = true
 		back = "(Backbone)"
 	else
-		for i = 2, 5 do
-			if (PCMod.Network.Subnets[ res[ 1 ] ].LAN[ i ]) then
-				PCMod.Network.UnRegisterPC( PCMod.Network.Subnets[ res[ 1 ] ].LAN[ i ].Ent, res[ 1 ], false )
+		local rtr = PCMod.Network.Subnets[ res[ 1 ] ]
+		if (rtr && rtr.LAN) then
+			for i = #rtr.LAN, 1, -1 do
+				if (rtr.LAN[ i ].Ent) then
+					PCMod.Network.UnRegisterPC( rtr.LAN[ i ].Ent, res[ 1 ], false )
+				end
 			end
 		end
 		PCMod.Network.Subnets[ res[ 1 ] ] = nil
@@ -287,7 +290,7 @@ function PCMod.Network.RegisterPC( ent, subnet, backbone )
 	pc.EntID = ent:EntIndex()
 	local tmp
 	local good = true
-	PCMod.Msg( "Attempt RegisterPC("..ent:EntIndex()..", "..subnet..", "..tostring( backbone )..")", true )
+	PCMod.Msg( "Attempt RegisterPC("..ent:EntIndex()..", "..tostring( subnet )..", "..tostring( backbone )..")", true )
 	if (backbone) then
 		tmp = PCMod.Network.Backbones[ subnet ]
 		if(!PCMod.Network.Backbones[ subnet ]) then
@@ -297,7 +300,7 @@ function PCMod.Network.RegisterPC( ent, subnet, backbone )
 			for _, v in pairs(tmp.LAN) do
 				if (v.EntID == pc.EntID) then
 					PCMod.Msg( "Router "..ent:EntIndex().." is already registered to backbone", true )
-					return
+					return "exists"
 				end
 			end
 			for i = 1, 10 do
@@ -306,45 +309,51 @@ function PCMod.Network.RegisterPC( ent, subnet, backbone )
 					pc.Ent:SetBSubnet( subnet )
 					pc.Ent:SetBIP( i )
 					PCMod.Msg( "Registered router "..ent:EntIndex().." to backbone and aquired ip 10.0."..subnet.."."..i, true )
-					return
+					return "assigned"
 				end
 			end
+			return "full"
 		end
-	else
-		tmp = PCMod.Network.Subnets[ subnet ]
-		if(!PCMod.Network.Subnets[ subnet ]) then
-			good = false
-		end
-		if (good) then
-			for _, v in pairs(tmp.LAN) do
-				if (v.EntID == pc.EntID) then
-					PCMod.Msg( "PC "..ent:EntIndex().." is already registered to router", true )
-					return
-				end
-			end
-			for i = 2, 5 do
-				if (!PCMod.Network.Subnets[ subnet ].LAN[ i ]) then
-					PCMod.Network.Subnets[ subnet ].LAN[ i ] = pc
-					pc.Ent:SetSubnet( subnet )
-					pc.Ent:SetIP( i )
-					PCMod.Msg( "Registered pc "..ent:EntIndex().." to router and aquired ip 192.168."..subnet.."."..i, true )
-					return
-				end
-			end
+		return "invalid"
+	end
+
+	// DHCP on the LAN /24. Clients are recorded in a list and assigned the
+	// smallest free host from the configured pool, so the old fixed 4-slot
+	// table is gone - a router can hand out as many leases as the pool allows.
+	tmp = PCMod.Network.Subnets[ subnet ]
+	if (!tmp) then return "invalid" end
+	if (!tmp.LAN) then tmp.LAN = {} end
+	if (!tmp.Assigned) then tmp.Assigned = {} end
+	for _, v in ipairs( tmp.LAN ) do
+		if (v.EntID == pc.EntID) then
+			PCMod.Msg( "PC "..ent:EntIndex().." is already registered to router", true )
+			return "exists"
 		end
 	end
-	local port
-	for k, v in pairs(ent:Ports()) do
-		if ((v.Type == "network" || v.Type == "optic") && (!tmp || v.ConEnt == tmp.Ent)) then
-			port = k
-		end
+	local start = tonumber( PCMod.Cfg.DHCPStart ) or 2
+	local finish = tonumber( PCMod.Cfg.DHCPEnd ) or 254
+	if (start < 1) then start = 1 end
+	if (finish > 255) then finish = 255 end
+	local host = nil
+	for h = start, finish do
+		if (!tmp.Assigned[ h ]) then host = h break end
 	end
-	PCMod.Wiring.UnlinkPort( ent, port )
-	if (good) then
-		PCMod.Notice( "No ips availible", ent:GetOwner() )
-	else
-		PCMod.Notice( "Invalid subnet", ent:GetOwner() )
+	if (host) then
+		tmp.Assigned[ host ] = pc
+		pc.Host = host
+		table.insert( tmp.LAN, pc )
+		pc.Ent:SetSubnet( subnet )
+		pc.Ent:SetIP( host )
+		PCMod.Msg( "Registered pc "..ent:EntIndex().." to router and aquired ip 192.168."..subnet.."."..host, true )
+		return "assigned"
 	end
+	// Pool exhausted: the client stays connected but gets no IPv4 lease (it is
+	// IPv6-only until the IPv6 addressing pass lands).
+
+	pc.Host = nil
+	table.insert( tmp.LAN, pc )
+	PCMod.Msg( "No IPv4 leases left on subnet "..subnet.."; registered PC "..ent:EntIndex().." as IPv6-only", true )
+	return "full"
 end
 
 // ---------------------------------------------------------------------------------------------------------
@@ -363,13 +372,15 @@ function PCMod.Network.UnRegisterPC( ent, subnet, backbone )
 			end
 		end
 	else
-		if (!PCMod.Network.Subnets[ subnet ]) then return end
-		for i = 2, 5 do
-			if (PCMod.Network.Subnets[ subnet ].LAN[ i ] && PCMod.Network.Subnets[ subnet ].LAN[ i ].EntID == ent:EntIndex()) then
-				PCMod.Network.Subnets[ subnet ].LAN[ i ] = nil
+		local rtr = PCMod.Network.Subnets[ subnet ]
+		if (!rtr || !rtr.LAN) then return end
+		for i, v in ipairs( rtr.LAN ) do
+			if (v.EntID == ent:EntIndex()) then
+				table.remove( rtr.LAN, i )
+				if ((rtr.Assigned) && (v.Host)) then rtr.Assigned[ v.Host ] = nil end
 				ent:SetSubnet( false )
 				ent:SetIP( false )
-				PCMod.Msg( "Unregistered pc "..ent:EntIndex().." from router and released ip 192.168."..subnet.."."..i, true )
+				PCMod.Msg( "Unregistered pc "..ent:EntIndex().." from router and released lease", true )
 				return
 			end
 		end

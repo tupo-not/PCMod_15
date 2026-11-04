@@ -59,9 +59,11 @@ function netDrv:DisconnectWireless()
     end
     self.WirelessEnt = nil
     self.WirelessPass = ""
+    self.WirelessIPv4 = nil
 end
 local routerDrv = {}
-function routerDrv:AddWirelessClient( pc ) self.Added = pc end
+local regResult = "assigned"
+function routerDrv:AddWirelessClient( pc ) self.Added = pc return regResult end
 function routerDrv:RemoveWirelessClient( pc ) self.Added = nil end
 PCMod.Data[ 1 ].Drivers = { gen_network = netDrv }
 PCMod.Data[ 50 ] = { Drivers = { webgr_router = routerDrv } }
@@ -131,6 +133,14 @@ assertTrue( routerDrv.Added == ent, "router recorded the wireless client" )
 prog:DoCommand( "disconnect_wifi", {} )
 assertTrue( !prog.DeviceData.Wifi.Connected, "Wi-Fi disconnected" )
 assertTrue( netDrv.WirelessEnt == nil, "network driver cleared the link" )
+
+-- Full DHCP pool: still connected, but marked IPv6-only instead of refused.
+regResult = "full"
+prog:DoCommand( "connect_wifi", { "50", "123" } )
+assertTrue( prog.DeviceData.Wifi.Connected, "full pool still connects" )
+assertTrue( prog.DeviceData.Wifi.NoIPv4, "full pool client is IPv6-only" )
+regResult = "assigned"
+prog:DoCommand( "disconnect_wifi", {} )
 
 prog:DoCommand( "changepass", { "wrong", "new" } )
 assertEq( PCMod.Data[ 1 ].Password, "old", "wrong old password rejected" )

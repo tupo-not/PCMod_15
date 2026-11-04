@@ -11,6 +11,7 @@ DRV.PTData = {}
 DRV.NetworkPort = 0
 DRV.WirelessEnt = nil
 DRV.WirelessPass = ""
+DRV.WirelessIPv4 = nil
 
 function DRV:Initialize()
 	if (!self.Entity) then return end
@@ -76,6 +77,7 @@ function DRV:DisconnectWireless()
 	end
 	self.WirelessEnt = nil
 	self.WirelessPass = ""
+	self.WirelessIPv4 = nil
 end
 
 function DRV:GetIP()

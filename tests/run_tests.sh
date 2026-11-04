@@ -47,6 +47,7 @@ TESTS=(
     mock_router
     mock_bios
     mock_network
+    mock_dhcp
     mock_wiring
     mock_windows
     mock_mycomp

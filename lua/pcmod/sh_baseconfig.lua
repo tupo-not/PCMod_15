@@ -74,6 +74,13 @@ cfg.WirelessRange = 2048 -- How far away can a wireless router reach? (0 = Unlim
 cfg.WirelessInfo = true -- Should we draw wireless links when looking at a wireless router?
 cfg.WirelessInfoDrawCol = Color( 255, 0, 0, 255 )
 
+// LAN DHCP. Routers hand out IPv4 addresses from a pool on their /24 LAN
+// (192.168.<subnet>.<host>). LanNetmask accepts 24 only for now - /16 needs the
+// planned IPv6-only addressing pass and will be wired up then.
+cfg.LanNetmask = 24
+cfg.DHCPStart = 2   -- first host address in the pool (the gateway owns .1)
+cfg.DHCPEnd = 254   -- last host address in the pool
+
 cfg.QuickType = 3 -- 0 = Completely disabled, 1 = debug mode only, 2 = keyboard only OR debug mode, 3 = always on
 
 cfg.PrintTime = 5 -- How long does it take to print a document? (Seconds)

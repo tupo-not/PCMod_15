@@ -88,6 +88,11 @@ PCMod Improvement TODO List
 - DONE: LAN addressing renumbered: the router is 192.168.x.1 (its IPv6 is the
   /64's ::1 gateway) and PCs are assigned .2, .3, ...; dropped the legacy
   one-octet-per-group IPv6 form and the old .0 gateway mapping
+- DONE: LAN DHCP: routers hand out IPv4 leases from a configurable pool
+  (cfg.DHCPStart/cfg.DHCPEnd, default .2-.254) instead of four fixed cable
+  slots; when the pool is full the client is still admitted as IPv6-only (the
+  Control Panel shows "IPv6 only"), mirroring a real DHCP server. cfg.LanNetmask
+  is 24 for now; /16 depends on the IPv6-only addressing pass
 - DONE: Control Panel Network page now scans and lists nearby wireless routers
   (name, distance, signal %), lets the user connect with the router's Wi-Fi
   password (default 123), and disconnect; the PC routes over the air through

@@ -192,6 +192,7 @@ function DEV:Paint( x, y, w, h )
 		local wstat = "Not connected."
 		if (wf && wf.Connected) then
 			wstat = "Connected to " .. tostring( wf.Class or "Router" ) .. " #" .. tostring( wf.EntIndex )
+			if (wf.NoIPv4) then wstat = wstat .. " (IPv6 only)" end
 		elseif (wf && wf.BadPass) then
 			wstat = "Incorrect password."
 		elseif (wf && wf.Error) then

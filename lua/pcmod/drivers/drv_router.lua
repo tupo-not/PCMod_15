@@ -315,14 +315,15 @@ function DRV:HasPC( ip )
 	return false
 end
 
-// Register a PC that connected to this router over Wi-Fi. It is assigned an
-// IP on this router's LAN subnet exactly like a cable-connected machine.
+// Register a PC that connected to this router over Wi-Fi. The address lease is
+// handed out by the same DHCP pool as cable clients (PCMod.Network.RegisterPC);
+// when the pool is full the client is still admitted and stands by as
+// IPv6-only, so the network never turns anyone away.
 function DRV:AddWirelessClient( pc )
 	if ((!pc) || (!pc:IsValid())) then return false end
 	if (!self.WirelessClients) then self.WirelessClients = {} end
 	self.WirelessClients[ pc:EntIndex() ] = pc
-	PCMod.Network.RegisterPC( pc, self.Entity:GetSubnet(), false )
-	return true
+	return PCMod.Network.RegisterPC( pc, self.Entity:GetSubnet(), false )
 end
 
 function DRV:RemoveWirelessClient( pc )

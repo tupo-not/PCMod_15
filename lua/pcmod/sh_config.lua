@@ -73,6 +73,12 @@ cfg.WirelessRange = 2048 -- How far away can a wireless router reach? (0 = Unlim
 cfg.WirelessInfo = true -- Should we draw wireless links when looking at a wireless router?
 cfg.WirelessInfoDrawCol = Color( 255, 0, 0, 255 )
 
+// LAN DHCP: address pool handed out by routers on their /24 LAN. See
+// sh_baseconfig.lua; /16 is reserved for the upcoming IPv6-only addressing.
+cfg.LanNetmask = 24
+cfg.DHCPStart = 2
+cfg.DHCPEnd = 254
+
 cfg.QuickType = 3 -- 0 = Completely disabled, 1 = debug mode only, 2 = keyboard only OR debug mode, 3 = always on
 
 cfg.BootSpeed = 0.25 -- PC boot pacing multiplier (1 = original speed, 0.25 = fast). Applies to BIOS/OS boot stages and shutdown.

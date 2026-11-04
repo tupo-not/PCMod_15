@@ -73,14 +73,14 @@ function PROG:GetNetworkDriver()
 	return data.Drivers[ "gen_network" ]
 end
 
-// Reflect the current Wi-Fi link into the Control Panel payload.
 function PROG:RefreshWifiStatus()
 	local net = self:GetNetworkDriver()
 	if ((net) && (net.WirelessEnt) && (net.WirelessEnt:IsValid())) then
 		self.DeviceData.Wifi = {
 			Connected = true,
 			EntIndex = net.WirelessEnt:EntIndex(),
-			Class = net.WirelessEnt:GetClass()
+			Class = net.WirelessEnt:GetClass(),
+			NoIPv4 = (net.WirelessIPv4 == false)
 		}
 	else
 		self.DeviceData.Wifi = { Connected = false }
@@ -121,8 +121,19 @@ function PROG:ConnectWireless( entIndex, pass )
 	net.WirelessPass = pass
 	local rdata = PCMod.Data[ target:EntIndex() ]
 	local rdrv = rdata && rdata.Drivers && rdata.Drivers[ "webgr_router" ]
-	if (rdrv && rdrv.AddWirelessClient) then rdrv:AddWirelessClient( self.Entity ) end
-	self.DeviceData.Wifi = { Connected = true, EntIndex = target:EntIndex(), Class = target:GetClass() }
+	local reg = (rdrv && rdrv.AddWirelessClient) && rdrv:AddWirelessClient( self.Entity )
+	if ((!reg) || (reg == "invalid")) then
+		net.WirelessEnt = nil
+		net.WirelessPass = ""
+		net.WirelessIPv4 = nil
+		self.DeviceData.Wifi = { Connected = false, Error = "Network unavailable." }
+		self:UpdateSS()
+		return
+	end
+	// "full" still connects, but the client has no IPv4 lease (IPv6-only),
+	// exactly like a real DHCP server that runs out of addresses.
+	if (reg == "assigned") then net.WirelessIPv4 = true end
+	if (reg == "full") then net.WirelessIPv4 = false end
 	self:RefreshNetwork()
 	self:UpdateSS()
 end
