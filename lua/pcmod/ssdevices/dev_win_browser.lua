@@ -41,23 +41,29 @@ function DEV:RemoveFormControls()
 	self:RemoveElement( "btnFormSave" )
 end
 
-// (Re)build editable fields from the page's single <form>. Only runs when the
-// form signature changes, so the controls persist across frames.
+// (Re)build editable fields from the page's single <form>. Runs when the form
+// signature changes OR when a resize wiped the controls (Int_Reinitialize calls
+// OnCreate), so the fields survive window resizing.
 function DEV:BuildForm( x, y, w, h )
 	local form = PCMod.Web.ParseForm( self.Content or "" )
 	local sig = self:FormSignature( form )
-	if (sig == self.FormSig) then return end
+	local missing = false
+	if (#(form.fields) > 0) then
+		if ((!self.Textboxes) || (!self.Textboxes[ "frm_1" ])) then missing = true end
+		if ((!self.Elements) || (!self.Elements[ "btnFormSave" ])) then missing = true end
+	end
+	if ((sig == self.FormSig) && (!missing)) then return end
 	self.FormSig = sig
 	self.Form = form
 	self:RemoveFormControls()
+	local yn = 0.53
 	for i, f in ipairs( form.fields ) do
-		local ynorm = 0.60 + ((i-1) * 0.085)
-		self:CreateTextbox( self.Th, "frm_" .. i, x+(w*0.45), y+(h*ynorm), w*0.5, h*0.06, f.label or f.name )
+		self:CreateTextbox( self.Th, "frm_" .. i, x+(w*0.45), y+(h*yn), w*0.5, h*0.055, f.label or f.name )
 		self:SetTextboxText( "frm_" .. i, f.value )
+		yn = yn + 0.075
 	end
 	if (#(form.fields) > 0) then
-		local yn = 0.60 + (#(form.fields) * 0.085) + 0.01
-		self:CreateButton2( self.Th, "btnFormSave", x+(w*0.78), y+(h*yn), w*0.2, h*0.06, "Save" )
+		self:CreateButton2( self.Th, "btnFormSave", x+(w*0.78), y+(h*(yn - 0.075)), w*0.2, h*0.055, "Save" )
 	end
 end
 
@@ -70,7 +76,7 @@ function DEV:Paint( x, y, w, h )
 	local c_link = Color( 30, 90, 220, 255 )
 
 	// Content area (pixels).
-	local ax, ay, aw, ah = x+(w*0.02), y+(h*0.18), w*0.96, h*0.40
+	local ax, ay, aw, ah = x+(w*0.02), y+(h*0.16), w*0.96, h*0.34
 	surface.SetDrawColor( c_tbbg.r, c_tbbg.g, c_tbbg.b, c_tbbg.a )
 	surface.DrawRect( ax, ay, aw, ah )
 	surface.DrawOutline( ax, ay, aw, ah, c_bor )
