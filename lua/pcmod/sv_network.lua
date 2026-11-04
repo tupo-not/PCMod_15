@@ -17,7 +17,7 @@ PCMod.Network.Backbones = {}
 PCMod.Network.Availible = {}
 PCMod.Network.Availible.Back = {}
 
-for i = 1, 255 do
+for i = 1, 65535 do
 	PCMod.Network.Availible.Back[ i ] = true
 end
 
@@ -204,7 +204,7 @@ end
 function PCMod.Network.GetSub()
 	local list = PCMod.Network.Backbones
 	local avail = PCMod.Network.Availible.Back
-	for i = 1, 255 do
+	for i = 1, 65535 do
 		if (!list[ i ]) then avail[ i ] = true else avail[ i ] = false end
 	end
 	local found = 0
@@ -221,15 +221,15 @@ end
 // ---------------------------------------------------------------------------------------------------------
 function PCMod.Network.FindSubByEnt( ent )
 	local EntID = ent:EntIndex()
-	for i = 1, 255 do
+	for i = 1, 65535 do
 		if (PCMod.Network.Backbones[ i ] && PCMod.Network.Backbones[ i ].EntID == EntID) then return i end
 	end
 	return false
 end
 
 // ---------------------------------------------------------------------------------------------------------
-// RegisterPC - Registers a LAN router onto a backbone (assigns its 10.0.x WAN
-// address). LAN PCs get their private lease from the router instead.
+// RegisterPC - Registers a LAN router onto a backbone (assigns its 10.x WAN
+// /32 NAT address). LAN PCs get their private lease from the router instead.
 // ---------------------------------------------------------------------------------------------------------
 function PCMod.Network.RegisterPC( ent, subnet )
 	local pc = {}
@@ -248,7 +248,7 @@ function PCMod.Network.RegisterPC( ent, subnet )
 			tmp.LAN[ i ] = pc
 			pc.Ent:SetBSubnet( subnet )
 			pc.Ent:SetBIP( i )
-			PCMod.Msg( "Registered router "..ent:EntIndex().." to backbone and aquired ip 10.0."..subnet.."."..i, true )
+			PCMod.Msg( "Registered router "..ent:EntIndex().." to backbone and aquired ip "..PCMod.IPv4.BackboneAddress( subnet, i + 1 ), true )
 			return "assigned"
 		end
 	end
@@ -266,7 +266,7 @@ function PCMod.Network.UnRegisterPC( ent, subnet )
 			tmp.LAN[ i ] = nil
 			ent:SetBSubnet( false )
 			ent:SetBIP( false )
-			PCMod.Msg( "Unregistered router "..ent:EntIndex().." from backbone and released ip 10.0."..subnet.."."..i, true )
+			PCMod.Msg( "Unregistered router "..ent:EntIndex().." from backbone and released ip "..PCMod.IPv4.BackboneAddress( subnet, i + 1 ), true )
 			return
 		end
 	end

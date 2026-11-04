@@ -103,8 +103,8 @@ end
 //   LAN/Backbone      - destination looks like a LAN/backbone address
 //   OnLinkLAN         - destination is inside THIS router's LAN /64
 //   OnLinkBackbone    - destination is inside THIS router's backbone /64
-// IPv6 uses real prefix matching; IPv4 (and mapped IPv6) uses the historical
-// 192.168/10.0 address-space test. The OnLink flags matter because an unknown
+// IPv6 uses real prefix matching; IPv4 (and mapped IPv6) uses the private
+// 192.168 / 10.x address-space test. The OnLink flags matter because an unknown
 // on-link IPv6 host must be dropped, while a LAN address that belongs to a
 // different router still has to be forwarded.
 function DRV:ClassifyDestination( dest )
@@ -130,8 +130,8 @@ function DRV:ClassifyDestination( dest )
 		// space; an unknown IPv6 /32 is NOT retrofitted onto the IPv4 core, it
 		// is forwarded upstream instead.
 		if ((type( dest4 ) == "string")) then
-			if (string.find( dest4, "10.0", 1, true )) then toBackbone = true end
-			if (string.find( dest4, "192.168", 1, true )) then toLAN = true end
+			if (string.Left( dest4, 3 ) == "10.") then toBackbone = true end
+			if (string.Left( dest4, 7 ) == "192.168") then toLAN = true end
 		end
 	end
 	return {
@@ -225,7 +225,7 @@ function DRV:ProcessPacket( pid, pass, side )
 			sid = "RTR"
 		end
 		if (self.Entity:GetClass() == "pcmod_brouter") then
-			sip = "10.0." .. tostring( self.Entity:GetBSubnet() ) .. ".0"
+			sip = PCMod.IPv4.BackboneAddress( self.Entity:GetBSubnet(), 1 )
 			sid = "BRTR"
 		end
 		if (self.Wireless) then
@@ -773,9 +773,11 @@ function DRV:PageHome()
 	table.insert( lines, "<h2>Status</h2>" )
 	table.insert( lines, "<p><b>Model:</b> " .. tostring( e:GetClass() ) .. "</p>" )
 	table.insert( lines, "<p><b>IPv4 LAN:</b> " .. tostring( e:GetFullIP() or "unassigned" ) .. "</p>" )
+	local wan = (e.GetFullBIP && e:GetFullBIP())
+	if (wan) then table.insert( lines, "<p><b>IPv4 WAN /32 (NAT):</b> " .. tostring( wan ) .. " in " .. tostring( PCMod.IPv4.BackbonePrefix( bb ) ) .. "</p>" ) end
 	table.insert( lines, "<p><b>IPv6:</b> " .. tostring( e:GetIPv6() or "unassigned" ) .. "</p>" )
 	if (e.GetIPv6Prefix && e:GetIPv6Prefix()) then table.insert( lines, "<p><b>Prefix:</b> " .. tostring( e:GetIPv6Prefix() ) .. "</p>" ) end
-	if (bb) then table.insert( lines, "<p><b>Backbone:</b> fd00:" .. tostring( bb ) .. "::/32</p>" ) else table.insert( lines, "<p><b>Backbone:</b> none (standalone)</p>" ) end
+	if (bb) then table.insert( lines, "<p><b>Backbone:</b> " .. tostring( PCMod.IPv6.BackbonePrefix( bb ) ) .. "</p>" ) else table.insert( lines, "<p><b>Backbone:</b> none (standalone)</p>" ) end
 	table.insert( lines, "<p><b>Wi-Fi:</b> " .. (c.Wireless and "enabled" or "disabled") .. "</p>" )
 	table.insert( lines, "<p><b>Firewall:</b> " .. (c.Firewall and "on" or "off") .. "</p>" )
 	table.insert( lines, "<p><b>NAT:</b> " .. (c.NAT and "on" or "off") .. "</p>" )

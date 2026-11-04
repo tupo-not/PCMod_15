@@ -391,8 +391,9 @@ function PCMod.IPv6.Hierarchy( addr )
 end
 
 // Build the emulated IPv6 address for an IPv4 address string. Only the backbone
-// (10.0.bb.host) and loopback have a stateless mapping; a LAN's /64 depends on
-// its upstream backbone, so LAN addresses are stored rather than derived here.
+// (10.<hi>.<lo>.<host>) and loopback have a stateless mapping; a LAN's /64
+// depends on its upstream backbone, so LAN addresses are stored rather than
+// derived here.
 function PCMod.IPv6.FromIPv4( ip )
 	if (type( ip ) != "string") then return nil end
 	local a, b, c, d = string.match( ip, "^(%d+)%.(%d+)%.(%d+)%.(%d+)$" )
@@ -401,9 +402,10 @@ function PCMod.IPv6.FromIPv4( ip )
 	if ((!a) || (!b) || (!c) || (!d)) then return nil end
 	if ((a > 255) || (b > 255) || (c > 255) || (d > 255)) then return nil end
 	if ((a == 127) && (b == 0) && (c == 0) && (d == 1)) then return "::1" end
-	if ((a == 10) && (b == 0)) then
-		// Backbone gateway .0 -> ::1, routers .1.. -> ::2, ::3, ...
-		return PCMod.IPv6.Format( { 0xfd00, c, 0, 0, 0, 0, 0, d + 1 } )
+	if (a == 10) then
+		// 10.<hi>.<lo>.<host> is a /32 within the 16-bit backbone <bb> (hi*256+lo),
+		// mirroring the backbone host fd00:<bb>::<host>.
+		return PCMod.IPv6.Format( { 0xfd00, (b * 256) + c, 0, 0, 0, 0, 0, d } )
 	end
 	// Any other IPv4 address is represented in the standard mapped form.
 	return PCMod.IPv6.Format( { 0, 0, 0, 0, 0, 0xffff, (a * 256) + b, (c * 256) + d } )
@@ -432,9 +434,9 @@ function PCMod.IPv6.ToIPv4( addr )
 		local subnet = g[4]
 		if ((g[5] == 0) && (g[6] == 0) && (g[7] == 0)) then
 			if ((g[3] == 0) && (subnet == 0)) then
-				// Backbone host fd00:<bb>:0:0::<iid> -> 10.0.<bb>.<iid-1>
-				if ((g[8] >= 1) && (g[8] <= 256)) then
-					return string.format( "10.0.%d.%d", bb, g[8] - 1 )
+				// Backbone host fd00:<bb>::<iid> -> 10.<hi>.<lo>.<iid>
+				if ((g[8] >= 1) && (g[8] <= 255)) then
+					return string.format( "10.%d.%d.%d", math.floor( bb / 256 ), bb % 256, g[8] )
 				end
 			elseif ((g[3] == 0) && (subnet >= 1) && (subnet <= 255) && (g[8] <= 255)) then
 				// LAN host fd00:<bb>:0:<subnet>::<iid> -> 192.168.<subnet>.<iid>
@@ -627,6 +629,41 @@ function PCMod.IPv6.AddressType( addr )
 	if ((g[1] >= 0xfc00) && (g[1] <= 0xfdff)) then return "unique-local" end
 	if ((g[1] >= 0xfe80) && (g[1] <= 0xfebf)) then return "link-local" end
 	return "global"
+end
+
+// ---------------------------------------------------------------------------------------------------------
+// IPv4 hierarchical addressing (mirrors PCMod.IPv6):
+//   * the whole internet is one private /8:       10.0.0.0/8
+//   * each backbone router owns one /16 block:     10.<hi>.<lo>.0/24
+//     (8 global bits + 16 backbone-id bits; hi and lo are the two octets of the
+//     16-bit backbone id seen in fd00:<bb>::/32)
+//   * each LAN router owns one /32 of that block: 10.<hi>.<lo>.<host>/32
+// The /32 is the router's NAT address: its private LAN (192.168.x.x) is hidden
+// behind it when the router talks on the IPv6 backbones. The backbone router
+// itself is the host .1 of its block (its ::1 gateway). IPv4 remains LAN-local
+// only; all cross-router traffic uses IPv6.
+// ---------------------------------------------------------------------------------------------------------
+PCMod.IPv4 = PCMod.IPv4 or {}
+
+// Split a 16-bit backbone id into its two octets (high, low).
+function PCMod.IPv4.BackboneOctets( bb )
+	local n = tonumber( bb ) or 0
+	return math.floor( n / 256 ), n % 256
+end
+
+// The IPv4 block of one backbone: 10.<hi>.<lo>.0/24.
+function PCMod.IPv4.BackbonePrefix( bb )
+	local hi, lo = PCMod.IPv4.BackboneOctets( bb )
+	return "10." .. tostring( hi ) .. "." .. tostring( lo ) .. ".0/24"
+end
+
+// A single /32 within backbone bb: 10.<hi>.<lo>.<host>. host 1 is the backbone
+// router itself (gateway); attached LAN routers get host 2, 3, ...
+function PCMod.IPv4.BackboneAddress( bb, host )
+	local hi, lo = PCMod.IPv4.BackboneOctets( bb )
+	host = tonumber( host ) or 1
+	if (host < 1) then host = 1 end
+	return "10." .. tostring( hi ) .. "." .. tostring( lo ) .. "." .. tostring( host )
 end
 
 // ---------------------------------------------------------------------------------------------------------

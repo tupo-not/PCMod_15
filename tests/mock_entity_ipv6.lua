@@ -90,14 +90,20 @@ assertEq( nw[ "IPv6" ], "fd00:3:0:5::2", "IPv6 NW string" )
 assertEq( nw[ "IPv6.Prefix" ], "fd00:3:0:5::/64", "IPv6 prefix NW string" )
 assertEq( nw[ "IPv6.LinkLocal" ], "fe80::2", "IPv6 link-local NW string" )
 
--- Backbone: 10.0.3.1 -> fd00:3::2 (gateway .0 -> ::1, routers .1 -> ::2).
+-- Backbone: BIP 1 -> host .2 (16-bit backbone id 3 -> 10.0.3.0/24).
 ent:SetBSubnet( 3 )
 ent:SetBIP( 1 )
-assertEq( ent:GetFullBIP(), "10.0.3.1", "IPv4 backbone address" )
+assertEq( ent:GetFullBIP(), "10.0.3.2", "IPv4 backbone address" )
 assertEq( ent:GetBIPv6(), "fd00:3::2", "emulated IPv6 backbone address" )
 assertEq( ent:GetBIPv6Prefix(), "fd00:3::/32", "backbone /32 prefix" )
 assertEq( ent:GetBIPv6Gateway(), "fd00:3::1", "backbone gateway" )
 assertEq( ent:GetBIPv6LinkLocal(), "fe80::2", "backbone link-local" )
+
+-- Brouter gateway: BIP 0 clamps to host .1.
+ent:SetBIP( 0 )
+assertEq( ent:GetFullBIP(), "10.0.3.1", "backbone gateway IPv4" )
+assertEq( ent:GetBIPv6(), "fd00:3::1", "backbone gateway IPv6" )
+ent:SetBIP( 1 )
 
 -- Exact-address matching accepts every supported representation.
 assertTrue( ent:IsAddressedTo( "192.168.0.2" ), "LAN IPv4 matches" )
@@ -105,7 +111,7 @@ assertTrue( ent:IsAddressedTo( "fd00:3:0:5::2" ), "LAN IPv6 matches" )
 assertTrue( ent:IsAddressedTo( "fd00:3:0:5:0:0:0:2" ), "expanded LAN IPv6 matches" )
 assertTrue( ent:IsAddressedTo( "[fd00:3:0:5::2]" ), "bracketed LAN IPv6 matches" )
 assertTrue( ent:IsAddressedTo( "::ffff:192.168.0.2" ), "mapped LAN IPv4 matches" )
-assertTrue( ent:IsAddressedTo( "10.0.3.1" ), "backbone IPv4 matches" )
+assertTrue( ent:IsAddressedTo( "10.0.3.2" ), "backbone IPv4 matches" )
 assertTrue( ent:IsAddressedTo( "fd00:3::2" ), "backbone IPv6 matches" )
 assertTrue( not ent:IsAddressedTo( "192.168.0.3" ), "other LAN host rejected" )
 assertTrue( not ent:IsAddressedTo( "fd00:3:0:5::4" ), "other LAN IPv6 host rejected" )

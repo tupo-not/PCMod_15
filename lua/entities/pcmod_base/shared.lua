@@ -425,7 +425,10 @@ if (SERVER) then
 		function ENT:SetBIPText()
 			local tmp = PCMod.Data[ self:EntIndex() ].IP.Back
 			if (tmp.Add && tmp.Sub) then
-				PCMod.Data[ self:EntIndex() ].IP.Back.Full = "10.0."..tmp.Sub.."."..tmp.Add
+				// Hierarchical backbone IPv4: 10.<hi>.<lo>.<host>/32 (16-bit backbone
+				// id in the 2nd+3rd octets). host 1 is the backbone router itself
+				// (gateway); attached LAN routers get host 2, 3, ...
+				PCMod.Data[ self:EntIndex() ].IP.Back.Full = PCMod.IPv4.BackboneAddress( tmp.Sub, tmp.Add + 1 )
 				self:SetNWString( "IP.Back", PCMod.Data[ self:EntIndex() ].IP.Back.Full )
 				tmp.V6 = PCMod.IPv6.FromIPv4( tmp.Full )
 				tmp.V6Prefix = PCMod.IPv6.BackbonePrefix( tmp.Sub )

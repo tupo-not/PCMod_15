@@ -19,6 +19,7 @@ function DEV:Initialize( x, y, w, h )
 	self:CreateButton2( self.Th, "btnRestart", x+(w*0.04), y+(h*0.29), w*0.21, h*0.06, "Restart System" )
 	self:CreateButton2( self.Th, "btnReset", x+(w*0.04), y+(h*0.36), w*0.21, h*0.06, "Reset System" )
 	self:CreateButton2( self.Th, "btnRefresh", x+(w*0.04), y+(h*0.43), w*0.21, h*0.06, "[ Refresh ]" )
+	self:CreateButton2( self.Th, "btnSysInfo", x+(w*0.04), y+(h*0.50), w*0.21, h*0.06, "System Info" )
 	
 	self:CreateListbox( self.Th, "lstProgs", x+(w*0.31), y+(h*0.15), w*0.21, h*0.73 )
 	self:RebuildProgs()
@@ -47,7 +48,22 @@ function DEV:Paint( x, y, w, h )
 	self:RenderWindow( self.Th, x, y, w, h, ttl, h*0.06 )
 	self:RenderFrame( self.Th, "System Control", x+(w*0.02), y+(h*0.1), w*0.25, h*0.88, Color( 255, 255, 255, 255 ) )
 	self:RenderFrame( self.Th, "Server Programs", x+(w*0.29), y+(h*0.1), w*0.25, h*0.88, Color( 255, 255, 255, 255 ) )
-	self:RenderFrame( self.Th, cprog, x+(w*0.56), y+(h*0.1), w*0.4, h*0.88, Color( 255, 255, 255, 255 ) )
+	if (self.ShowInfo) then
+		self:RenderFrame( self.Th, "System Information", x+(w*0.56), y+(h*0.1), w*0.4, h*0.88, Color( 255, 255, 255, 255 ) )
+		local info = self.Info or {}
+		local lines = {
+			"IPv4: " .. tostring( info.IPv4 or "unassigned" ),
+			"IPv6: " .. tostring( info.IPv6 or "unassigned" ),
+			"Prefix: " .. tostring( info.Prefix or "none" ),
+			"Gateway: " .. tostring( info.Gateway or "none" ),
+			"Backbone: " .. tostring( info.Backbone or "none" ),
+			"",
+			"(click System Info to close)",
+		}
+		self:RenderText( x+(w*0.575), y+(h*0.14), lines, Color( 0, 0, 0, 255 ), 0 )
+	else
+		self:RenderFrame( self.Th, cprog, x+(w*0.56), y+(h*0.1), w*0.4, h*0.88, Color( 255, 255, 255, 255 ) )
+	end
 	self:Draw()
 end
 
@@ -61,6 +77,9 @@ function DEV:ButtonClick( btn )
 		self:SubmitCommand( "os_command", "sys_refresh" )
 		self:SetStatus( "System refreshed!" )
 		self:RebuildProgs()
+	end
+	if (btn == "btnSysInfo") then
+		self.ShowInfo = (self.ShowInfo != true)
 	end
 	if (btn == "btnSelect") then
 		local prog = self:GetListboxSelRow( "lstProgs" )

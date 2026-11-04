@@ -149,6 +149,13 @@ PCMod Improvement TODO List
   locally) so replies route back over IPv6
 - DONE: LAN DHCP moved onto the router (per-router lease pool, /16 spans both
   host octets); replaced the global subnet allocator
+- DONE: IPv4 backbone hierarchy now mirrors IPv6: 10.0.0.0/8 -> one block per
+  16-bit backbone (10.<hi>.<lo>.0/24) -> one /32 per attached router
+  (10.<hi>.<lo>.<host>) that NATs its private LAN; the backbone router is the
+  block's .1 gateway, the allocator now supports 16-bit backbone ids, and
+  FromIPv4/ToIPv4 map the /32 to fd00:<bb>::<host>
+- DONE: Server Control Panel has a "System Info" button that opens a System
+  Information pane (IPv4, IPv6, prefix, gateway, backbone) fed by the server OS
 - DONE: Control Panel Network page now scans and lists nearby wireless routers
   (name, distance, signal %), lets the user connect with the router's Wi-Fi
   password (default 123), and disconnect; the PC routes over the air through

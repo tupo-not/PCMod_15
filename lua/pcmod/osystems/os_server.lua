@@ -235,12 +235,24 @@ end
 
 function OS:BuildDesktopData()
 	local tmp = {}
-		if (self.PCData.BG) then tmp.BG = self.PCData.BG end
-		if (self.PCData.ServerName) then tmp.Sn = self.PCData.ServerName end
-		tmp.Th = self:GetTheme()
-		local ps = self:GetAllProgs()
-		if (ps) then tmp.Progs = table.Copy( ps ) end
-		tmp.CP = self.CP
+	if (self.PCData.BG) then tmp.BG = self.PCData.BG end
+	if (self.PCData.ServerName) then tmp.Sn = self.PCData.ServerName end
+	tmp.Th = self:GetTheme()
+	local ps = self:GetAllProgs()
+	if (ps) then tmp.Progs = table.Copy( ps ) end
+	tmp.CP = self.CP
+
+	// System information shown on the server panel.
+	local v6 = self:GetIPv6()
+	local info = {}
+	info.IPv4 = self:GetFullIP() or "unassigned"
+	info.IPv6 = v6 or "unassigned"
+	info.Prefix = self:GetIPv6Prefix() or "none"
+	info.Gateway = self:GetIPv6Gateway() or "none"
+	local hier = v6 && PCMod.IPv6.Hierarchy( v6 )
+	info.Backbone = hier && PCMod.IPv6.BackbonePrefix( hier.bb ) or "none"
+	tmp.Info = info
+
 	return tmp
 end
 

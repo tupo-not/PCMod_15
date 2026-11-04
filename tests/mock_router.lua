@@ -91,9 +91,13 @@ assertTrue( not r.IsIPv6, "IPv4 target" )
 assertTrue( r.LAN, "IPv4 LAN target" )
 assertTrue( not r.OnLinkLAN, "IPv4 does not use on-link drop" )
 
-r = DRV:ClassifyDestination( "10.0.3.1" )
+r = DRV:ClassifyDestination( "10.0.3.2" )
 assertTrue( r.Backbone, "IPv4 backbone target" )
 assertTrue( not r.OnLinkBackbone, "IPv4 backbone is not on-link" )
+
+r = DRV:ClassifyDestination( "192.168.10.5" )
+assertTrue( r.LAN, "192.168 with a 10 octet is LAN, not backbone" )
+assertTrue( not r.Backbone, "192.168.10.5 is not backbone" )
 
 assertTrue( DRV:HasIPv6Subnet( "fd00:3:0:5::3" ), "HasIPv6Subnet own LAN" )
 assertTrue( DRV:HasIPv6Subnet( "fd00:3:0:6::3" ), "HasIPv6Subnet sibling in same /32" )
