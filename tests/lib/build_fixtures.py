@@ -20,6 +20,7 @@ from glua_translate import translate, compile_check  # noqa: E402
 # fixture name -> source path (relative to lua/)
 FIXTURES = {
     "cl_input.lua": "pcmod/cl_input.lua",
+    "cl_keyboard.lua": "pcmod/cl_keyboard.lua",
     "prog_base.lua": "pcmod/programs/base.lua",
     "pcmod_base.lua": "pcmod/programs/base.lua",
     "ss_base.lua": "pcmod/ssdevices/base.lua",
@@ -48,7 +49,6 @@ FIXTURES = {
 
 # Additional sources that only need a syntax check.
 CHECK_ONLY = [
-    "pcmod/cl_keyboard.lua",
     "pcmod/cl_gui.lua",
     "pcmod/cl_camera.lua",
     "pcmod/sh_beam.lua",

@@ -17,11 +17,11 @@ include( "pcmod/cl_input.lua" )
 
 local KeyRepeatCvar = GetConVar( "pc_keyrepeat" )
 if (!KeyRepeatCvar) then
-	KeyRepeatCvar = CreateClientConVar( "pc_keyrepeat", "200", true, false, false, "PCMod keyboard repeat interval in milliseconds" )
+	KeyRepeatCvar = CreateClientConVar( "pc_keyrepeat", "200", true, false, "PCMod keyboard repeat interval in milliseconds" )
 end
 local KeyHoldCvar = GetConVar( "pc_keyhold" )
 if (!KeyHoldCvar) then
-	KeyHoldCvar = CreateClientConVar( "pc_keyhold", "500", true, false, false, "PCMod keyboard delay before repeat starts in milliseconds" )
+	KeyHoldCvar = CreateClientConVar( "pc_keyhold", "500", true, false, "PCMod keyboard delay before repeat starts in milliseconds" )
 end
 
 local function ApplyKeyRepeat( value )
@@ -44,7 +44,7 @@ end
 if (KeyHoldCvar) then
 	ApplyKeyHold( KeyHoldCvar:GetFloat() )
 end
-if (cvars && cvars.AddChangeCallback) then
+if (istable( cvars ) && cvars.AddChangeCallback) then
 	cvars.AddChangeCallback( "pc_keyrepeat", function( convar_name, old, new )
 		ApplyKeyRepeat( new )
 	end, "PCMod.KeyRepeat" )

@@ -52,6 +52,7 @@ TESTS=(
     mock_wiring
     mock_windows
     mock_keyboard
+    mock_convar
     mock_mycomp
     mock_mycomp_prog
     mock_chatserv
