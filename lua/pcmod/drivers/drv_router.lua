@@ -182,16 +182,15 @@ function DRV:ProcessPacket( pid, pass, side )
 		PCMod.Msg( "[webgr]Firewall dropped packet on port " .. tostring( packet.Port ), true )
 		return
 	end
-	// Port forwarding (NAT). A reply from a forwarded internal host is source-
-	// NAT'ed back to the original peer; an inbound packet to a forwarded port is
-	// destination-NAT'ed to the internal host. A reply to an outbound masquerade
-	// is destination-NAT'ed back to the internal host that initiated it.
+	// Port forwarding + PAT. An inbound packet to a forwarded port is destination
+	// NAT'ed to the internal host (each peer given a stable ephemeral source port
+	// so the host can tell clients apart); replies are translated back at both
+	// edges.
 	local isSelf = (self.Entity.IsAddressedTo && self.Entity:IsAddressedTo( packet.Dest ))
 	if (isSelf) then
-		local flow = self:GetForwardFlow( packet.Source, packet.Port )
+		// Forwarded reply (SNAT): the internal host replied on an ephemeral port.
+		local flow = self:GetForwardFlow( packet.Port )
 		if (flow) then
-			// Rewrite the reply's source to the router's PUBLIC address (the one
-			// the peer dialled) so it routes back and looks right to the peer.
 			local wanSrc = flow.pub or self.Entity:GetFullIP() or self.Entity:GetIPv6()
 			if (wanSrc) then
 				packet.Delivered = true
@@ -200,23 +199,31 @@ function DRV:ProcessPacket( pid, pass, side )
 			end
 			return
 		end
-		// Reply to an outbound masquerade: translate the destination back from
-		// this router's WAN /32 to the internal host that initiated the flow.
+		// Masquerade reply (DNAT): a peer replied to this router's WAN /32 on an
+		// ephemeral port handed out by MasqueradeAndForward.
 		local nat = self:GetNatOut( packet.Port )
 		local wan = self.Entity.GetFullBIP && self.Entity:GetFullBIP()
 		if (nat && wan && (PCMod.IPv6.ToIPv4( packet.Dest ) == wan)) then
 			packet.Delivered = true
-			local mpid = PCMod.Network.CreatePacket( packet.Source, nat.ip, packet.Port, packet.Body )
+			local mpid = PCMod.Network.CreatePacket( packet.Source, nat.ip, nat.port, packet.Body )
 			if (mpid) then self:ProcessPacket( mpid ) end
 			return
 		end
+		// Forward DNAT: inbound to a forwarded port.
 		local rule = self:GetForwardRule( packet.Port )
 		if (rule) then
 			local lanSrc = self.Entity:GetFullIP() or self.Entity:GetIPv6()
 			if (lanSrc) then
-				self:RememberForwardFlow( rule, packet.Source, packet.Port, packet.Dest )
+				self.FwdByPeer = self.FwdByPeer or {}
+				local pk = tostring( packet.Source ) .. ":" .. tostring( packet.SourcePort or packet.Port )
+				local eph = self.FwdByPeer[ pk ]
+				if (!eph) then
+					eph = self:AllocEph()
+					self.FwdByPeer[ pk ] = eph
+				end
+				self:RememberForwardFlow( eph, packet.Source, (packet.SourcePort or packet.Port), packet.Dest )
 				packet.Delivered = true
-				local dpid = PCMod.Network.CreatePacket( lanSrc, rule.ip, rule.port, packet.Body )
+				local dpid = PCMod.Network.CreatePacket( lanSrc, rule.ip, rule.port, packet.Body, eph )
 				if (dpid) then self:ProcessPacket( dpid ) end
 			end
 			return
@@ -752,33 +759,48 @@ function DRV:GetForwardRule( wanPort )
 	return c.Forwards && c.Forwards[ tostring( wanPort ) ]
 end
 
-// NAT reply tracking: the internal host replies on (ip, port); remember the
-// original peer (src) and the public address they dialled (pub) so the router
-// can rewrite the reply's destination and source back.
-function DRV:RememberForwardFlow( rule, src, port, pub )
-	self.ForwardFlows = self.ForwardFlows or {}
-	self.ForwardFlows[ tostring( rule.ip ) .. ":" .. tostring( rule.port ) ] = { src = src, port = port, pub = pub, time = CurTime() }
-	if (table.Count( self.ForwardFlows ) > 64) then self.ForwardFlows = {} end
+// PAT (port-address translation) state: each active connection gets a stable
+// ephemeral source port, so many hosts can share one public /32 or one
+// forwarded port at the same time.
+function DRV:AllocEph()
+	self.NextEph = (self.NextEph or 40000) + 1
+	if (self.NextEph > 64999) then self.NextEph = 40000 end
+	return self.NextEph
 end
 
-function DRV:GetForwardFlow( src, port )
-	local f = self.ForwardFlows && self.ForwardFlows[ tostring( src ) .. ":" .. tostring( port ) ]
+// Forward-connection reply mapping, keyed by the ephemeral port the router
+// presented to the internal host.
+function DRV:RememberForwardFlow( eph, src, port, pub )
+	self.ForwardFlows = self.ForwardFlows or {}
+	self.ForwardFlows[ tostring( eph ) ] = { src = src, port = port, pub = pub, time = CurTime() }
+	if (table.Count( self.ForwardFlows ) > 128) then
+		local now = CurTime()
+		for k, v in pairs( self.ForwardFlows ) do
+			if (v.time < now - 120) then self.ForwardFlows[ k ] = nil end
+		end
+	end
+end
+
+function DRV:GetForwardFlow( port )
+	local f = self.ForwardFlows && self.ForwardFlows[ tostring( port ) ]
 	if (!f) then return nil end
 	if (f.time < (CurTime() - 120)) then
-		self.ForwardFlows[ tostring( src ) .. ":" .. tostring( port ) ] = nil
+		self.ForwardFlows[ tostring( port ) ] = nil
 		return nil
 	end
 	return f
 end
 
-// Outbound masquerade (SNAT): remember which internal host sits behind each
-// outbound source port so a reply to this router's WAN /32 is translated back.
-function DRV:RememberNatOut( port, ip )
+// Outbound masquerade mapping, keyed by the ephemeral source port handed to the
+// WAN, so a reply to this router's /32 is translated back to the internal host.
+function DRV:RememberNatOut( eph, ip, port )
 	self.NatOut = self.NatOut or {}
-	self.NatOut[ tostring( port ) ] = { ip = ip, time = CurTime() }
-	local now = CurTime()
-	for k, v in pairs( self.NatOut ) do
-		if ((!v.time) || (v.time < now - 120)) then self.NatOut[ k ] = nil end
+	self.NatOut[ tostring( eph ) ] = { ip = ip, port = port, time = CurTime() }
+	if (table.Count( self.NatOut ) > 128) then
+		local now = CurTime()
+		for k, v in pairs( self.NatOut ) do
+			if (v.time < now - 120) then self.NatOut[ k ] = nil end
+		end
 	end
 end
 
@@ -792,18 +814,26 @@ function DRV:GetNatOut( port )
 	return f
 end
 
-// Masquerade an outbound LAN packet (SNAT): rewrite its source to this router's
-// WAN /32, remember the internal source per port, and forward a fresh packet
-// upstream. The reply is translated back in ProcessPacket (masquerade reply).
+// Masquerade an outbound LAN packet (PAT): rewrite its source to this router's
+// WAN /32 and its source port to a stable ephemeral, then forward upstream. The
+// reply is translated back in ProcessPacket (masquerade reply).
 function DRV:MasqueradeAndForward( packet, pass )
 	local wan = self.Entity.GetFullBIP && self.Entity:GetFullBIP()
 	if (!wan) then
 		PCMod.Msg( "[webgr]No WAN /32 to masquerade behind; dropping", true )
 		return
 	end
-	self:RememberNatOut( packet.Port, packet.Source )
+	// One stable ephemeral source port per (host : dest : port) connection.
+	self.NatByPeer = self.NatByPeer or {}
+	local ck = tostring( packet.Source ) .. ":" .. tostring( packet.Dest ) .. ":" .. tostring( packet.Port )
+	local eph = self.NatByPeer[ ck ]
+	if (!eph) then
+		eph = self:AllocEph()
+		self.NatByPeer[ ck ] = eph
+		self:RememberNatOut( eph, packet.Source, packet.Port )
+	end
 	packet.Delivered = true
-	local npid = PCMod.Network.CreatePacket( wan, packet.Dest, packet.Port, packet.Body )
+	local npid = PCMod.Network.CreatePacket( wan, packet.Dest, packet.Port, packet.Body, eph )
 	if (!npid) then return end
 	local mem = self.Entity:Memory()
 	if (!mem.P) then mem.P = {} end
@@ -1023,4 +1053,7 @@ function DRV:OnRemove()
 	self.Uplink = nil
 	self.ForwardFlows = {}
 	self.NatOut = {}
+	self.FwdByPeer = {}
+	self.NatByPeer = {}
+	self.NextEph = nil
 end

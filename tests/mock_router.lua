@@ -195,19 +195,23 @@ assertTrue( DRV:FirewallBlocks( pkt( 75, "fd00:1:0:5::2", "fd00:2:0:1::1" ), "wa
 routData.RouterCfg.FirewallRules = {}
 routData.RouterCfg.Firewall = false
 
--- NAT flow remembers the dialled public address for the reply's source.
-DRV:AddForward( 72, "192.168.0.2", 72 )
-local fr = DRV:GetForwardRule( 72 )
-DRV:RememberForwardFlow( fr, "fd00:1:0:5::2", 72, "fd00:2:0:1::1" )
-local fl = DRV:GetForwardFlow( "192.168.0.2", 72 )
-assertTrue( fl ~= nil and fl.src == "fd00:1:0:5::2" and fl.pub == "fd00:2:0:1::1", "flow stores peer + public addr" )
-DRV:DeleteForward( 72 )
+-- PAT forward flow: keyed by the ephemeral port the router presents internally.
+DRV:RememberForwardFlow( 40001, "10.0.1.2", 40010, "10.0.2.2" )
+local fl = DRV:GetForwardFlow( 40001 )
+assertTrue( fl ~= nil and fl.src == "10.0.1.2" and fl.port == 40010 and fl.pub == "10.0.2.2", "forward flow stores peer + public addr" )
+assertTrue( DRV:GetForwardFlow( 72 ) == nil, "unrelated port has no forward flow" )
 
--- Outbound masquerade (SNAT) flow: remember the internal host per port.
-DRV:RememberNatOut( 72, "192.168.0.2" )
-local nf = DRV:GetNatOut( 72 )
-assertTrue( nf ~= nil and nf.ip == "192.168.0.2", "masquerade flow stores internal host" )
+-- Outbound masquerade (PAT) flow: remember the internal host by ephemeral port.
+DRV:RememberNatOut( 40011, "192.168.0.2", 72 )
+local nf = DRV:GetNatOut( 40011 )
+assertTrue( nf ~= nil and nf.ip == "192.168.0.2" and nf.port == 72, "masquerade flow stores internal host + port" )
 assertTrue( DRV:GetNatOut( 58 ) == nil, "unrelated port has no masquerade flow" )
+
+-- Ephemeral ports are unique and wrap within the PAT range.
+local e1 = DRV:AllocEph()
+local e2 = DRV:AllocEph()
+assertTrue( e1 ~= e2, "ephemeral ports differ" )
+assertTrue( e1 >= 40000 and e1 <= 65000, "ephemeral in PAT range" )
 
 local sent
 PCMod.Network.CreatePacket = function( src, dst, port, body ) sent = { src = src, dst = dst, port = port, body = body } end

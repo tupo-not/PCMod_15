@@ -52,12 +52,13 @@ PCMod.Msg( "Network Library Loaded (V" .. PCMod.Network.Version .. ")", true )
 // Previously Packets[] grew without limit and ids grew past MaxNetworkPid, after
 // which every router hard-rejected new packets ("Connection ERROR!") - the
 // in-game network died permanently after MaxNetworkPid packets in one session.
-function PCMod.Network.CreatePacket( source, dest, port, body )
+function PCMod.Network.CreatePacket( source, dest, port, body, sourcePort )
 	local maxpid = PCMod.Cfg.MaxNetworkPid or 500
 	local pk = {}
 	pk.Source = source
 	pk.Dest = dest
 	pk.Port = port
+	pk.SourcePort = sourcePort or port
 	pk.Body = body
 	pk.Delivered = false
 	// Dual-stack metadata: keep the address the program used and expose the

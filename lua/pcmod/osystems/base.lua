@@ -263,7 +263,7 @@ function OS:NetDataRecieved( packet )
 	if (!pt) then return end
 	local dat = packet.Body
 	if (!dat) then return end
-	local hdl = { packet.Source, packet.Port }
+	local hdl = { packet.Source, packet.SourcePort or packet.Port }
 	if (!self:NetPortOpen( pt )) then
 		self:ReplyNetMessage( hdl, { "netPortClosed", dat } )
 		return

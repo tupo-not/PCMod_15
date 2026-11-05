@@ -29,48 +29,55 @@ function PROG:ProcessPacket( pt, dat, hdl )
 	if (!self.Enabled) then return end
 	if (pt == 72) then
 		local ip = hdl[1]
+		local port = hdl[2]
 		PCMod.Msg( "ChatHost recieved net msg! (" .. dat[1] .. ")", true )
 		if (dat[1] == "netChat_Register") then
-			if (self:HasClient( ip )) then
+			if (self:HasClient( ip, port )) then
 				self:GetOS():ReplyNetMessage( hdl, { "netChat_Register_Fail" } )
 			else
-				self:RegisterClient( ip, dat[2] )
+				self:RegisterClient( ip, port, dat[2] )
 				self:GetOS():ReplyNetMessage( hdl, { "netChat_Register_Success" } )
 			end
 		end
 		if (dat[1] == "netChat_Message") then
-			if (!self:HasClient( ip )) then
+			if (!self:HasClient( ip, port )) then
 				self:GetOS():ReplyNetMessage( hdl, { "netChat_Message_Fail" } )
 			else
-				self:ChatMessage( ip, dat[2] )
+				self:ChatMessage( ip, port, dat[2] )
 			end
 		end
 		if (dat[1] == "netChat_Unregister") then
-			self:UnregisterClient( ip )
+			self:UnregisterClient( ip, port )
 			self:GetOS():ReplyNetMessage( hdl, { "netChat_Unregistered" } )
 		end
 	end
 end
 
-function PROG:HasClient( ip )
+function PROG:ClientKey( ip, port )
+	return ip .. ":" .. tostring( port )
+end
+
+function PROG:HasClient( ip, port )
+	local key = self:ClientKey( ip, port )
 	for _, v in pairs( self.Clients ) do
-		if (v[1] == ip) then return true end
+		if (v[1] == key) then return true end
 	end
 	return false
 end
 
-function PROG:RegisterClient( ip, nick )
-	if (self:HasClient( ip )) then return end
+function PROG:RegisterClient( ip, port, nick )
+	if (self:HasClient( ip, port )) then return end
 	if (!nick) then nick = ip end
 	self:PrintMessage( "'" .. nick .. "' has connected from '" .. ip .. "'!" )
-	table.insert( self.Clients, { ip, nick } )
+	table.insert( self.Clients, { self:ClientKey( ip, port ), ip, port, nick } )
 	self.DeviceData.RCC = #self.Clients
 	self:UpdateSS()
 end
 
-function PROG:UnregisterClient( ip )
+function PROG:UnregisterClient( ip, port )
+	local key = self:ClientKey( ip, port )
 	for k, v in pairs( self.Clients ) do
-		if (v[1] == ip) then
+		if (v[1] == key) then
 			table.remove( self.Clients, k )
 		end
 	end
@@ -79,11 +86,11 @@ function PROG:UnregisterClient( ip )
 	self:UpdateSS()
 end
 
-function PROG:ChatMessage( ip, msg )
+function PROG:ChatMessage( ip, port, msg )
 	local nick = ip
 	for _, v in pairs( self.Clients ) do
-		if (v[1] == ip) then
-			nick = v[2]
+		if (v[1] == self:ClientKey( ip, port )) then
+			nick = v[4]
 			break
 		end
 	end
@@ -92,7 +99,7 @@ end
 
 function PROG:PrintMessage( msg )
 	for _, v in pairs( self.Clients ) do
-		self:GetOS():SendNetMessage( v[1], 72, { "netChat_Message_Cl", msg } )
+		self:GetOS():SendNetMessage( v[2], v[3], { "netChat_Message_Cl", msg } )
 	end
 end
 
