@@ -176,7 +176,7 @@ function PCMod.RP.BuyDisk( ply, com, args )
 			if (PCMod.Progs[ v ]) then
 				local title = PCMod.Progs[ v ].Title
 				local osid = PCMod.Progs[ v ].OS
-				wep:AddProgram( v, title, osid )
+				wep:AddProgram( v, title, osid, PCMod.Progs[ v ].Icon )
 			end
 		end
 		//wep:AddProgram( "test1", "Test 1" )
