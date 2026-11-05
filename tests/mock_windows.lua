@@ -139,7 +139,7 @@ d.SSDevice.W, d.SSDevice.H = 0.5, 0.667
 gui.MouseX = function() return 500 end
 gui.MouseY = function() return 400 end
 d:StartWindowResize(0.98, 0.98)
-assertEq(d.SSDevice.Priority, 150, "resize raises window locally")
+assertEq(d.SSDevice.Priority, 151, "resize raises above the drag (no z-tie)")
 gui.MouseX = function() return 620 end
 gui.MouseY = function() return 450 end
 down = true

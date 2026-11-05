@@ -1012,12 +1012,17 @@ DEV.ResizeGrip = 0.035
 	end
 
 	// Draw this window above the other program windows immediately, without a
-	// server round-trip (used while dragging). 150 stays below file pickers
-	// (240) and the Start menu (254/255). The real z-order is assigned by
+	// server round-trip (used while dragging). Each grab takes the next priority
+	// from the 150..239 band (above program windows 5..100, below file pickers
+	// 240 / Start menu 254), so two windows never tie at the same z-order and
+	// one cannot be dragged "through" the other. The real z-order is assigned by
 	// FocusWindow() when the grab ends.
 	function DEV:RaiseLocal()
-		if ((self.ProgName) && (self.ProgName != "") && (self.SSDevice)) then
-			self.SSDevice.Priority = 150
+		if ((self.ProgName) && (self.ProgName != "") && (self.SSDevice) && (PCMod.SDraw)) then
+			local nextp = ((PCMod.SDraw.RaisePriority or 149) + 1)
+			if (nextp > 239) then nextp = 150 end
+			PCMod.SDraw.RaisePriority = nextp
+			self.SSDevice.Priority = nextp
 		end
 	end
 
@@ -1078,12 +1083,14 @@ DEV.ResizeGrip = 0.035
 		if ((!move) && (!size)) then return end
 		self.WindowDragging = false
 		self.WindowResizing = false
-		// Swallow the click that GMod delivers on mouse release. This is
-		// global: the release may happen over a different window/control.
-		self.SuppressClick = CurTime() + 0.3
+		// The release click is already swallowed by PCMod.SDraw.GrabActive in
+		// RegisterClick (it stays true until this finishes, so the release can
+		// never click through to a control). Do not set a long Suppress* window
+		// here: a 0.3s one left a dead zone that ate the next legitimate click.
+		self.SuppressClick = 0
 		if (PCMod.SDraw) then
 			PCMod.SDraw.GrabActive = false
-			PCMod.SDraw.SuppressClicksUntil = CurTime() + 0.3
+			PCMod.SDraw.SuppressClicksUntil = 0
 		end
 		if ((self.ProgName) && (self.ProgName != "") && (self.SSDevice)) then
 			if (move) then
