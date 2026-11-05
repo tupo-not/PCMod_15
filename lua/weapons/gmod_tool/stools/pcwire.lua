@@ -104,10 +104,6 @@ end
 // ---------------------------------------------------------------------------------------------------------
 if (CLIENT) then
 
-	// Stable reference used by the single-player click-forward net handler (the
-	// global TOOL may point at another stool by the time it runs).
-	local SpTool = TOOL
-
 	TOOL.Stage = 0          -- 0 = picking first port, 1 = picking second port
 	TOOL.SelIndex = 1       -- which port is highlighted in the HUD
 	TOOL.Ent1 = nil
@@ -362,8 +358,12 @@ if (CLIENT) then
 	if (game.SinglePlayer()) then
 		net.Receive( "pcwire_sp_click", function( len )
 			local funcname = net.ReadString()
-			local fn = SpTool[ funcname ]
-			if (fn) then fn( SpTool, LocalPlayer():GetEyeTrace() ) end
+			// Use the activated tool object (toolgun injects GetOwner/SWEP/etc),
+			// not the raw TOOL table - the latter has no GetOwner and errors.
+			local tool = GetPCWireTool( LocalPlayer() )
+			if (!tool) then return end
+			local fn = tool[ funcname ]
+			if (fn) then fn( tool, LocalPlayer():GetEyeTrace() ) end
 		end )
 	end
 
