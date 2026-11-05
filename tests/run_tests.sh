@@ -51,6 +51,7 @@ TESTS=(
     mock_routing
     mock_wiring
     mock_windows
+    mock_keyboard
     mock_mycomp
     mock_mycomp_prog
     mock_browser

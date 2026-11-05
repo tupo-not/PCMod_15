@@ -29,6 +29,27 @@ local function ScaleLabel( v )
 	return tostring( math.floor( (v * 100) + 0.5 ) ) .. "%"
 end
 
+// Keyboard repeat limits (milliseconds). The active values are the archived
+// pc_keyrepeat / pc_keyhold client convars.
+local KEY_REPEAT_MIN = 20
+local KEY_REPEAT_MAX = 1000
+local KEY_HOLD_MIN = 0
+local KEY_HOLD_MAX = 2000
+
+local function CurrentKeyRepeat()
+	if (keyboard && keyboard.GetLatency) then
+		return math.floor( keyboard.GetLatency() + 0.5 )
+	end
+	return 200
+end
+
+local function CurrentKeyHold()
+	if (keyboard && keyboard.GetHoldTime) then
+		return math.floor( keyboard.GetHoldTime() + 0.5 )
+	end
+	return 500
+end
+
 local function NetValue( value )
 	if ((value == nil) || (value == "")) then return "Not available" end
 	return tostring( value )
@@ -52,6 +73,10 @@ function DEV:SwitchSection( section )
 	if (self.Section == "network") then
 		self.WifiPassDraft = self:GetTextboxText( "txtWifiPass" )
 		self.StaticIPDraft = self:GetTextboxText( "txtStaticIP" )
+	end
+	if (self.Section == "io") then
+		self.KeyRepeatDraft = self:GetTextboxText( "txtKeyRepeat" )
+		self.KeyHoldDraft = self:GetTextboxText( "txtKeyHold" )
 	end
 	self.Section = section
 	self:ReinitializeSelf()
@@ -104,7 +129,16 @@ function DEV:InitializeNetwork( x, y, w, h )
 end
 
 function DEV:InitializeIO( x, y, w, h )
-	self:CreateListbox( self.Th, "lstDevices", x+(w*0.325), y+(h*0.20), w*0.635, h*0.55 ).LeftAlign = true
+	self:CreateListbox( self.Th, "lstDevices", x+(w*0.325), y+(h*0.20), w*0.30, h*0.55 ).LeftAlign = true
+	self:CreateTextbox( self.Th, "txtKeyRepeat", x+(w*0.81), y+(h*0.245), w*0.30, h*0.055, "Repeat (ms):" )
+	self:CreateTextbox( self.Th, "txtKeyHold", x+(w*0.81), y+(h*0.345), w*0.30, h*0.055, "Hold (ms):" )
+	local rep = self.KeyRepeatDraft
+	if (rep == nil) then rep = tostring( CurrentKeyRepeat() ) end
+	local hold = self.KeyHoldDraft
+	if (hold == nil) then hold = tostring( CurrentKeyHold() ) end
+	self:SetTextboxText( "txtKeyRepeat", rep )
+	self:SetTextboxText( "txtKeyHold", hold )
+	self:CreateButton2( self.Th, "btnApplyKeyRepeat", x+(w*0.66), y+(h*0.43), w*0.30, h*0.07, "Apply Key Repeat" )
 	self:CreateButton2( self.Th, "btnRefreshDevices", x+(w*0.325), y+(h*0.80), w*0.30, h*0.07, "Refresh Devices" )
 	self:CreateButton2( self.Th, "btnDeviceManager", x+(w*0.66), y+(h*0.80), w*0.30, h*0.07, "Device Manager" )
 end
@@ -209,7 +243,13 @@ function DEV:Paint( x, y, w, h )
 		end
 	elseif (self.Section == "io") then
 		self:RenderText( x+(w*0.6425), y+(h*0.105), { "Input / Output Devices" }, Color( 0, 0, 0, 255 ), 1 )
-		self:RenderText( x+(w*0.6425), y+(h*0.90), { "Identified USB devices connected to this computer." }, Color( 0, 0, 0, 255 ), 1 )
+		self:RenderText( x+(w*0.475), y+(h*0.16), { "USB Devices" }, Color( 0, 0, 0, 255 ), 1 )
+		self:RenderText( x+(w*0.81), y+(h*0.16), { "Keyboard Repeat" }, Color( 0, 0, 0, 255 ), 1 )
+		self:RenderText( x+(w*0.81), y+(h*0.52), { "Repeat " .. CurrentKeyRepeat() .. " ms | Hold " .. CurrentKeyHold() .. " ms" }, Color( 0, 0, 0, 255 ), 1 )
+		if (self.KeyRepeatError) then
+			self:RenderError( self.Th, x+(w*0.81), y+(h*0.60), self.KeyRepeatError )
+		end
+		self:RenderText( x+(w*0.6425), y+(h*0.90), { "Repeat: interval between repeats. Hold: delay before repeats start." }, Color( 0, 0, 0, 255 ), 1 )
 	else
 		self:RenderText( x+(w*0.6425), y+(h*0.105), { "Operating System" }, Color( 0, 0, 0, 255 ), 1 )
 		self:RenderText( x+(w*0.475), y+(h*0.17), { "Theme" }, Color( 0, 0, 0, 255 ), 1 )
@@ -243,6 +283,28 @@ function DEV:ButtonClick( btn )
 	if (btn == "btnApplyScale") then
 		local val = tonumber( self:GetListboxSelRow( "lstGuiScale" ) )
 		if (val) then RunConsoleCommand( "pc_guiscale", tostring( val ) ) end
+		return
+	end
+	if (btn == "btnApplyKeyRepeat") then
+		local reps = self:GetTextboxText( "txtKeyRepeat" )
+		local holds = self:GetTextboxText( "txtKeyHold" )
+		self.KeyRepeatDraft = reps
+		self.KeyHoldDraft = holds
+		local rep = tonumber( reps )
+		local hold = tonumber( holds )
+		if ((!rep) || (!hold)) then
+			self.KeyRepeatError = "Enter digits only"
+		elseif ((rep < KEY_REPEAT_MIN) || (rep > KEY_REPEAT_MAX)) then
+			self.KeyRepeatError = "Repeat: " .. KEY_REPEAT_MIN .. "-" .. KEY_REPEAT_MAX .. " ms"
+		elseif ((hold < KEY_HOLD_MIN) || (hold > KEY_HOLD_MAX)) then
+			self.KeyRepeatError = "Hold: " .. KEY_HOLD_MIN .. "-" .. KEY_HOLD_MAX .. " ms"
+		else
+			self.KeyRepeatError = nil
+			if (keyboard && keyboard.SetLatency) then keyboard.SetLatency( rep ) end
+			if (keyboard && keyboard.SetHoldTime) then keyboard.SetHoldTime( hold ) end
+			RunConsoleCommand( "pc_keyrepeat", tostring( rep ) )
+			RunConsoleCommand( "pc_keyhold", tostring( hold ) )
+		end
 		return
 	end
 	if (btn == "btnRefreshNetwork") then

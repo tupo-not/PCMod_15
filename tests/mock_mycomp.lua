@@ -14,6 +14,7 @@ PCMod={Msg=function() end,SDraw={CFrame=0,GetGuiScale=function() return 1.25 end
   return el
 end}}
 DEV={}
+keyboard={GetLatency=function() return 150 end,GetHoldTime=function() return 400 end,SetLatency=function(v) keyboard.Latency=v end,SetHoldTime=function(v) keyboard.Hold=v end}
 dofile('ss_base.lua')
 dofile('mycomp.lua')
 local d=table.Copy(DEV)
@@ -24,7 +25,8 @@ assertTrue(d.Listboxes.lstGuiScale ~= nil, 'scale list exists')
 assertEq(#d.Listboxes.lstGuiScale.Order, 7, 'seven scale presets')
 assertEq(d:GetListboxSelRow('lstGuiScale'), '1.25', 'current scale selected')
 local ran
-RunConsoleCommand=function(cmd,val) ran={cmd=cmd,val=val} end
+local ranlist={}
+RunConsoleCommand=function(cmd,val) ran={cmd=cmd,val=val}; table.insert(ranlist,{cmd=cmd,val=val}) end
 d:ButtonClick('btnApplyScale')
 assertTrue(ran and ran.cmd=='pc_guiscale' and ran.val=='1.25', 'apply scale command')
 assertEq(#d.Listboxes.lstSections.Order, 3, 'three control panel categories')
@@ -52,6 +54,25 @@ function d:RunProgCommand(prog,cmd) sent={prog=prog,cmd=cmd} end
 d:ListboxSelect('lstSections','io')
 assertTrue(d.Listboxes.lstDevices ~= nil, 'IO page exists')
 assertEq(#d.Listboxes.lstDevices.Order, 2, 'identified devices listed')
+assertTrue(d.Textboxes.txtKeyRepeat ~= nil, 'key repeat box exists')
+assertTrue(d.Textboxes.txtKeyHold ~= nil, 'key hold box exists')
+assertEq(d:GetTextboxText('txtKeyRepeat'), '150', 'current repeat shown')
+assertEq(d:GetTextboxText('txtKeyHold'), '400', 'current hold shown')
+ranlist={}
+d:SetTextboxText('txtKeyRepeat','abc')
+d:ButtonClick('btnApplyKeyRepeat')
+assertEq(#ranlist, 0, 'invalid repeat not applied')
+assertTrue(d.KeyRepeatError ~= nil, 'invalid repeat error shown')
+ranlist={}
+d:SetTextboxText('txtKeyRepeat','100')
+d:SetTextboxText('txtKeyHold','250')
+d:ButtonClick('btnApplyKeyRepeat')
+assertEq(#ranlist, 2, 'repeat and hold applied')
+assertTrue(ranlist[1].cmd=='pc_keyrepeat' and ranlist[1].val=='100', 'repeat command')
+assertTrue(ranlist[2].cmd=='pc_keyhold' and ranlist[2].val=='250', 'hold command')
+assertEq(keyboard.Latency, 100, 'keyboard repeat applied')
+assertEq(keyboard.Hold, 250, 'keyboard hold applied')
+assertTrue(d.KeyRepeatError == nil, 'error cleared')
 d:ButtonClick('btnRefreshDevices')
 assertTrue(sent and sent.prog=='mycomputer' and sent.cmd=='refresh_devices', 'device refresh command')
 d:ListboxSelect('lstSections','os')

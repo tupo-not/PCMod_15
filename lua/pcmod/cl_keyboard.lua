@@ -15,6 +15,44 @@ PCMod.Msg( "Keyboard Controller Loaded!", true )
 include( "pcmod/cl_input.lua" )
 --require( "keyboard" )
 
+local KeyRepeatCvar = GetConVar( "pc_keyrepeat" )
+if (!KeyRepeatCvar) then
+	KeyRepeatCvar = CreateClientConVar( "pc_keyrepeat", "200", true, false, false, "PCMod keyboard repeat interval in milliseconds" )
+end
+local KeyHoldCvar = GetConVar( "pc_keyhold" )
+if (!KeyHoldCvar) then
+	KeyHoldCvar = CreateClientConVar( "pc_keyhold", "500", true, false, false, "PCMod keyboard delay before repeat starts in milliseconds" )
+end
+
+local function ApplyKeyRepeat( value )
+	local ms = tonumber( value ) or 200
+	if (ms < 20) then ms = 20 end
+	if (ms > 1000) then ms = 1000 end
+	keyboard.SetLatency( ms )
+end
+
+local function ApplyKeyHold( value )
+	local ms = tonumber( value ) or 500
+	if (ms < 0) then ms = 0 end
+	if (ms > 2000) then ms = 2000 end
+	keyboard.SetHoldTime( ms )
+end
+
+if (KeyRepeatCvar) then
+	ApplyKeyRepeat( KeyRepeatCvar:GetFloat() )
+end
+if (KeyHoldCvar) then
+	ApplyKeyHold( KeyHoldCvar:GetFloat() )
+end
+if (cvars && cvars.AddChangeCallback) then
+	cvars.AddChangeCallback( "pc_keyrepeat", function( convar_name, old, new )
+		ApplyKeyRepeat( new )
+	end, "PCMod.KeyRepeat" )
+	cvars.AddChangeCallback( "pc_keyhold", function( convar_name, old, new )
+		ApplyKeyHold( new )
+	end, "PCMod.KeyHold" )
+end
+
 
 // ---------------------------------------------------------------------------------------------------------
 // Add the keyboard hooks

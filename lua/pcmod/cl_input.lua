@@ -13,18 +13,31 @@ module( "keyboard", package.seeall )
 
 keyboard = keyboard or {}
 
-local Latency, Available, Keys, Keys_Shift, Typing, Callback, Locked
+local Latency, Hold, Available, Keys, Keys_Shift, Typing, Callback, Locked
 
 Keys            = { }
 Keys_Shift		= { }
 Available       = { }
 Locked          = { }
 Latency         = 200 / 1000
+Hold            = 500 / 1000
 Typing          = false
 Callback        = print
 
 function keyboard.SetLatency( m )
 	Latency = m / 1000
+end
+
+function keyboard.GetLatency( )
+	return Latency * 1000
+end
+
+function keyboard.SetHoldTime( m )
+	Hold = m / 1000
+end
+
+function keyboard.GetHoldTime( )
+	return Hold * 1000
 end
 
 function keyboard.EnableCapture( b )
@@ -80,9 +93,14 @@ local function Think( )
 	for k, v in pairs( Keys ) do
 		if (Available[ k ]) then
 			if (input.IsKeyDown( k )) then
-				// Hold-to-repeat: fire at most once per Latency while the key
-				// stays down, then re-arm for the next repeat.
-				if ((!Locked[ k ]) || (now >= Locked[ k ])) then
+				// First press fires immediately. Repeats wait for the hold
+				// time, then continue at the repeat latency.
+				if (!Locked[ k ]) then
+					val = v
+					if (shift) then val = Keys_Shift[ k ] end
+					InputEntered( val )
+					Locked[ k ] = now + Hold
+				elseif (now >= Locked[ k ]) then
 					val = v
 					if (shift) then val = Keys_Shift[ k ] end
 					InputEntered( val )
