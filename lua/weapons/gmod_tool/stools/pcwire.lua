@@ -47,9 +47,11 @@ if (SERVER) then
 				net.WriteString( funcname )
 			net.Send( ply )
 		end
-		function TOOL:LeftClick( trace )  PCWireSPForward( self:GetOwner(), "LeftClick" ) return true end
-		function TOOL:RightClick( trace ) PCWireSPForward( self:GetOwner(), "RightClick" ) return true end
-		function TOOL:Reload( trace )     PCWireSPForward( self:GetOwner(), "Reload" ) return true end
+		// Return false so the server-side toolgun does NOT play its default
+		// "Toolgun.Single" click (DoShootEffect) on top of the client's own sound.
+		function TOOL:LeftClick( trace )  PCWireSPForward( self:GetOwner(), "LeftClick" ) return false end
+		function TOOL:RightClick( trace ) PCWireSPForward( self:GetOwner(), "RightClick" ) return false end
+		function TOOL:Reload( trace )     PCWireSPForward( self:GetOwner(), "Reload" ) return false end
 	end
 
 	util.AddNetworkString( "pcmod_reqports" )
