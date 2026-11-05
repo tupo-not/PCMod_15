@@ -42,6 +42,8 @@ function os:CloseNetPort() end
 function os:SendNetMessage( addr, port, body ) sent = { addr = addr, port = port, body = body } end
 
 PROG = {}
+dofile( "sh_window.lua" )
+dofile( "sv_window_payload.lua" )
 dofile( "pcmod_base.lua" )
 local base = table.Copy( PROG )
 PROG = table.Copy( base )

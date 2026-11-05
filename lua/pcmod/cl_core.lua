@@ -26,6 +26,8 @@ if (!PCMod_NoInclude) then
 
 	include( "pcmod/sh_baseconfig.lua" ) -- Configuration file
 	include( "pcmod/sh_common.lua" ) -- Common functions
+	include( "pcmod/sh_ui_layout.lua" ) -- Pure layout primitives
+	include( "pcmod/sh_window.lua" ) -- Shared window geometry
 	include( "pcmod/sh_logging.lua" ) -- Logging functions
 	include( "pcmod/sh_plugins.lua" ) -- Plugins file
 
@@ -43,6 +45,7 @@ if (!PCMod_NoInclude) then
 	// ---------------------------------------------------------------------------------------------------------
 
 	include( "pcmod/cl_gui.lua" ) -- Drawing control file
+	include( "pcmod/cl_ui_widgets.lua" ) -- Widget contract
 	include( "pcmod/cl_2d3d.lua" ) -- 2D 3D drawing file
 	include( "pcmod/cl_rp.lua" ) -- RolePlay control file
 	include( "pcmod/cl_camera.lua" ) -- Camera control file

@@ -39,42 +39,35 @@ function PROG:TriggerState( st )
 	end
 end
 
-function PROG:UpdateSS()
-	if (!self.DeviceData) then self.DeviceData = {} end
-	// This program builds its own screen-space payloads instead of calling the
-	// base UpdateSS, so it has to stamp the window-manager fields itself.
-	self.DeviceData.ProgName = self.Name
-	self.DeviceData.WindowDrag = (self.OS == "personal")
-	self.DeviceData.WindowResize = (self.OS == "personal")
-	local minW, minH = self:GetMinWindowSize()
-	self.DeviceData.MinW = minW
-	self.DeviceData.MinH = minH
+function PROG:BuildWindow()
 	if (self.State == 1) then
-		local ss = self:GetScreenSpace()
-		// local dms = self:GetDimensions()
-		local dms = { x=0.1, y=0.1, w=0.8, h=0.8 }
-		local dat = table.Copy( self.DeviceData )
-		if (dat.Msgs) then dat.Msgs = {} end
-		local dev = ss:MakeDevice( "window_chatserv_connect", dms.x, dms.y, dms.w, dms.h, dat, self:GetPriority() )
-		ss:AddDevice( "window_chatserv_connect", dev )
-		self:SetScreenSpace( ss )
+		return {
+			Type = "window_chatserv_connect",
+			Key = "window_chatserv_connect",
+			Data = self.DeviceData,
+			Geometry = { x = 0.1, y = 0.1, w = 0.8, h = 0.8 },
+			Prepare = function( prog, data )
+				if (data.Msgs) then data.Msgs = {} end
+			end
+		}
 	end
 	if (self.State == 2) then
-		local ss = self:GetScreenSpace()
-		local dms = self:GetDimensions()
-		local dat = self.DeviceData
-		if self.ShouldClear then
-			dat.Msgs = {}
-			
-		end
-		local dev = ss:MakeDevice( self.DeviceLink, dms.x, dms.y, dms.w, dms.h, dat, self:GetPriority() )
-		ss:AddDevice( self.DeviceName, dev )
-		if self.ShouldClear then
-			dev.Msgs = {}
-			self.ShouldClear = nil
-		end
-		self:SetScreenSpace( ss )
+		return {
+			Type = self.DeviceLink,
+			Key = self.DeviceName,
+			Data = self.DeviceData,
+			Prepare = function( prog, data )
+				if (prog.ShouldClear) then data.Msgs = {} end
+			end,
+			After = function( prog, dev )
+				if (prog.ShouldClear) then
+					dev.Msgs = {}
+					prog.ShouldClear = nil
+				end
+			end
+		}
 	end
+	return nil
 end
 
 function PROG:DoCommand( com, args )

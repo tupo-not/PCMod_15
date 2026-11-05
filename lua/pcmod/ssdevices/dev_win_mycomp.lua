@@ -82,15 +82,33 @@ function DEV:SwitchSection( section )
 	self:ReinitializeSelf()
 end
 
+local UI = PCMod.UI
+
+local function MyCompList( dev, theme, name, rect, leftAlign )
+	local lb = dev:CreateListbox( theme, name, rect.x, rect.y, rect.w, rect.h )
+	if (leftAlign) then lb.LeftAlign = true end
+	return lb
+end
+
+local function MyCompButton( dev, theme, name, rect, text )
+	return dev:CreateButton2( theme, name, rect.x, rect.y, rect.w, rect.h, text )
+end
+
+local function MyCompTextbox( dev, theme, name, rect, label )
+	return dev:CreateTextbox( theme, name, rect.x, rect.y, rect.w, rect.h, label )
+end
+
 function DEV:InitializeOS( x, y, w, h )
-	self:CreateListbox( self.Th, "lstThemes", x+(w*0.325), y+(h*0.20), w*0.30, h*0.40 )
+	local R = UI.Rect( x, y, w, h )
+
+	MyCompList( self, self.Th, "lstThemes", UI.Box( R, 0.325, 0.20, 0.30, 0.40 ) )
 	for k, v in pairs( PCMod.Gui.Themes ) do
 		self:AddListboxItem( "lstThemes", k, v.NiceName )
 	end
 	self:SetListboxSelRow( "lstThemes", self.Th )
-	self:CreateButton2( self.Th, "btnSetTheme", x+(w*0.325), y+(h*0.63), w*0.30, h*0.07, "Apply Theme" )
+	MyCompButton( self, self.Th, "btnSetTheme", UI.Box( R, 0.325, 0.63, 0.30, 0.07 ), "Apply Theme" )
 
-	self:CreateListbox( self.Th, "lstGuiScale", x+(w*0.66), y+(h*0.20), w*0.30, h*0.28 )
+	MyCompList( self, self.Th, "lstGuiScale", UI.Box( R, 0.66, 0.20, 0.30, 0.28 ) )
 	for _, v in ipairs( GUI_SCALES ) do
 		self:AddListboxItem( "lstGuiScale", tostring( v ), ScaleLabel( v ) )
 	end
@@ -105,50 +123,59 @@ function DEV:InitializeOS( x, y, w, h )
 		end
 	end
 	self:SetListboxSelRow( "lstGuiScale", bestkey )
-	self:CreateButton2( self.Th, "btnApplyScale", x+(w*0.66), y+(h*0.51), w*0.30, h*0.07, "Apply Scale" )
+	MyCompButton( self, self.Th, "btnApplyScale", UI.Box( R, 0.66, 0.51, 0.30, 0.07 ), "Apply Scale" )
 
-	self:CreateTextbox( self.Th, "txtOldPass", x+(w*0.485), y+(h*0.81), w*0.31, h*0.055, "Old Password:" )
-	self:CreateTextbox( self.Th, "txtNewPass", x+(w*0.485), y+(h*0.89), w*0.31, h*0.055, "New Password:" )
-	self:CreateButton2( self.Th, "btnApplyPass", x+(w*0.66), y+(h*0.81), w*0.30, h*0.07, "Change Password" )
+	MyCompTextbox( self, self.Th, "txtOldPass", UI.Box( R, 0.485, 0.81, 0.31, 0.055 ), "Old Password:" )
+	MyCompTextbox( self, self.Th, "txtNewPass", UI.Box( R, 0.485, 0.89, 0.31, 0.055 ), "New Password:" )
+	MyCompButton( self, self.Th, "btnApplyPass", UI.Box( R, 0.66, 0.81, 0.30, 0.07 ), "Change Password" )
 	if (self.OldPassDraft) then self:SetTextboxText( "txtOldPass", self.OldPassDraft ) end
 	if (self.NewPassDraft) then self:SetTextboxText( "txtNewPass", self.NewPassDraft ) end
 end
 
 function DEV:InitializeNetwork( x, y, w, h )
-	self:CreateListbox( self.Th, "lstNetInfo", x+(w*0.325), y+(h*0.21), w*0.28, h*0.42 ).LeftAlign = true
-	self:CreateListbox( self.Th, "lstWireless", x+(w*0.63), y+(h*0.21), w*0.335, h*0.38 ).LeftAlign = true
-	self:CreateTextbox( self.Th, "txtWifiPass", x+(w*0.7975), y+(h*0.62), w*0.335, h*0.055, "Password:" )
-	self:CreateButton2( self.Th, "btnWifiConnect", x+(w*0.63), y+(h*0.69), w*0.16, h*0.07, "Connect" )
-	self:CreateButton2( self.Th, "btnWifiDisconnect", x+(w*0.805), y+(h*0.69), w*0.16, h*0.07, "Disconnect" )
-	self:CreateButton2( self.Th, "btnRefreshNetwork", x+(w*0.325), y+(h*0.88), w*0.28, h*0.07, "Refresh" )
-	self:CreateButton2( self.Th, "btnNetTools", x+(w*0.63), y+(h*0.88), w*0.335, h*0.07, "Network Tools" )
-	self:CreateTextbox( self.Th, "txtStaticIP", x+(w*0.450), y+(h*0.69), w*0.28, h*0.05, "Static IP:" )
-	self:CreateButton2( self.Th, "btnSetIP", x+(w*0.325), y+(h*0.77), w*0.28, h*0.055, "Set Static IP" )
+	local R = UI.Rect( x, y, w, h )
+
+	MyCompList( self, self.Th, "lstNetInfo", UI.Box( R, 0.325, 0.21, 0.28, 0.42 ), true )
+	MyCompList( self, self.Th, "lstWireless", UI.Box( R, 0.63, 0.21, 0.335, 0.38 ), true )
+	MyCompTextbox( self, self.Th, "txtWifiPass", UI.Box( R, 0.7975, 0.62, 0.335, 0.055 ), "Password:" )
+	MyCompButton( self, self.Th, "btnWifiConnect", UI.Box( R, 0.63, 0.69, 0.16, 0.07 ), "Connect" )
+	MyCompButton( self, self.Th, "btnWifiDisconnect", UI.Box( R, 0.805, 0.69, 0.16, 0.07 ), "Disconnect" )
+	MyCompButton( self, self.Th, "btnRefreshNetwork", UI.Box( R, 0.325, 0.88, 0.28, 0.07 ), "Refresh" )
+	MyCompButton( self, self.Th, "btnNetTools", UI.Box( R, 0.63, 0.88, 0.335, 0.07 ), "Network Tools" )
+	MyCompTextbox( self, self.Th, "txtStaticIP", UI.Box( R, 0.450, 0.69, 0.28, 0.05 ), "Static IP:" )
+	MyCompButton( self, self.Th, "btnSetIP", UI.Box( R, 0.325, 0.77, 0.28, 0.055 ), "Set Static IP" )
 	if (self.WifiPassDraft) then self:SetTextboxText( "txtWifiPass", self.WifiPassDraft ) end
 	if (self.StaticIPDraft) then self:SetTextboxText( "txtStaticIP", self.StaticIPDraft ) end
 end
 
 function DEV:InitializeIO( x, y, w, h )
-	self:CreateListbox( self.Th, "lstDevices", x+(w*0.325), y+(h*0.20), w*0.30, h*0.55 ).LeftAlign = true
-	self:CreateTextbox( self.Th, "txtKeyRepeat", x+(w*0.81), y+(h*0.245), w*0.30, h*0.055, "Repeat (ms):" )
-	self:CreateTextbox( self.Th, "txtKeyHold", x+(w*0.81), y+(h*0.345), w*0.30, h*0.055, "Hold (ms):" )
+	local R = UI.Rect( x, y, w, h )
+
+	// The device list and the repeat settings share one content pane; keeping
+	// the list box explicit preserves the existing layout exactly.
+	MyCompList( self, self.Th, "lstDevices", UI.Box( R, 0.325, 0.20, 0.30, 0.55 ), true )
+
+	MyCompTextbox( self, self.Th, "txtKeyRepeat", UI.Box( R, 0.81, 0.245, 0.30, 0.055 ), "Repeat (ms):" )
+	MyCompTextbox( self, self.Th, "txtKeyHold", UI.Box( R, 0.81, 0.345, 0.30, 0.055 ), "Hold (ms):" )
 	local rep = self.KeyRepeatDraft
 	if (rep == nil) then rep = tostring( CurrentKeyRepeat() ) end
 	local hold = self.KeyHoldDraft
 	if (hold == nil) then hold = tostring( CurrentKeyHold() ) end
 	self:SetTextboxText( "txtKeyRepeat", rep )
 	self:SetTextboxText( "txtKeyHold", hold )
-	self:CreateButton2( self.Th, "btnApplyKeyRepeat", x+(w*0.66), y+(h*0.43), w*0.30, h*0.07, "Apply Key Repeat" )
-	self:CreateButton2( self.Th, "btnRefreshDevices", x+(w*0.325), y+(h*0.80), w*0.30, h*0.07, "Refresh Devices" )
-	self:CreateButton2( self.Th, "btnDeviceManager", x+(w*0.66), y+(h*0.80), w*0.30, h*0.07, "Device Manager" )
+	MyCompButton( self, self.Th, "btnApplyKeyRepeat", UI.Box( R, 0.66, 0.43, 0.30, 0.07 ), "Apply Key Repeat" )
+	MyCompButton( self, self.Th, "btnRefreshDevices", UI.Box( R, 0.325, 0.80, 0.30, 0.07 ), "Refresh Devices" )
+	MyCompButton( self, self.Th, "btnDeviceManager", UI.Box( R, 0.66, 0.80, 0.30, 0.07 ), "Device Manager" )
 end
 
 function DEV:Initialize( x, y, w, h )
-	self:CreateButton2( self.Th, "btnExit", (x+w)-(h*0.06), y, h*0.06, h*0.06, "X" )
+	local R = UI.Rect( x, y, w, h )
+
+	self:CreateButton2( self.Th, "btnExit", R.x + R.w - (R.h * 0.06), R.y, R.h * 0.06, R.h * 0.06, "X" )
 
 	// File Manager-style navigation: categories on the left, the active
 	// category's settings and information in the larger right-hand pane.
-	self:CreateListbox( self.Th, "lstSections", x+(w*0.025), y+(h*0.16), w*0.25, h*0.76 ).LeftAlign = true
+	MyCompList( self, self.Th, "lstSections", UI.Box( R, 0.025, 0.16, 0.25, 0.76 ), true )
 	self:AddListboxItem( "lstSections", "os", "Operating System" )
 	self:AddListboxItem( "lstSections", "network", "Network" )
 	self:AddListboxItem( "lstSections", "io", "Input / Output" )

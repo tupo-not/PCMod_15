@@ -14,6 +14,9 @@ PCMod={Msg=function() end,SDraw={CFrame=0,GetGuiScale=function() return 1.25 end
   return el
 end}}
 DEV={}
+dofile("sh_ui_layout.lua")
+dofile("sh_window.lua")
+dofile("cl_ui_widgets.lua")
 keyboard={GetLatency=function() return 150 end,GetHoldTime=function() return 400 end,SetLatency=function(v) keyboard.Latency=v end,SetHoldTime=function(v) keyboard.Hold=v end}
 dofile('ss_base.lua')
 dofile('mycomp.lua')

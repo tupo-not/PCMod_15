@@ -14,6 +14,8 @@ local function assertEq( a, b, m )
 end
 
 PCMod = { Msg = function() end, Cfg = { StatusCodes = {} } }
+dofile( "sh_window.lua" )
+dofile( "sv_window_payload.lua" )
 
 PROG = {}
 dofile( "pcmod_base.lua" )

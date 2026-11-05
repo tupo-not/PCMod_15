@@ -21,6 +21,10 @@ from glua_translate import translate, compile_check  # noqa: E402
 FIXTURES = {
     "cl_input.lua": "pcmod/cl_input.lua",
     "cl_keyboard.lua": "pcmod/cl_keyboard.lua",
+    "cl_ui_widgets.lua": "pcmod/cl_ui_widgets.lua",
+    "sh_ui_layout.lua": "pcmod/sh_ui_layout.lua",
+    "sh_window.lua": "pcmod/sh_window.lua",
+    "sv_window_payload.lua": "pcmod/sv_window_payload.lua",
     "prog_base.lua": "pcmod/programs/base.lua",
     "pcmod_base.lua": "pcmod/programs/base.lua",
     "ss_base.lua": "pcmod/ssdevices/base.lua",

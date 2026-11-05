@@ -53,6 +53,8 @@ function osStub:GetTheme() return "basic" end
 function osStub:InstallProgram() end
 
 PROG = {}
+dofile( "sh_window.lua" )
+dofile( "sv_window_payload.lua" )
 dofile( "pcmod_base.lua" )
 local base = table.Copy( PROG )
 PROG = table.Copy( base )

@@ -140,6 +140,8 @@ assertTrue( !ent:FileFolderExist( "mydocs/text/renamed2" ), "deleted folder gone
 
 -- Program-level API (base.lua).
 PROG = {}
+dofile( "sh_window.lua" )
+dofile( "sv_window_payload.lua" )
 dofile( "pcmod_base.lua" )
 local prog = table.Copy( PROG )
 prog.Entity = ent

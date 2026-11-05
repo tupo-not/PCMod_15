@@ -10,6 +10,10 @@ local function assertEq(a,b,m) if a ~= b then error("FAILED: "..m.." got "..tost
 math.Clamp = function(v,a,b) if v<a then return a end if v>b then return b end return v end
 PCMod = { Msg=function() end, Cfg={}, SDraw={CFrame=0} }
 CurTime=function() return 0 end
+dofile("sh_ui_layout.lua")
+dofile("sh_window.lua")
+dofile("sv_window_payload.lua")
+dofile("cl_ui_widgets.lua")
 PROG = {}
 dofile("prog_base.lua")
 
@@ -82,6 +86,32 @@ assertEq(minDims.w, 0.5, "legacy window widened to the minimum")
 assertEq(minDims.h, 0.6, "legacy window heightened to the minimum")
 assertEq(a.WinW, 0.5, "minimum stored back on the program")
 assertEq(a.WinH, 0.6, "minimum height stored back on the program")
+
+-- The base declarative window descriptor must produce the old payload fields
+-- without any program-specific stamping.
+local c = table.Copy(PROG)
+c.Name, c.OS, c.State = "declarative", "personal", 1
+c.DeviceLink, c.DeviceName = "window_decl", "window_decl"
+c.DeviceData = { Th = "basic" }
+c.WinX, c.WinY, c.WinW, c.WinH = 0.1, 0.2, 0.62, 0.72
+local made
+local ss = {
+  MakeDevice = function( self, dtype, x, y, w, h, data, prio )
+    made = { Type = dtype, X = x, Y = y, W = w, H = h, Data = data, Priority = prio }
+    return made
+  end,
+  AddDevice = function() end
+}
+c.GetScreenSpace = function() return ss end
+c.SetScreenSpace = function() end
+c:UpdateSS()
+assertTrue(made ~= nil, "declarative window built")
+assertEq(made.Type, "window_decl", "declarative device type")
+assertEq(made.Data.ProgName, "declarative", "declarative stamps prog name")
+assertEq(made.Data.WindowDrag, true, "declarative stamps drag")
+assertEq(made.Data.WindowResize, true, "declarative stamps resize")
+assertEq(made.Data.MinW, 0.5, "declarative stamps min width")
+assertEq(made.Data.MinH, 0.6, "declarative stamps min height")
 b:Exit()
 a:Exit()
 assertEq(a.State, 0, "exit")

@@ -41,6 +41,9 @@ local Now = 0
 function CurTime() return Now end
 
 DEV = {}
+dofile( "sh_ui_layout.lua" )
+dofile( "sh_window.lua" )
+dofile( "cl_ui_widgets.lua" )
 dofile( "pcmod_ss_base.lua" )
 dofile( "pcmod_open_ui.lua" )
 

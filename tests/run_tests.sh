@@ -53,6 +53,7 @@ TESTS=(
     mock_windows
     mock_keyboard
     mock_convar
+    mock_ui_core
     mock_mycomp
     mock_mycomp_prog
     mock_chatserv

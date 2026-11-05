@@ -127,21 +127,28 @@ function PROG:TriggerState( st )
 	end
 end
 
+// Declarative window descriptor. The default is the old single-window
+// behaviour; programs override this (see ChatServ) instead of rebuilding the
+// screen-space payload by hand.
+function PROG:BuildWindow()
+	return {
+		Type = self.DeviceLink,
+		Key = self.DeviceName,
+		Data = self.DeviceData,
+		Drag = (self.OS == "personal"),
+		Resize = (self.OS == "personal")
+	}
+end
+
 function PROG:UpdateSS()
 	local ss = self:GetScreenSpace()
-	local dms = self:GetDimensions()
-	// Tell the window device which program owns it. The device base uses this
-	// to raise the window on click and to report title-bar drags back here.
-	if (!self.DeviceData) then self.DeviceData = {} end
-	self.DeviceData.ProgName = self.Name
-	self.DeviceData.WindowDrag = (self.OS == "personal")
-	self.DeviceData.WindowResize = (self.OS == "personal")
-	local minW, minH = self:GetMinWindowSize()
-	self.DeviceData.MinW = minW
-	self.DeviceData.MinH = minH
-	local dev = ss:MakeDevice( self.DeviceLink, dms.x, dms.y, dms.w, dms.h, self.DeviceData, self:GetPriority() )
-	ss:AddDevice( self.DeviceName, dev )
+	if ((!ss) || (!PCMod.WindowPayload)) then return end
+	local win = PCMod.WindowPayload.Build( self, self:BuildWindow() )
+	if ((!win) || (!win.Type) || (win.Type == "") || (!win.Key) || (win.Key == "")) then return end
+	local dev = ss:MakeDevice( win.Type, win.X, win.Y, win.W, win.H, win.Data, win.Priority )
+	ss:AddDevice( win.Key, dev )
 	self:SetScreenSpace( ss )
+	if (win.After) then win.After( self, dev ) end
 end
 
 // ------------------------------------------------------------------------------------------------
@@ -336,6 +343,27 @@ function PROG:GetMinWindowSize()
 	return math.Clamp( mw, 0.05, 1 ), math.Clamp( mh, 0.05, 1 )
 end
 
+// Shared geometry model. The legacy WinX/WinY/WinW/WinH fields stay the public
+// surface (programs and saves use them), but every clamp goes through the same
+// object the client device uses.
+function PROG:GetWindowModel()
+	local win = self.WindowModel
+	if ((!win) && (PCMod.Window)) then
+		win = PCMod.Window.New()
+		self.WindowModel = win
+	end
+	if (!win) then return nil end
+	win:Set( self.WinX or 0, self.WinY or 0, self.WinW or self.WindowW or 0.62, self.WinH or self.WindowH or 0.72 )
+	local minW, minH = self:GetMinWindowSize()
+	win:SetMin( minW, minH )
+	return win
+end
+
+function PROG:SetWindowFromModel( win )
+	if (!win) then return end
+	self.WinX, self.WinY, self.WinW, self.WinH = win:Get()
+end
+
 function PROG:AssignWindow()
 	if (self.OS != "personal") then return end
 	local os = self:GetOS()
@@ -353,6 +381,7 @@ function PROG:AssignWindow()
 	self.WinH = h
 	self.WinX = math.Clamp( 0.02 + (step * 0.07), 0, math.max( 0, 1 - w ) )
 	self.WinY = math.Clamp( 0.03 + (step * 0.05), 0, math.max( 0, 0.94 - h ) )
+	if (self.WindowModel) then self.WindowModel:Set( self.WinX, self.WinY, self.WinW, self.WinH ) end
 end
 
 function PROG:GetDimensions()
@@ -370,11 +399,19 @@ function PROG:GetDimensions()
 		// Legacy/save data may hold a window smaller than the universal
 		// minimum; grow it back so text cannot overlap. Store it on the
 		// program as well, otherwise a later move would put the old size back.
-		local minW, minH = self:GetMinWindowSize()
-		tmp.w = math.max( tmp.w, minW )
-		tmp.h = math.max( tmp.h, minH )
-		self.WinW = tmp.w
-		self.WinH = tmp.h
+		local win = self:GetWindowModel()
+		if (win) then
+			win:Set( tmp.x, tmp.y, tmp.w, tmp.h )
+			win:SetSize( tmp.w, tmp.h )
+			self:SetWindowFromModel( win )
+			tmp.x, tmp.y, tmp.w, tmp.h = win:Get()
+		else
+			local minW, minH = self:GetMinWindowSize()
+			tmp.w = math.max( tmp.w, minW )
+			tmp.h = math.max( tmp.h, minH )
+			self.WinW = tmp.w
+			self.WinH = tmp.h
+		end
 	end
 	if (self.OS == "server") then
 		tmp.x = 0.58
@@ -478,8 +515,15 @@ function PROG:ProcessCommand( com, args )
 			// GUI scale is client-side, so the client may legitimately place a
 			// visually-scaled window closer to the edge than 1 - WinW. Keep
 			// only absolute bounds here; the client enforces its visual limits.
-			self.WinX = math.Clamp( wx, 0, 1 )
-			self.WinY = math.Clamp( wy or self.WinY or 0, 0, 1 )
+			local win = self:GetWindowModel()
+			if (win) then
+				local nx, ny = win:ClampAbsolute( wx, wy or self.WinY or 0 )
+				win:Set( nx, ny )
+				self:SetWindowFromModel( win )
+			else
+				self.WinX = math.Clamp( wx, 0, 1 )
+				self.WinY = math.Clamp( wy or self.WinY or 0, 0, 1 )
+			end
 		end
 		self:RequestFocus( false )
 		// Move the existing screen-space entry in place. A full UpdateSS()
@@ -507,9 +551,16 @@ function PROG:ProcessCommand( com, args )
 			// W/H are viewport fractions of the unscaled window; at 25% GUI
 			// scale a full-screen window is 4.0 wide, so allow up to that.
 			// The client enforces the real visual limits for its own scale.
-			local minW, minH = self:GetMinWindowSize()
-			self.WinW = math.Clamp( ww, minW, 4 )
-			self.WinH = math.Clamp( hh, minH, 4 )
+			local win = self:GetWindowModel()
+			if (win) then
+				local nw, nh = win:ClampSize( ww, hh, 4, 4 )
+				win:Set( nil, nil, nw, nh )
+				self:SetWindowFromModel( win )
+			else
+				local minW, minH = self:GetMinWindowSize()
+				self.WinW = math.Clamp( ww, minW, 4 )
+				self.WinH = math.Clamp( hh, minH, 4 )
+			end
 		end
 		self:RequestFocus( false )
 		// In-place geometry update, same reasoning as win_move: do not bump Rev.

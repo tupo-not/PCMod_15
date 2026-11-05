@@ -28,6 +28,8 @@ AddCSLuaFile( "pcmod/sh_baseconfig.lua" ) -- Give base config file to client
 AddCSLuaFile( "pcmod/sh_config.lua" ) -- Give config file to client
 
 include( "pcmod/sh_common.lua" ) -- Common functions
+include( "pcmod/sh_ui_layout.lua" ) -- Pure layout primitives
+include( "pcmod/sh_window.lua" ) -- Shared window geometry
 AddCSLuaFile( "pcmod/sh_common.lua" ) -- Give common file to client
 
 include( "pcmod/web.lua" ) -- Tiny HTML renderer (browser)
@@ -60,6 +62,7 @@ include( "pcmod/sv_wiring.lua" ) -- Wiring control
 include( "pcmod/sv_network.lua" ) -- Networking
 include( "pcmod/sv_drivers.lua" ) -- Drivers
 include( "pcmod/sv_rp.lua" ) -- RP control
+include( "pcmod/sv_window_payload.lua" ) -- Declarative window -> payload
 include( "pcmod/sv_programs.lua" ) -- Programs
 include( "pcmod/sv_data.lua" ) -- Player data
 
@@ -77,6 +80,9 @@ AddCSLuaFile( "pcmod/cl_keyboard.lua" ) -- Keyboard control file
 AddCSLuaFile( "pcmod/cl_camera.lua" ) -- Camera control file
 AddCSLuaFile( "pcmod/cl_input.lua" ) -- Input capture control file
 AddCSLuaFile( "pcmod/cl_sselements.lua" ) -- SS device elements control file
+AddCSLuaFile( "pcmod/cl_ui_widgets.lua" ) -- Shared widget contract
+AddCSLuaFile( "pcmod/sh_ui_layout.lua" ) -- Pure layout primitives
+AddCSLuaFile( "pcmod/sh_window.lua" ) -- Shared window geometry
 
 // ---------------------------------------------------------------------------------------------------------
 // Give the client all our devices and themes

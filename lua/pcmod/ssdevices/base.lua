@@ -50,6 +50,7 @@ DEV.MinH = 0.6
 		self.Textboxes = {}
 		self.Listboxes = {}
 		self.Elements = {}
+		self.Controls = ((PCMod.UI && PCMod.UI.Widgets && PCMod.UI.Widgets.NewSet) && PCMod.UI.Widgets.NewSet()) or nil
 		self.TB_Focus = ""
 		self.WindowDragging = false
 		self.WindowResizing = false
@@ -158,54 +159,52 @@ DEV.MinH = 0.6
 //	 Element drawing functions
 // ------------------------------------------------------------------------------------------------------------------------------------------------
 
+	function DEV:DrawControlKind( kind )
+		if ((!self.Controls) || (!PCMod.UI) || (!PCMod.UI.Widgets)) then return end
+		local W = PCMod.UI.Widgets
+		W.Each( self.Controls, { kind }, function( k, c ) W.Paint( self, k, c ) end )
+	end
+
 	function DEV:DrawTextboxes()
-		for _, v in pairs( self.Textboxes ) do
-			self:RenderTextbox( v )
-		end
+		self:DrawControlKind( "textbox" )
 	end
 
 	function DEV:DrawListboxes()
-		for _, v in pairs( self.Listboxes ) do
-			self:RenderListbox( v )
-		end
+		self:DrawControlKind( "listbox" )
 	end
 
 	function DEV:DrawElements()
-		for _, v in pairs( self.Elements ) do
-			if ((v) && (v:IsValid())) then v:Paint() end
-		end
+		self:DrawControlKind( "element" )
 	end
 	
 // ------------------------------------------------------------------------------------------------------------------------------------------------
 //	 Element clicking functions
 // ------------------------------------------------------------------------------------------------------------------------------------------------
 
-	function DEV:ClickTextboxes( x, y )
-		for _, v in pairs( self.Textboxes ) do
-			if (self:CursorInTextbox( v, x, y )) then
-				self:Int_TextboxClick( v.Name, x, y )
-				return
+	function DEV:ClickControlKind( kind, x, y, right )
+		if ((!self.Controls) || (!PCMod.UI) || (!PCMod.UI.Widgets)) then return end
+		local W = PCMod.UI.Widgets
+		local list = self.Controls[ kind ]
+		if (!list) then return end
+		for i = 1, #list do
+			local c = list[ i ]
+			if (W.Hit( self, kind, c, x, y )) then
+				W.Click( self, kind, c, x, y, right )
+				if (W.StopLayer( kind )) then return end
 			end
 		end
+	end
+
+	function DEV:ClickTextboxes( x, y )
+		self:ClickControlKind( "textbox", x, y, false )
 	end
 
 	function DEV:ClickListboxes( x, y, right )
-		for _, v in pairs( self.Listboxes ) do
-			if (self:CursorInListbox( v, x, y )) then
-				self:Int_ListboxClick( v.Name, x, y, right )
-			end
-		end
+		self:ClickControlKind( "listbox", x, y, right )
 	end
 
 	function DEV:ClickElements( x, y )
-		local cx = self.win_x + (self.win_w*x)
-		local cy = self.win_y + (self.win_h*y)
-		for _, v in pairs( self.Elements ) do
-			if (v:CursorInside( cx, cy )) then
-				v:OnClick()
-				break
-			end
-		end
+		self:ClickControlKind( "element", x, y, false )
 	end
 
 // ------------------------------------------------------------------------------------------------------------------------------------------------
@@ -369,6 +368,11 @@ DEV.MinH = 0.6
 //	Element Control Functions
 // ------------------------------------------------------------------------------------------------------------------------------------------------
 
+	function DEV:AddControl( kind, ctrl )
+		if ((!self.Controls) || (!PCMod.UI) || (!PCMod.UI.Widgets)) then return ctrl end
+		return PCMod.UI.Widgets.Add( self.Controls, kind, ctrl )
+	end
+
 	function DEV:CreateElement( class, name, theme, x, y, w, h )
 		PCMod.Msg( "Creating element '" .. class .. "' with name '" .. name .. "'!", true )
 		local el = PCMod.SSEL.Create( class )
@@ -377,6 +381,7 @@ DEV.MinH = 0.6
 			return
 		end
 		self.Elements[ name ] = el
+		self:AddControl( "element", el )
 		el:SetTheme( theme )
 		el:SetLayout( x, y, w, h )
 		el.DEVICE = self
@@ -392,7 +397,11 @@ DEV.MinH = 0.6
 		// Round 33 (M-22): the element may not exist (anymore) - the old code
 		// raised "attempt to index a nil value"
 		if (!self.Elements[ name ]) then return end
-		self.Elements[ name ]:Remove()
+		local el = self.Elements[ name ]
+		if ((self.Controls) && (PCMod.UI) && (PCMod.UI.Widgets)) then
+			PCMod.UI.Widgets.Remove( self.Controls, "element", el )
+		end
+		el:Remove()
 		self.Elements[ name ] = nil
 	end
 	
@@ -436,6 +445,7 @@ DEV.MinH = 0.6
 			tmp.ScrollBar = false
 			tmp.ScrollOffset = 0
 			self.Listboxes[ name ] = tmp
+		self:AddControl( "listbox", tmp )
 		return tmp
 	end
 
@@ -462,6 +472,7 @@ DEV.MinH = 0.6
 			tmp.CUR_X = 0
 			tmp.CUR_Y = 0
 			self.Textboxes[ name ] = tmp
+		self:AddControl( "textbox", tmp )
 		return tmp
 	end
 
@@ -1119,6 +1130,21 @@ DEV.MinH = 0.6
 		return math.Clamp( mw, 0.05, 1 ), math.Clamp( mh, 0.05, 1 )
 	end
 
+	// Shared geometry model: SSDevice remains the wire-facing X/Y/W/H, while
+	// the clamp/minimum rules come from PCMod.Window (same code as the server).
+	function DEV:GetWindowModel()
+		local win = self.WindowModel
+		if ((!win) && (PCMod.Window)) then
+			win = PCMod.Window.New()
+			self.WindowModel = win
+		end
+		if (!win) then return nil end
+		win:SetFromDevice( self.SSDevice )
+		local mw, mh = self:GetMinWindowSize()
+		win:SetMin( mw, mh )
+		return win
+	end
+
 	function DEV:CanStartWindowResize( x, y )
 		if ((!self.WindowResize) || (self.WindowResizing) || (self.WindowDragging)) then return false end
 		if ((!self.win_w) || (self.win_w <= 0) || (!self.win_h) || (self.win_h <= 0)) then return false end
@@ -1160,13 +1186,23 @@ DEV.MinH = 0.6
 		// minimum, so cap the minimum to it instead of pushing the window out.
 		local maxW = math.max( 1, sw - self.win_x )
 		local maxH = math.max( 1, (0.94 * sh) - self.win_y )
-		local minWf, minHf = self:GetMinWindowSize()
-		local minW = math.min( minWf * vw, maxW )
-		local minH = math.min( minHf * vh, maxH )
-		local pxW = math.Clamp( self.ResizeStartW + (gui.MouseX() - self.ResizeMouseX), minW, maxW )
-		local pxH = math.Clamp( self.ResizeStartH + (gui.MouseY() - self.ResizeMouseY), minH, maxH )
-		local nw = tonumber( string.format( "%.4f", pxW / vw ) ) or (pxW / vw)
-		local nh = tonumber( string.format( "%.4f", pxH / vh ) ) or (pxH / vh)
+		local nw, nh
+		local win = self:GetWindowModel()
+		if (win) then
+			local rawW = (self.ResizeStartW + (gui.MouseX() - self.ResizeMouseX)) / vw
+			local rawH = (self.ResizeStartH + (gui.MouseY() - self.ResizeMouseY)) / vh
+			nw, nh = win:ClampSize( rawW, rawH, maxW / vw, maxH / vh )
+		else
+			local minWf, minHf = self:GetMinWindowSize()
+			local minW = math.min( minWf * vw, maxW )
+			local minH = math.min( minHf * vh, maxH )
+			local pxW = math.Clamp( self.ResizeStartW + (gui.MouseX() - self.ResizeMouseX), minW, maxW )
+			local pxH = math.Clamp( self.ResizeStartH + (gui.MouseY() - self.ResizeMouseY), minH, maxH )
+			nw = pxW / vw
+			nh = pxH / vh
+		end
+		nw = tonumber( string.format( "%.4f", nw ) ) or nw
+		nh = tonumber( string.format( "%.4f", nh ) ) or nh
 		pxW = nw * vw
 		pxH = nh * vh
 		if ((math.abs( pxW - self.win_w ) < 2) && (math.abs( pxH - self.win_h ) < 2)) then return end
@@ -1235,8 +1271,14 @@ DEV.MinH = 0.6
 		local visW = (self.DragDevW or 0.62) * S
 		local visH = (self.DragDevH or 0.72) * S
 		local mx, my = gui.MouseX(), gui.MouseY()
-		local nx = math.Clamp( self.DragDevX + ((mx - self.DragMouseX) / sw), 0, math.max( 0, 1 - visW ) )
-		local ny = math.Clamp( self.DragDevY + ((my - self.DragMouseY) / sh), 0, math.max( 0, 0.94 - visH ) )
+		local nx, ny
+		local win = self:GetWindowModel()
+		if (win) then
+			nx, ny = win:ClampPosition( self.DragDevX + ((mx - self.DragMouseX) / sw), self.DragDevY + ((my - self.DragMouseY) / sh), visW, visH )
+		else
+			nx = math.Clamp( self.DragDevX + ((mx - self.DragMouseX) / sw), 0, math.max( 0, 1 - visW ) )
+			ny = math.Clamp( self.DragDevY + ((my - self.DragMouseY) / sh), 0, math.max( 0, 0.94 - visH ) )
+		end
 		// Match the server's rounding/clamping exactly so the in-place update
 		// does not look like a resize and rebuild the window.
 		nx = tonumber( string.format( "%.4f", nx ) ) or nx
@@ -1271,19 +1313,27 @@ DEV.MinH = 0.6
 		self:SubmitCommand( "os_command", "prog_command", progname, ... )
 	end
 
+	function DEV:DrawControls()
+		if ((!self.Controls) || (!PCMod.UI) || (!PCMod.UI.Widgets)) then return end
+		local W = PCMod.UI.Widgets
+		W.Each( self.Controls, nil, function( kind, c ) W.Paint( self, kind, c ) end )
+	end
+
 	function DEV:Draw()
-		self:DrawTextboxes()
-		self:DrawListboxes()
-		self:DrawElements()
+		self:DrawControls()
 	end
 
 	function DEV:ProcessClick( x, y, right )
 		// Right clicks are opt-in: only devices that understand them receive
 		// them, so existing windows keep behaving exactly as before.
 		if (right && (!self.AllowRightClick)) then return end
-		if (!right) then self:ClickTextboxes( x, y ) end
-		self:ClickListboxes( x, y, right )
-		if (!right) then self:ClickElements( x, y ) end
+		if ((!self.Controls) || (!PCMod.UI) || (!PCMod.UI.Widgets)) then return end
+		local W = PCMod.UI.Widgets
+		for _, kind in ipairs( W.Order ) do
+			if ((!right) || (W.AllowRight( kind ))) then
+				self:ClickControlKind( kind, x, y, right )
+			end
+		end
 	end
 
 	function DEV:PassData( devname, dname, data )
