@@ -165,7 +165,10 @@ if (CLIENT) then
 		local ports = self:GetPorts( ent )
 		if ((!ports) || (#ports == 0)) then return false end
 		local prt = ports[ self.SelIndex ]
-		if ((!prt) || (prt.Connected)) then return false end
+		if ((!prt) || (prt.Connected)) then
+			if (prt && prt.Connected) then PCMod.Notice( "That port is already connected" ) end
+			return false
+		end
 
 		if (self.Stage == 0) then
 			self.Ent1 = ent
@@ -180,11 +183,21 @@ if (CLIENT) then
 		end
 
 		// Stage 1: connect to the second entity.
-		if (ent == self.Ent1) then return false end
+		if (ent == self.Ent1) then
+			PCMod.Notice( "Cannot wire: that's the same device" )
+			self:Reset()
+			return true
+		end
 		local p1 = (self.Ent1 && self:GetPorts( self.Ent1 )) and self:GetPorts( self.Ent1 )[ self.Port1 ]
 		if (!p1) then self:Reset() return false end
-		if (p1.Type != prt.Type) then return false end
-		if ((ent:GetClass() == self.Ent1:GetClass()) && (!CanSameType( p1.Type ))) then return false end
+		if (p1.Type != prt.Type) then
+			PCMod.Notice( "Cannot wire: " .. tostring( PortName( p1.Type ) ) .. " and " .. tostring( PortName( prt.Type ) ) .. " don't match" )
+			return true
+		end
+		if ((ent:GetClass() == self.Ent1:GetClass()) && (!CanSameType( p1.Type ))) then
+			PCMod.Notice( "Cannot wire: " .. tostring( PortName( p1.Type ) ) .. " ports can't link to their own kind" )
+			return true
+		end
 
 		net.Start( "pcwire_upload" )
 			net.WriteEntity( self.Ent1 )
