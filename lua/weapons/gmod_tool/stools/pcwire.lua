@@ -86,7 +86,9 @@ if (SERVER) then
 		if ((!p1) || (!p2)) then PCMod.Notice( "Cannot wire: bad port", ply ) return end
 		if (p1.Connected || p2.Connected) then return end
 		if (p1.Type != p2.Type) then PCMod.Notice( "Cannot wire: port types differ", ply ) return end
-		if ((ent1:GetClass() == ent2:GetClass()) && (!p1.CanWireSameType)) then PCMod.Notice( "Cannot wire: same-class ports cannot connect", ply ) return end
+		local sameKind = (ent1:GetClass() == ent2:GetClass())
+		local pcNet = (p1.Type == "network") && (ent1.IsComputer) && (ent2.IsComputer)
+		if (sameKind && (!p1.CanWireSameType) && (!pcNet)) then PCMod.Notice( "Cannot wire: same-class ports cannot connect", ply ) return end
 
 		// Physical cable (constraint rope) between the two hit points.
 		local addlength = 100
@@ -210,7 +212,11 @@ if (CLIENT) then
 			PCMod.Notice( "Cannot wire: " .. tostring( PortName( p1.Type ) ) .. " and " .. tostring( PortName( prt.Type ) ) .. " don't match" )
 			return true
 		end
-		if ((ent:GetClass() == self.Ent1:GetClass()) && (!CanSameType( p1.Type ))) then
+		// "network" between two computers (a direct PC-to-PC link) is allowed even
+		// though the type normally can't wire to its own kind.
+		local sameKind = (ent:GetClass() == self.Ent1:GetClass())
+		local pcNet = (p1.Type == "network") && (ent.IsComputer) && (self.Ent1.IsComputer)
+		if (sameKind && (!CanSameType( p1.Type )) && (!pcNet)) then
 			PCMod.Notice( "Cannot wire: " .. tostring( PortName( p1.Type ) ) .. " ports can't link to their own kind" )
 			return true
 		end

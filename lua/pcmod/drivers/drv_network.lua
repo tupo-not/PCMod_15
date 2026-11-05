@@ -30,6 +30,22 @@ function DRV:PacketRecieved( packet )
 	end
 end
 
+// A directly-connected peer (another PC on a crossover cable) sent us a raw
+// "sendpacket". There is no router on the link to route it, so create the packet
+// and deliver it locally when it is addressed to us.
+function DRV:DataRecieved( port, data )
+	if (istable( data ) && (data[1] == "sendpacket") && istable( data[2] )) then
+		local body = data[2]
+		local pid = PCMod.Network.CreatePacket( body[1], body[2], body[3], body[4] )
+		if (!pid) then return end
+		local packet = PCMod.Network.Packets[ pid ]
+		if (packet && self.Entity:IsAddressedTo( packet.Dest )) then
+			packet.Delivered = true
+			self:PacketRecieved( packet )
+		end
+	end
+end
+
 function DRV:SendPacket( dest, port, body )
 	// Loopback is accepted in IPv4 (127.0.0.1), IPv6 (::1) and hostname form.
 	if (PCMod.IPv6.IsLoopback( dest )) then
