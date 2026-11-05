@@ -1216,6 +1216,15 @@ if (SERVER) then
 				tmp.wirepass = dt.WirePass
 				tmp.iswireless = dt.IsWireless
 			end
+			// Save the logical port links so they can be re-established on paste
+			// (the physical ropes are restored by the duplicator itself).
+			local links = {}
+			for i, p in pairs( dt.Ports or {} ) do
+				if (p.Connected && p.ConEnt && p.ConEnt:IsValid() && p.ConEnt.IsPCMod) then
+					table.insert( links, { port = i, peer = p.ConEnt:EntIndex(), remote = p.RemotePort } )
+				end
+			end
+			if (#links > 0) then tmp.links = links end
 			return tmp
 		end
 
@@ -1256,6 +1265,19 @@ if (SERVER) then
 				dt.IsOn = false
 				self:UpdateData( dt )
 				self:TurnOn()
+			end
+
+			// Re-establish logical port links (the physical ropes are already
+			// restored by the duplicator). We re-wire the ConEnt/RemotePort
+			// bookkeeping and fire the "linked" events so routers and PCs rebuild
+			// their network relationships against the new entities.
+			if (info.links && GetEntByID && PCMod.Wiring && PCMod.Wiring.LinkPorts) then
+				for _, link in ipairs( info.links ) do
+					local peer = GetEntByID( link.peer )
+					if (peer && peer:IsValid() && peer.IsPCMod) then
+						PCMod.Wiring.LinkPorts( self, link.port, peer, link.remote, nil, nil )
+					end
+				end
 			end
 
 			// Legacy duplicator Think stamp.

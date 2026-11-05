@@ -163,6 +163,13 @@ PCMod Improvement TODO List
   boots an on computer back up. PCTool.SpawnEntity (the registered duplicator
   function) also restores the saved hard drive. AdvDupe2 works through the same
   vanilla duplicator hooks it wraps
+- DONE: Duplicator re-wires port links on paste: PreEntityCopy records each
+  connected port (peer entity + remote port), and PostEntityPaste re-establishes
+  the ConEnt/RemotePort bookkeeping through PCMod.Wiring.LinkPorts and re-fires
+  the linked events, so a pasted PC->router->backbone rig reconnects (routers
+  rebuild their topology, PCs get DHCP leases). Router backbone/subnet ids stay
+  fresh on paste on purpose - a copy keeps a unique address identity so it never
+  collides with the original
 - DONE: Explicit IPv6 routing table: backbones map child /64s and peer /32s to
   ports, LAN routers forward non-local IPv6 upstream via their uplink, and the
   packet source is chosen by destination family (IPv6 for the WAN, private IPv4

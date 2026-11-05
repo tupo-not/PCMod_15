@@ -200,4 +200,17 @@ PCMod.Data[1].IsWireless = false
 ent:ApplyDupeInfo( nil, ent, rinfo, nil )
 assertTrue( PCMod.Data[1].RouterCfg == rc and PCMod.Data[1].WirePass == "wifi" and PCMod.Data[1].IsWireless == true, "dupe restores router config" )
 
+-- Wiring re-link: port links are saved and re-established on paste.
+local fakePeer = { IsValid = function() return true end, IsPCMod = true, EntIndex = function() return 42 end }
+PCMod.Data[1].Ports = { [1] = { Connected = true, ConEnt = fakePeer, RemotePort = 3 } }
+ent.IsComputer = false
+ent.IsNetworkDevice = false
+local rec = nil
+PCMod.Wiring = { LinkPorts = function( srcent, srcprt, destent, destprt, rt, ct ) rec = { srcprt = srcprt, destent = destent, destprt = destprt } end }
+local linfo = ent:BuildDupeInfo()
+assertTrue( linfo.links ~= nil and #linfo.links == 1 and linfo.links[1].port == 1 and linfo.links[1].peer == 42 and linfo.links[1].remote == 3, "dupe saves port links" )
+local pastedPeer = { IsValid = function() return true end, IsPCMod = true }
+ent:ApplyDupeInfo( nil, ent, linfo, function( id ) if (id == 42) then return pastedPeer end end )
+assertTrue( rec ~= nil and rec.srcprt == 1 and rec.destprt == 3 and rec.destent == pastedPeer, "dupe re-links ports via LinkPorts" )
+
 print( "ALL ENTITY IPV6 TESTS PASSED" )
