@@ -156,6 +156,13 @@ PCMod Improvement TODO List
   /32 or one forwarded port at once. OS replies (netDataRecieved handle) use the
   source port, and chathost tracks clients by (ip, port) so multiple NATed
   clients can chat through one server
+- DONE: Garry's Mod duplicator (save/copy/paste) compatibility: PreEntityCopy/
+  PostEntityPaste save a full snapshot (hard-drive VFS, IP, power state, login
+  password, and per-router config/wireless) via duplicator.StoreEntityModifier;
+  paste restores it, re-syncs the address strings, re-applies wireless and
+  boots an on computer back up. PCTool.SpawnEntity (the registered duplicator
+  function) also restores the saved hard drive. AdvDupe2 works through the same
+  vanilla duplicator hooks it wraps
 - DONE: Explicit IPv6 routing table: backbones map child /64s and peer /32s to
   ports, LAN routers forward non-local IPv6 upstream via their uplink, and the
   packet source is chosen by destination family (IPv6 for the WAN, private IPv4

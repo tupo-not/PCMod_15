@@ -52,6 +52,10 @@ CLIENT = false
 
 dofile( "pcmod_sh_common.lua" )
 
+// The shared module redefines PCMod.Msg; use a no-op so the entity helpers can
+// log without needing table.Count / the global Msg in the plain-Lua harness.
+PCMod.Msg = function() end
+
 ENT = {}
 dofile( "pcmod_shared.lua" )
 
@@ -150,5 +154,50 @@ assertEq( ent:GetIPv6Gateway(), false, "cleared gateway" )
 assertEq( ent:GetIPv6LinkLocal(), false, "cleared link-local" )
 assertEq( nw[ "IPv6" ], "", "cleared IPv6 NW string" )
 assertEq( nw[ "IPv6.Prefix" ], "", "cleared prefix NW string" )
+
+-- Duplicator save/restore round-trip (BuildDupeInfo / ApplyDupeInfo).
+PCMod.TableToString = function( t ) return t end
+PCMod.StringToTable = function( s ) return s end
+local dump = { ["/mydocs/x.txt"] = { ItemType = "file", ItemContent = "hello" } }
+PCMod.Data[1].HardDrive = dump
+PCMod.Data[1].IsOn = true
+PCMod.Data[1].Password = "1234"
+PCMod.Data[1].IP = { Add = 5, Sub = 0, Full = "192.168.0.5", V6 = false, Back = { Add = false, Sub = false, Full = false, V6 = false } }
+ent.IsComputer = true
+ent.IsNetworkDevice = false
+local booted = false
+ent.TurnOn = function( self ) booted = true end
+
+local dinfo = ent:BuildDupeInfo()
+assertTrue( dinfo.harddrive == dump, "dupe saves harddrive" )
+assertTrue( dinfo.ison == true, "dupe saves on state" )
+assertTrue( dinfo.password == "1234", "dupe saves password" )
+assertTrue( dinfo.ip.Add == 5, "dupe saves IP" )
+
+-- Restore into a wiped slot.
+PCMod.Data[1].HardDrive = {}
+PCMod.Data[1].IsOn = false
+PCMod.Data[1].Password = ""
+PCMod.Data[1].IP = { Add = 1, Sub = 0, Back = { Add = false, Sub = false, Full = false, V6 = false } }
+ent:ApplyDupeInfo( nil, ent, dinfo, nil )
+assertTrue( PCMod.Data[1].HardDrive == dump, "dupe restores harddrive" )
+assertTrue( PCMod.Data[1].Password == "1234", "dupe restores password" )
+assertTrue( PCMod.Data[1].IP.Add == 5, "dupe restores IP" )
+assertTrue( booted == true, "dupe reboots a computer that was on" )
+
+-- Router config save/restore.
+ent.IsComputer = false
+ent.IsNetworkDevice = true
+local rc = { Firewall = true, Forwards = { ["72"] = { ip = "192.168.0.2", port = 72 } } }
+PCMod.Data[1].RouterCfg = rc
+PCMod.Data[1].WirePass = "wifi"
+PCMod.Data[1].IsWireless = true
+local rinfo = ent:BuildDupeInfo()
+assertTrue( rinfo.routercfg == rc and rinfo.wirepass == "wifi" and rinfo.iswireless == true, "dupe saves router config" )
+PCMod.Data[1].RouterCfg = {}
+PCMod.Data[1].WirePass = ""
+PCMod.Data[1].IsWireless = false
+ent:ApplyDupeInfo( nil, ent, rinfo, nil )
+assertTrue( PCMod.Data[1].RouterCfg == rc and PCMod.Data[1].WirePass == "wifi" and PCMod.Data[1].IsWireless == true, "dupe restores router config" )
 
 print( "ALL ENTITY IPV6 TESTS PASSED" )

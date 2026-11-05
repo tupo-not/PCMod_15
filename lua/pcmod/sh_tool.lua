@@ -102,6 +102,16 @@ if (SERVER) then
 		ent:SetPlayer( ply )
 		ent:ChangeModel( model )
 		
+		// Restore a saved hard drive when duplicating/pasting (the duplicator
+		// passes the entity's harddrive field through as a table or JSON string).
+		if (harddrive) then
+			if (type( harddrive ) == "string") then
+				PCMod.Data[ ent:EntIndex() ].HardDrive = PCMod.StringToTable( harddrive ) or {}
+			else
+				PCMod.Data[ ent:EntIndex() ].HardDrive = harddrive
+			end
+		end
+		
 		// Do the effect
 		DoPropSpawnedEffect( ent )
 		

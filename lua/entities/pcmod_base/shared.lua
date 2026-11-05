@@ -1203,16 +1203,63 @@ if (SERVER) then
 		
 		function ENT:BuildDupeInfo()
 			PCMod.Msg( "==> BUILDING DUPE INFO <==", true )
+			local dt = self:Data()
 			local tmp = {}
-			Msg( "Converting TTS...\n" )
-			tmp.harddrive = PCMod.TableToString( PCMod.Data[ self:EntIndex() ].HardDrive )
-			Msg( "TTS Complete!\n" )
+			tmp.harddrive = PCMod.TableToString( dt.HardDrive or {} )
+			tmp.ison = (dt.IsOn == true)
+			if (self.IsComputer) then
+				tmp.ip = dt.IP
+				tmp.password = dt.Password or ""
+			end
+			if (self.IsNetworkDevice) then
+				tmp.routercfg = dt.RouterCfg
+				tmp.wirepass = dt.WirePass
+				tmp.iswireless = dt.IsWireless
+			end
 			return tmp
 		end
 
 		function ENT:ApplyDupeInfo( ply, ent, info, GetEntByID )
 			PCMod.Msg( "==> APPLYING DUPE INFO <==", true )
-			PCMod.Data[ self:EntIndex() ].HardDrive = PCMod.StringToTable( info.harddrive )
+			if (!info) then return end
+			local dt = self:Data()
+			if (info.harddrive) then
+				dt.HardDrive = PCMod.StringToTable( info.harddrive ) or {}
+			end
+			if (self.IsComputer) then
+				if (info.ip) then dt.IP = info.ip end
+				if (info.password ~= nil) then dt.Password = info.password end
+			end
+			if (self.IsNetworkDevice) then
+				if (info.routercfg) then dt.RouterCfg = info.routercfg end
+				if (info.wirepass ~= nil) then dt.WirePass = info.wirepass end
+				if (info.iswireless ~= nil) then dt.IsWireless = info.iswireless end
+			end
+			self:UpdateData( dt )
+
+			// Re-sync the network address strings (and IPv6 meta) from the IP.
+			if (self.IsComputer) then
+				self:SetIPText()
+				self:SetBIPText()
+			end
+
+			// Push the restored wireless flag into the router driver.
+			if (self.IsNetworkDevice) then
+				local rdrv = dt.Drivers && dt.Drivers[ "webgr_router" ]
+				if (rdrv && rdrv.SetWireless && (dt.IsWireless != nil)) then
+					rdrv:SetWireless( dt.IsWireless == true )
+				end
+			end
+
+			// Boot the computer back up if it was running when saved.
+			if (self.IsComputer && info.ison) then
+				dt.IsOn = false
+				self:UpdateData( dt )
+				self:TurnOn()
+			end
+
+			// Legacy duplicator Think stamp.
+			self.harddrive = dt.HardDrive
 		end
 		
 		function ENT:PreEntityCopy()
