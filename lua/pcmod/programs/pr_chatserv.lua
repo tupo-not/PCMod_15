@@ -46,6 +46,9 @@ function PROG:UpdateSS()
 	self.DeviceData.ProgName = self.Name
 	self.DeviceData.WindowDrag = (self.OS == "personal")
 	self.DeviceData.WindowResize = (self.OS == "personal")
+	local minW, minH = self:GetMinWindowSize()
+	self.DeviceData.MinW = minW
+	self.DeviceData.MinH = minH
 	if (self.State == 1) then
 		local ss = self:GetScreenSpace()
 		// local dms = self:GetDimensions()

@@ -35,6 +35,13 @@ DEV.WindowResizing = false
 DEV.DragBar = 0.06
 DEV.ResizeGrip = 0.035
 
+// Universal program-window minimum (viewport fractions). Controls are laid out
+// proportionally, but their text keeps a fixed pixel size, so shrinking past
+// this point makes labels and buttons overlap each other. Programs may override
+// it by sending DeviceData.MinW / MinH.
+DEV.MinW = 0.5
+DEV.MinH = 0.6
+
 // ------------------------------------------------------------------------------------------------------------------------------------------------
 //	 Internal Functions
 // ------------------------------------------------------------------------------------------------------------------------------------------------
@@ -1104,6 +1111,14 @@ DEV.ResizeGrip = 0.035
 		self:FocusWindow()
 	end
 
+	// Minimum window size in viewport fractions. Returns safe defaults if a
+	// malformed payload ever puts non-numeric values on the device.
+	function DEV:GetMinWindowSize()
+		local mw = tonumber( self.MinW ) or 0.5
+		local mh = tonumber( self.MinH ) or 0.6
+		return math.Clamp( mw, 0.05, 1 ), math.Clamp( mh, 0.05, 1 )
+	end
+
 	function DEV:CanStartWindowResize( x, y )
 		if ((!self.WindowResize) || (self.WindowResizing) || (self.WindowDragging)) then return false end
 		if ((!self.win_w) || (self.win_w <= 0) || (!self.win_h) || (self.win_h <= 0)) then return false end
@@ -1145,8 +1160,9 @@ DEV.ResizeGrip = 0.035
 		// minimum, so cap the minimum to it instead of pushing the window out.
 		local maxW = math.max( 1, sw - self.win_x )
 		local maxH = math.max( 1, (0.94 * sh) - self.win_y )
-		local minW = math.min( 0.3 * vw, maxW )
-		local minH = math.min( 0.3 * vh, maxH )
+		local minWf, minHf = self:GetMinWindowSize()
+		local minW = math.min( minWf * vw, maxW )
+		local minH = math.min( minHf * vh, maxH )
 		local pxW = math.Clamp( self.ResizeStartW + (gui.MouseX() - self.ResizeMouseX), minW, maxW )
 		local pxH = math.Clamp( self.ResizeStartH + (gui.MouseY() - self.ResizeMouseY), minH, maxH )
 		local nw = tonumber( string.format( "%.4f", pxW / vw ) ) or (pxW / vw)

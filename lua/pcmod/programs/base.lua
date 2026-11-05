@@ -136,6 +136,9 @@ function PROG:UpdateSS()
 	self.DeviceData.ProgName = self.Name
 	self.DeviceData.WindowDrag = (self.OS == "personal")
 	self.DeviceData.WindowResize = (self.OS == "personal")
+	local minW, minH = self:GetMinWindowSize()
+	self.DeviceData.MinW = minW
+	self.DeviceData.MinH = minH
 	local dev = ss:MakeDevice( self.DeviceLink, dms.x, dms.y, dms.w, dms.h, self.DeviceData, self:GetPriority() )
 	ss:AddDevice( self.DeviceName, dev )
 	self:SetScreenSpace( ss )
@@ -321,6 +324,18 @@ end
 PROG.WindowW = 0.62
 PROG.WindowH = 0.72
 
+// Universal minimum window geometry (viewport fractions), shared by every
+// program. Shrinking below this makes fixed-size text collide with the
+// proportional controls around it. Individual programs may raise MinW/MinH.
+PROG.MinW = 0.5
+PROG.MinH = 0.6
+
+function PROG:GetMinWindowSize()
+	local mw = tonumber( self.MinW ) or 0.5
+	local mh = tonumber( self.MinH ) or 0.6
+	return math.Clamp( mw, 0.05, 1 ), math.Clamp( mh, 0.05, 1 )
+end
+
 function PROG:AssignWindow()
 	if (self.OS != "personal") then return end
 	local os = self:GetOS()
@@ -352,6 +367,14 @@ function PROG:GetDimensions()
 		tmp.y = self.WinY or 0
 		tmp.w = self.WinW or 0.62
 		tmp.h = self.WinH or 0.72
+		// Legacy/save data may hold a window smaller than the universal
+		// minimum; grow it back so text cannot overlap. Store it on the
+		// program as well, otherwise a later move would put the old size back.
+		local minW, minH = self:GetMinWindowSize()
+		tmp.w = math.max( tmp.w, minW )
+		tmp.h = math.max( tmp.h, minH )
+		self.WinW = tmp.w
+		self.WinH = tmp.h
 	end
 	if (self.OS == "server") then
 		tmp.x = 0.58
@@ -484,8 +507,9 @@ function PROG:ProcessCommand( com, args )
 			// W/H are viewport fractions of the unscaled window; at 25% GUI
 			// scale a full-screen window is 4.0 wide, so allow up to that.
 			// The client enforces the real visual limits for its own scale.
-			self.WinW = math.Clamp( ww, 0.05, 4 )
-			self.WinH = math.Clamp( hh, 0.05, 4 )
+			local minW, minH = self:GetMinWindowSize()
+			self.WinW = math.Clamp( ww, minW, 4 )
+			self.WinH = math.Clamp( hh, minH, 4 )
 		end
 		self:RequestFocus( false )
 		// In-place geometry update, same reasoning as win_move: do not bump Rev.

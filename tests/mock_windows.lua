@@ -71,6 +71,17 @@ a:ProcessCommand("win_move", { "0.69", "0.2" })
 assertTrue(math.abs(a.WinX - 0.69) < 0.0001, "scaled drag not clamped to 1-W")
 a:ProcessCommand("win_resize", { "1.6", "1.0" })
 assertTrue(math.abs(a.WinW - 1.6) < 0.0001, "scaled resize not clamped to 1-W")
+-- Every program window shares a minimum so text and neighbouring controls
+-- cannot be shrunk into each other.
+a:ProcessCommand("win_resize", { "0.1", "0.1" })
+assertEq(a.WinW, 0.5, "resize clamped to minimum width")
+assertEq(a.WinH, 0.6, "resize clamped to minimum height")
+a.WinW, a.WinH = 0.1, 0.1
+local minDims = a:GetDimensions()
+assertEq(minDims.w, 0.5, "legacy window widened to the minimum")
+assertEq(minDims.h, 0.6, "legacy window heightened to the minimum")
+assertEq(a.WinW, 0.5, "minimum stored back on the program")
+assertEq(a.WinH, 0.6, "minimum height stored back on the program")
 b:Exit()
 a:Exit()
 assertEq(a.State, 0, "exit")
@@ -149,6 +160,21 @@ assertTrue(d.SSDevice.W > 0.5, "device width grew")
 down = false
 d:UpdateWindowResize()
 assertTrue(movedTo and movedTo.com == "win_resize", "resize sent to program")
+
+-- Shrinking stops at the shared minimum instead of collapsing the controls.
+d.win_x, d.win_y, d.win_w, d.win_h = 100, 100, 960, 540
+d.SSDevice.W, d.SSDevice.H = 0.6, 0.6
+gui.MouseX = function() return 900 end
+gui.MouseY = function() return 700 end
+down = true
+d:StartWindowResize(0.98, 0.98)
+gui.MouseX = function() return -5000 end
+gui.MouseY = function() return -5000 end
+d:UpdateWindowResize()
+assertTrue(d.SSDevice.W >= (0.5 - 0.0002), "resize stops at minimum width")
+assertTrue(d.SSDevice.H >= (0.6 - 0.0002), "resize stops at minimum height")
+down = false
+d:UpdateWindowResize()
 
 -- Scaled windows must reach the real screen/taskbar edges, not the unscaled
 -- W/H limits (that caused the invisible drag borders).

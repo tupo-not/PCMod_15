@@ -6,6 +6,8 @@ function table.Copy( t )
 	return o
 end
 
+math.Clamp = function( v, a, b ) if (v < a) then return a end if (v > b) then return b end return v end
+
 local function assertTrue( v, m ) if (not v) then error( "FAILED: " .. m, 2 ) end end
 local function assertEq( a, b, m )
 	if (a ~= b) then error( "FAILED: " .. m .. " got " .. tostring( a ) .. " want " .. tostring( b ), 2 ) end
