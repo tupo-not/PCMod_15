@@ -66,7 +66,7 @@ if (SERVER) then
 		local p1 = ent1:Ports()[ port1 ]
 		local p2 = ent2:Ports()[ port2 ]
 		if ((!p1) || (!p2)) then PCMod.Notice( "Cannot wire: bad port", ply ) return end
-		if (p1.Connected || p2.Connected) then PCMod.Notice( "Cannot wire: port already connected", ply ) return end
+		if (p1.Connected || p2.Connected) then return end
 		if (p1.Type != p2.Type) then PCMod.Notice( "Cannot wire: port types differ", ply ) return end
 		if ((ent1:GetClass() == ent2:GetClass()) && (!p1.CanWireSameType)) then PCMod.Notice( "Cannot wire: same-class ports cannot connect", ply ) return end
 
@@ -78,6 +78,7 @@ if (SERVER) then
 		if (const || rope) then rps = { { const, rope } } end
 
 		PCMod.Wiring.LinkPorts( ent1, port1, ent2, port2, rps, nil )
+		PCMod.Notice( "Wiring complete", ply )
 	end )
 
 end
@@ -142,7 +143,6 @@ if (CLIENT) then
 	end
 
 	function TOOL:LeftClick( trace )
-		if ((!game.SinglePlayer()) && (!IsFirstTimePredicted())) then return end
 		local ent = trace.Entity
 		if ((!IsValid( ent )) || (!ent.IsPCMod)) then self:Reset() return false end
 		local ports = self:GetPorts( ent )
@@ -156,6 +156,8 @@ if (CLIENT) then
 			self.LPos1 = ent:WorldToLocal( trace.HitPos )
 			self.Stage = 1
 			self.SelIndex = 1
+			self:GetOwner():EmitSound( "weapons/airboat/airboat_gun_lastshot1.wav" )
+			PCMod.Notice( "Port selected - aim at the second device and left-click" )
 			self:BeginPreview()
 			return
 		end
