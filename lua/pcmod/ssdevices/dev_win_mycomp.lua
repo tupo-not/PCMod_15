@@ -97,11 +97,7 @@ function DEV:InitializeNetwork( x, y, w, h )
 	self:CreateButton2( self.Th, "btnWifiDisconnect", x+(w*0.805), y+(h*0.69), w*0.16, h*0.07, "Disconnect" )
 	self:CreateButton2( self.Th, "btnRefreshNetwork", x+(w*0.325), y+(h*0.88), w*0.28, h*0.07, "Refresh" )
 	self:CreateButton2( self.Th, "btnNetTools", x+(w*0.63), y+(h*0.88), w*0.335, h*0.07, "Network Tools" )
-	// Static IP: the textbox (centered at 0.69) sits below the status list with
-	// a clear gap, and the Set button (top-left at 0.77) sits below the textbox
-	// - CreateTextbox anchors its x/y on the centre while CreateButton2 anchors
-	// on the top-left, so keep a comfortable gap between them.
-	self:CreateTextbox( self.Th, "txtStaticIP", x+(w*0.325), y+(h*0.69), w*0.28, h*0.05, "Static IP:" )
+	self:CreateTextbox( self.Th, "txtStaticIP", x+(w*0.450), y+(h*0.69), w*0.28, h*0.05, "Static IP:" )
 	self:CreateButton2( self.Th, "btnSetIP", x+(w*0.325), y+(h*0.77), w*0.28, h*0.055, "Set Static IP" )
 	if (self.WifiPassDraft) then self:SetTextboxText( "txtWifiPass", self.WifiPassDraft ) end
 	if (self.StaticIPDraft) then self:SetTextboxText( "txtStaticIP", self.StaticIPDraft ) end
