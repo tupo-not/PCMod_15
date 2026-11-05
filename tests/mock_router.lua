@@ -207,6 +207,14 @@ local nf = DRV:GetNatOut( 40011 )
 assertTrue( nf ~= nil and nf.ip == "192.168.0.2" and nf.port == 72, "masquerade flow stores internal host + port" )
 assertTrue( DRV:GetNatOut( 58 ) == nil, "unrelated port has no masquerade flow" )
 
+-- With the firewall on, an established NAT reply still passes (stateful), even
+-- without an allow rule for the ephemeral port.
+routData.RouterCfg.Firewall = true
+routData.RouterCfg.FirewallRules = {}
+assertTrue( not DRV:FirewallBlocks( { Port = 40001, Source = "192.168.0.2", Dest = "192.168.0.1" }, "lan" ), "forwarded reply passes firewall (stateful flow)" )
+assertTrue( not DRV:FirewallBlocks( { Port = 40011, Source = "10.0.2.2", Dest = "10.0.1.2" }, "wan" ), "masquerade reply passes firewall (stateful NAT)" )
+routData.RouterCfg.Firewall = false
+
 -- Ephemeral ports are unique and wrap within the PAT range.
 local e1 = DRV:AllocEph()
 local e2 = DRV:AllocEph()

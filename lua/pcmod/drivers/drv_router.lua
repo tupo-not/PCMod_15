@@ -676,7 +676,7 @@ function DRV:FirewallBlocks( packet, side )
 	// Control plane always reachable (else the config UI dies).
 	if ((packet.Port == 0) || (packet.Port == 80)) then return false end
 	// An established NAT reply flows back automatically (stateful pass).
-	if (self:GetForwardFlow( packet.Source, packet.Port )) then return false end
+	if (self:GetForwardFlow( packet.Port )) then return false end
 	if (self:GetNatOut( packet.Port )) then return false end
 	for _, r in ipairs( c.FirewallRules or {} ) do
 		if ((r.dir == dir) || (r.dir == "any")) then
