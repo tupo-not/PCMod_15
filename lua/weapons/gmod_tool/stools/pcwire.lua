@@ -36,6 +36,22 @@ TOOL.ScrollablePCWire = true
 // ---------------------------------------------------------------------------------------------------------
 if (SERVER) then
 
+	// In single player the toolgun does not fire LeftClick/RightClick/Reload on
+	// the client side (Wiremod's "wtfgarry" workaround); forward them so the
+	// client-side HUD tool still reacts.
+	if (game.SinglePlayer()) then
+		util.AddNetworkString( "pcwire_sp_click" )
+		local function PCWireSPForward( ply, funcname )
+			if ((!ply) || (!ply:IsPlayer())) then return end
+			net.Start( "pcwire_sp_click" )
+				net.WriteString( funcname )
+			net.Send( ply )
+		end
+		function TOOL:LeftClick( trace )  PCWireSPForward( self:GetOwner(), "LeftClick" ) return true end
+		function TOOL:RightClick( trace ) PCWireSPForward( self:GetOwner(), "RightClick" ) return true end
+		function TOOL:Reload( trace )     PCWireSPForward( self:GetOwner(), "Reload" ) return true end
+	end
+
 	util.AddNetworkString( "pcmod_reqports" )
 	net.Receive( "pcmod_reqports", function( len, ply )
 		local ent = net.ReadEntity()
@@ -87,6 +103,10 @@ end
 // Client: interactive HUD-driven wiring tool.
 // ---------------------------------------------------------------------------------------------------------
 if (CLIENT) then
+
+	// Stable reference used by the single-player click-forward net handler (the
+	// global TOOL may point at another stool by the time it runs).
+	local SpTool = TOOL
 
 	TOOL.Stage = 0          -- 0 = picking first port, 1 = picking second port
 	TOOL.SelIndex = 1       -- which port is highlighted in the HUD
@@ -143,6 +163,7 @@ if (CLIENT) then
 	end
 
 	function TOOL:LeftClick( trace )
+		if ((!game.SinglePlayer()) && (!IsFirstTimePredicted())) then return end
 		local ent = trace.Entity
 		if ((!IsValid( ent )) || (!ent.IsPCMod)) then self:Reset() return false end
 		local ports = self:GetPorts( ent )
@@ -334,6 +355,16 @@ if (CLIENT) then
 		end )
 	else
 		hook.Add( "PlayerBindPress", "pcwire_scroll", ScrollBind )
+	end
+
+	// Single-player click forward: the server relays LeftClick/RightClick/Reload
+	// to us, since the toolgun does not run them client-side in single player.
+	if (game.SinglePlayer()) then
+		net.Receive( "pcwire_sp_click", function( len )
+			local funcname = net.ReadString()
+			local fn = SpTool[ funcname ]
+			if (fn) then fn( SpTool, LocalPlayer():GetEyeTrace() ) end
+		end )
 	end
 
 end
