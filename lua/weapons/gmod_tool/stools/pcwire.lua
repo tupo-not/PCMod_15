@@ -228,6 +228,7 @@ if (CLIENT) then
 			net.WriteUInt( self:GetClientNumber( "g" ), 8 )
 			net.WriteUInt( self:GetClientNumber( "b" ), 8 )
 		net.SendToServer()
+		self:GetOwner():EmitSound( "weapons/airboat/airboat_gun_lastshot2.wav" )
 
 		self:Reset()
 	end
