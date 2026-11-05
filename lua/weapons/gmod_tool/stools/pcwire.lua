@@ -134,6 +134,16 @@ if (CLIENT) then
 		return PCMod.PortData && PCMod.PortData[ ent:EntIndex() ]
 	end
 
+	// First unconnected port on `ent` whose type matches the first selection, or nil.
+	function TOOL:FindMatchingPort( ent )
+		local pts = self:GetPorts( ent )
+		if ((!pts) || (#pts == 0)) then return nil end
+		for i, p in ipairs( pts ) do
+			if ((p.Type == self.Port1Type) && (!p.Connected)) then return i end
+		end
+		return nil
+	end
+
 	function TOOL:RequestPorts( ent )
 		if (!IsValid( ent )) then return end
 		net.Start( "pcmod_reqports" )
@@ -146,7 +156,9 @@ if (CLIENT) then
 		self.SelIndex = 1
 		self.Ent1 = nil
 		self.Port1 = nil
+		self.Port1Type = nil
 		self.LPos1 = nil
+		self.AutoSelectDone = false
 		self:StopPreview()
 	end
 
@@ -173,9 +185,11 @@ if (CLIENT) then
 		if (self.Stage == 0) then
 			self.Ent1 = ent
 			self.Port1 = self.SelIndex
+			self.Port1Type = ports[ self.Port1 ].Type
 			self.LPos1 = ent:WorldToLocal( trace.HitPos )
 			self.Stage = 1
 			self.SelIndex = 1
+			self.AutoSelectDone = false
 			self:GetOwner():EmitSound( "weapons/airboat/airboat_gun_lastshot1.wav" )
 			PCMod.Notice( "Port selected - aim at the second device and left-click" )
 			self:BeginPreview()
@@ -224,6 +238,7 @@ if (CLIENT) then
 		self.SelIndex = self.SelIndex + dir
 		if (self.SelIndex > #ports) then self.SelIndex = 1 end
 		if (self.SelIndex < 1) then self.SelIndex = #ports end
+		self.AutoSelectDone = true -- the player chose manually; don't override
 		self:GetOwner():EmitSound( "weapons/pistol/pistol_empty.wav" )
 		return true
 	end
@@ -235,7 +250,17 @@ if (CLIENT) then
 		if (ent != self.AimedEnt) then
 			self.AimedEnt = ent
 			self.SelIndex = 1
+			self.AutoSelectDone = false
 			self:RequestPorts( ent )
+		end
+		// Once the second device's ports arrive, auto-select the port whose type
+		// matches the first selection (so you don't have to scroll to find it).
+		if ((self.Stage == 1) && (self.AutoSelectDone != true) && (IsValid( ent )) && (ent.IsPCMod) && (ent != self.Ent1)) then
+			local idx = self:FindMatchingPort( ent )
+			if (idx) then
+				self.SelIndex = idx
+				self.AutoSelectDone = true
+			end
 		end
 	end
 

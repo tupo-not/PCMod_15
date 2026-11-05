@@ -40,12 +40,18 @@ end
 
 	ENT.ItemModel = "models/props_lab/harddrive01.mdl"
 
-	// Reject the remover tool by default so a stray right-click cannot delete a
-	// whole wired network (RMB removes the entity and everything constrained to
-	// it). Hold Shift (IN_SPEED) to override, or set cfg.RemoverProtection=false.
+	// Reject the remover tool by default so a stray click cannot delete PCMod
+	// devices. Right-click (which removes the entity AND everything constrained to
+	// it) is blocked outright; single remove/reload needs Shift (IN_SPEED).
 	function ENT:CanTool( ply, trace, mode, tool, button )
 		if (mode != "remover") then return true end
 		if (PCMod && PCMod.Cfg && (PCMod.Cfg.RemoverProtection == false)) then return true end
+		if (button == 2) then
+			if (SERVER) then
+				PCMod.Notice( "PCMod device can't be removed with right-click (it would take the whole network)", ply )
+			end
+			return false
+		end
 		if (IsValid( ply ) && ply:KeyDown( IN_SPEED )) then return true end
 		if (SERVER) then
 			PCMod.Notice( "PCMod device is protected from the remover - hold Shift to remove it", ply )
