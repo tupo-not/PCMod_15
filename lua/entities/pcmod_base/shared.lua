@@ -408,14 +408,19 @@ if (SERVER) then
 
 		// Configure a static LAN IP (192.168.x.y). Pass "" or false to clear it and
 		// fall back to DHCP. Returns false on a malformed/out-of-range address.
+		// Surrounding whitespace is trimmed so a stray space from the UI still
+		// parses (and is stored in its canonical "192.168.c.d" form).
 		function ENT:SetStaticIP( addr )
 			local ip = self:Data().IP
+			if (type( addr ) == "string") then
+				addr = string.Trim( addr )
+			end
 			if (type( addr ) == "string" && addr != "") then
 				local a, b, c, d = string.match( addr, "^(%d+)%.(%d+)%.(%d+)%.(%d+)$" )
 				if ((!a) || (a != "192") || (b != "168")) then return false end
 				c, d = tonumber( c ), tonumber( d )
 				if ((!c) || (!d) || (c < 0) || (c > 255) || (d < 1) || (d > 254)) then return false end
-				ip.Static = addr
+				ip.Static = "192.168." .. c .. "." .. d
 				self:SetSubnet( c )
 				self:SetIP( d )
 				return true

@@ -198,8 +198,14 @@ function PROG:DoCommand( com, args )
 	end
 	if (com == "set_static_ip") then
 		local addr = args[1]
+		local applied = false
 		if (self.Entity && self.Entity.SetStaticIP) then
-			self.Entity:SetStaticIP( addr )
+			applied = (self.Entity:SetStaticIP( addr ) == true)
+		end
+		if (!applied) then
+			self.DeviceData.IPError = "Invalid static IP - use 192.168.x.y"
+		else
+			self.DeviceData.IPError = nil
 		end
 		self:RefreshNetwork()
 		self:UpdateSS()

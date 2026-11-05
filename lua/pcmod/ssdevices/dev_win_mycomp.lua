@@ -90,15 +90,19 @@ function DEV:InitializeOS( x, y, w, h )
 end
 
 function DEV:InitializeNetwork( x, y, w, h )
-	self:CreateListbox( self.Th, "lstNetInfo", x+(w*0.325), y+(h*0.21), w*0.28, h*0.50 ).LeftAlign = true
+	self:CreateListbox( self.Th, "lstNetInfo", x+(w*0.325), y+(h*0.21), w*0.28, h*0.42 ).LeftAlign = true
 	self:CreateListbox( self.Th, "lstWireless", x+(w*0.63), y+(h*0.21), w*0.335, h*0.38 ).LeftAlign = true
 	self:CreateTextbox( self.Th, "txtWifiPass", x+(w*0.7975), y+(h*0.62), w*0.335, h*0.055, "Password:" )
 	self:CreateButton2( self.Th, "btnWifiConnect", x+(w*0.63), y+(h*0.69), w*0.16, h*0.07, "Connect" )
 	self:CreateButton2( self.Th, "btnWifiDisconnect", x+(w*0.805), y+(h*0.69), w*0.16, h*0.07, "Disconnect" )
 	self:CreateButton2( self.Th, "btnRefreshNetwork", x+(w*0.325), y+(h*0.88), w*0.28, h*0.07, "Refresh" )
 	self:CreateButton2( self.Th, "btnNetTools", x+(w*0.63), y+(h*0.88), w*0.335, h*0.07, "Network Tools" )
-	self:CreateTextbox( self.Th, "txtStaticIP", x+(w*0.325), y+(h*0.74), w*0.28, h*0.055, "Static IP:" )
-	self:CreateButton2( self.Th, "btnSetIP", x+(w*0.325), y+(h*0.81), w*0.28, h*0.055, "Set Static IP" )
+	// Static IP: the textbox (centered at 0.69) sits below the status list with
+	// a clear gap, and the Set button (top-left at 0.77) sits below the textbox
+	// - CreateTextbox anchors its x/y on the centre while CreateButton2 anchors
+	// on the top-left, so keep a comfortable gap between them.
+	self:CreateTextbox( self.Th, "txtStaticIP", x+(w*0.325), y+(h*0.69), w*0.28, h*0.05, "Static IP:" )
+	self:CreateButton2( self.Th, "btnSetIP", x+(w*0.325), y+(h*0.77), w*0.28, h*0.055, "Set Static IP" )
 	if (self.WifiPassDraft) then self:SetTextboxText( "txtWifiPass", self.WifiPassDraft ) end
 	if (self.StaticIPDraft) then self:SetTextboxText( "txtStaticIP", self.StaticIPDraft ) end
 end
@@ -204,6 +208,9 @@ function DEV:Paint( x, y, w, h )
 			wstat = tostring( wf.Error )
 		end
 		self:RenderText( x+(w*0.7975), y+(h*0.79), { wstat }, Color( 0, 0, 0, 255 ), 1 )
+		if (self.IPError) then
+			self:RenderError( self.Th, x+(w*0.465), y+(h*0.835), self.IPError )
+		end
 	elseif (self.Section == "io") then
 		self:RenderText( x+(w*0.6425), y+(h*0.105), { "Input / Output Devices" }, Color( 0, 0, 0, 255 ), 1 )
 		self:RenderText( x+(w*0.6425), y+(h*0.90), { "Identified USB devices connected to this computer." }, Color( 0, 0, 0, 255 ), 1 )
