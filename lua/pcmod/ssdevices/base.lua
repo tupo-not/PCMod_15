@@ -1039,6 +1039,37 @@ DEV.MinH = 0.6
 		if ((self.ProgName) && (self.ProgName != "") && (self.SSDevice) && (PCMod.SDraw)) then
 			local nextp = ((PCMod.SDraw.RaisePriority or 149) + 1)
 			if (nextp > 239) then nextp = 150 end
+			// Never reuse a priority that another locally-raised program window
+			// already holds, even after the counter wraps. The dragged window
+			// must stay above every other program window.
+			local ss = nil
+			if ((self.EntID) && (PCMod.SDraw.SSpaces)) then ss = PCMod.SDraw.SSpaces[ self.EntID ] end
+			if (ss) then
+				for _, v in pairs( ss ) do
+					if ((type( v ) == "table") && (v != self.SSDevice) && ((v.Priority or 0) >= 150) && ((v.Priority or 0) < 240)) then
+						if ((v.Priority or 0) >= nextp) then nextp = (v.Priority or 0) + 1 end
+					end
+				end
+				if (nextp > 239) then
+					// Compact the local raises so the new grab can still take
+					// the top slot instead of tying with an older drag.
+					local raised = {}
+					for _, v in pairs( ss ) do
+						if ((type( v ) == "table") && (v != self.SSDevice) && ((v.Priority or 0) >= 150) && ((v.Priority or 0) < 240)) then
+							table.insert( raised, v )
+						end
+					end
+					table.sort( raised, function( a, b ) return ((a.Priority or 0) < (b.Priority or 0)) end )
+					local p = 150
+					for _, v in ipairs( raised ) do
+						v.Priority = p
+						p = p + 1
+						if (p > 239) then p = 239 end
+					end
+					nextp = p
+					if (nextp > 239) then nextp = 239 end
+				end
+			end
 			PCMod.SDraw.RaisePriority = nextp
 			self.SSDevice.Priority = nextp
 		end

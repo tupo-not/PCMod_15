@@ -119,6 +119,17 @@ down=false
 PCMod.SDraw.UpdateWindowGrab({low=low,high=high},300,200)
 assertEq(#order,1,"release does not start a grab")
 
+-- A non-draggable window above a draggable one must block the grab, otherwise
+-- the hidden title bar of the lower window can be dragged through it.
+local block={X=0,Y=0,W=1,H=1,Priority=30,DevID='block',WindowDrag=false}
+order={}
+down=true
+PCMod.SDraw.LastMouseDown=false
+PCMod.SDraw.UpdateWindowGrab({low=low,block=block},300,200)
+assertEq(#order,0,"covered lower window cannot be grabbed")
+down=false
+PCMod.SDraw.UpdateWindowGrab({low=low,block=block},300,200)
+
 -- 25%/50% presets are valid; lower values clamp to 25%.
 PCMod.Cfg.GuiScale=0.25
 assertEq(PCMod.SDraw.GetGuiScale(),0.25,"25% scale")

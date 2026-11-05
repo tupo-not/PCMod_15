@@ -254,5 +254,16 @@ assertTrue(d.win_x + (d.SSDevice.W * 1600 * 0.5) <= 1600.5, "corner resize stays
 assertTrue(d.win_y + (d.SSDevice.H * 900 * 0.5) <= (0.94 * 900) + 0.5, "corner resize stays above taskbar")
 down = false
 d:UpdateWindowResize()
+
+-- Dragging must stay above another locally-raised window even when the grab
+-- counter has reached the top of the 150..239 band.
+d.EntID = 1
+d.SSDevice = { X = 0.1, Y = 0.1, W = 0.5, H = 0.5, Priority = 160 }
+local other = { ProgName = "other", Priority = 239 }
+PCMod.SDraw.SSpaces = { [ 1 ] = { d.SSDevice, other } }
+PCMod.SDraw.RaisePriority = 238
+d:RaiseLocal()
+assertTrue(d.SSDevice.Priority > other.Priority, "dragged window stays above older raised window")
+assertTrue(d.SSDevice.Priority < 240, "raised window stays below pickers")
 PCMod.SDraw.WindowScale = 1
 print("WINDOW TESTS PASSED")

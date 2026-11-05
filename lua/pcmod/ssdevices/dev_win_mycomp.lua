@@ -272,15 +272,13 @@ function DEV:Paint( x, y, w, h )
 		self:RenderText( x+(w*0.6425), y+(h*0.105), { "Input / Output Devices" }, Color( 0, 0, 0, 255 ), 1 )
 		self:RenderText( x+(w*0.475), y+(h*0.16), { "USB Devices" }, Color( 0, 0, 0, 255 ), 1 )
 		self:RenderText( x+(w*0.81), y+(h*0.16), { "Keyboard Repeat" }, Color( 0, 0, 0, 255 ), 1 )
-		self:RenderText( x+(w*0.81), y+(h*0.52), { "Repeat " .. CurrentKeyRepeat() .. " ms | Hold " .. CurrentKeyHold() .. " ms" }, Color( 0, 0, 0, 255 ), 1 )
 		if (self.KeyRepeatError) then
 			self:RenderError( self.Th, x+(w*0.81), y+(h*0.60), self.KeyRepeatError )
 		end
-		self:RenderText( x+(w*0.6425), y+(h*0.90), { "Repeat: interval between repeats. Hold: delay before repeats start." }, Color( 0, 0, 0, 255 ), 1 )
 	else
 		self:RenderText( x+(w*0.6425), y+(h*0.105), { "Operating System" }, Color( 0, 0, 0, 255 ), 1 )
-		self:RenderText( x+(w*0.475), y+(h*0.17), { "Theme" }, Color( 0, 0, 0, 255 ), 1 )
-		self:RenderText( x+(w*0.81), y+(h*0.17), { "GUI Scale" }, Color( 0, 0, 0, 255 ), 1 )
+		self:RenderText( x+(w*0.475), y+(h*0.15), { "Theme" }, Color( 0, 0, 0, 255 ), 1 )
+		self:RenderText( x+(w*0.81), y+(h*0.15), { "GUI Scale" }, Color( 0, 0, 0, 255 ), 1 )
 		self:RenderText( x+(w*0.81), y+(h*0.59), { "Current: " .. ScaleLabel( CurrentGuiScale() ) }, Color( 0, 0, 0, 255 ), 1 )
 		self:RenderText( x+(w*0.485), y+(h*0.73), { "Security" }, Color( 0, 0, 0, 255 ), 1 )
 		if (self.PWE == 1) then self:RenderError( self.Th, x+(w*0.81), y+(h*0.90), "Old password wrong!" ) end

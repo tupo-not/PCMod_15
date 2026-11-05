@@ -424,6 +424,31 @@ function PCMod.SDraw.DrawCursorAt( ax, ay )
 	surface.SetDrawColor( 255, 255, 255, 255 )
 end
 
+// Device-picker helper: the topmost device whose drawn rectangle contains the
+// point. Hit-testing must use this instead of merely walking the draggable
+// devices, otherwise a lower window's title bar hidden under another window
+// could still be grabbed.
+function PCMod.SDraw.GetTopDeviceAt( ss, mx, my, w, h )
+	if ((!ss) || (!istable( ss ))) then return nil end
+	w = w or ScrW()
+	h = h or ScrH()
+	local best = nil
+	local bestp = -1
+	for _, v in pairs( ss ) do
+		if ((type( v ) == "table") && v.DevID && v.W && v.H && (v.W > 0) && (v.H > 0)) then
+			local dx, dy, dw, dh = PCMod.SDraw.GetDeviceVisualRect( v, w, h )
+			if ((mx >= dx) && (mx <= (dx + dw)) && (my >= dy) && (my <= (dy + dh))) then
+				local p = v.Priority or 0
+				if (p >= bestp) then
+					bestp = p
+					best = v
+				end
+			end
+		end
+	end
+	return best
+end
+
 // Starts a window grab on the topmost matching device at the moment the left
 // mouse button goes down. GMod's DButton clicks fire on release, so polling the
 // press edge here is what makes dragging/resizing work at all.
@@ -435,17 +460,13 @@ function PCMod.SDraw.UpdateWindowGrab( ss, mx, my )
 	if (!pressed) then return end
 	if ((!ss) || (!istable( ss ))) then return end
 
-	local list = {}
-	for _, v in pairs( ss ) do
-		if ((type( v ) == "table") && v.DevID && (v.WindowDrag || v.WindowResize)) then
-			table.insert( list, v )
-		end
-	end
-	table.sort( list, function( a, b ) return ((a.Priority or 0) > (b.Priority or 0)) end )
-	for _, v in ipairs( list ) do
-		local dev = PCMod.SDraw.DevMap[ v.DevID ]
-		if (dev && dev.TryStartWindowGrab && dev:TryStartWindowGrab( mx, my )) then return end
-	end
+	// Only the window actually on top may start a grab. If the topmost device
+	// at this point is not draggable (or is a system screen/menu), the press
+	// must not reach a window buried underneath it.
+	local top = PCMod.SDraw.GetTopDeviceAt( ss, mx, my, ScrW(), ScrH() )
+	if ((!top) || (!(top.WindowDrag || top.WindowResize))) then return end
+	local dev = PCMod.SDraw.DevMap[ top.DevID ]
+	if (dev && dev.TryStartWindowGrab && dev:TryStartWindowGrab( mx, my )) then return end
 end
 
 // Draws the locked screen across the whole viewport (replaces the 3D monitor
