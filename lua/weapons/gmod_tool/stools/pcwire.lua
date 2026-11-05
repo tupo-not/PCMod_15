@@ -332,7 +332,7 @@ if (CLIENT) then
 	local function GetPCWireTool( ply )
 		local wep = ply:GetActiveWeapon()
 		if ((!IsValid( wep )) || (wep:GetClass() != "gmod_tool")) then return nil end
-		local obj = wep:GetTable() && wep:GetTable():GetToolObject()
+		local obj = wep.GetToolObject && wep:GetToolObject()
 		if ((obj) && (obj.ScrollablePCWire)) then return obj end
 		return nil
 	end
