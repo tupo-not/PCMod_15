@@ -13,11 +13,12 @@ module( "keyboard", package.seeall )
 
 keyboard = keyboard or {}
 
-local Latency, Available, Keys, Keys_Shift, Typing, Callback
+local Latency, Available, Keys, Keys_Shift, Typing, Callback, Locked
 
 Keys            = { }
 Keys_Shift		= { }
 Available       = { }
+Locked          = { }
 Latency         = 200 / 1000
 Typing          = false
 Callback        = print
@@ -62,30 +63,37 @@ local function PlayerBindPress( pl, bnd )
 	end
 end
 
-local function EnableKey( key )
-	Available[ key ] = true
-end
-
 local function InputEntered( key )
 	Callback( key )
 end
 
 local function Think( )
-	local k, v, shift, sent, val
+	local k, v, shift, val
 	
 	if not Typing then
 		return
 	end
 	
 	shift = input.IsKeyDown( KEY_LSHIFT ) || input.IsKeyDown( KEY_RSHIFT )
+	local now = CurTime()
 	
 	for k, v in pairs( Keys ) do
-		if ((Available[ k ]) && (input.IsKeyDown( k ))) then
-			val = v
-			if (shift) then val = Keys_Shift[ k ] end
-			InputEntered( val )
-			Available[ k ] = false
-			timer.Simple( Latency, function() EnableKey(k) end )
+		if (Available[ k ]) then
+			if (input.IsKeyDown( k )) then
+				// Hold-to-repeat: fire at most once per Latency while the key
+				// stays down, then re-arm for the next repeat.
+				if ((!Locked[ k ]) || (now >= Locked[ k ])) then
+					val = v
+					if (shift) then val = Keys_Shift[ k ] end
+					InputEntered( val )
+					Locked[ k ] = now + Latency
+				end
+			else
+				// Key released: forget the repeat lock immediately so a fresh
+				// press of the same key always registers (no dead zone between
+				// repeated taps, e.g. typing "192.168.1.1").
+				Locked[ k ] = nil
+			end
 		end
 	end
 end
