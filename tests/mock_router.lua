@@ -203,6 +203,12 @@ local fl = DRV:GetForwardFlow( "192.168.0.2", 72 )
 assertTrue( fl ~= nil and fl.src == "fd00:1:0:5::2" and fl.pub == "fd00:2:0:1::1", "flow stores peer + public addr" )
 DRV:DeleteForward( 72 )
 
+-- Outbound masquerade (SNAT) flow: remember the internal host per port.
+DRV:RememberNatOut( 72, "192.168.0.2" )
+local nf = DRV:GetNatOut( 72 )
+assertTrue( nf ~= nil and nf.ip == "192.168.0.2", "masquerade flow stores internal host" )
+assertTrue( DRV:GetNatOut( 58 ) == nil, "unrelated port has no masquerade flow" )
+
 local sent
 PCMod.Network.CreatePacket = function( src, dst, port, body ) sent = { src = src, dst = dst, port = port, body = body } end
 DRV.ProcessPacket = function() end

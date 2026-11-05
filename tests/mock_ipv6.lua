@@ -57,6 +57,11 @@ assertEq( PCMod.IPv4.BackbonePrefix( 3 ), "10.0.3.0/24", "IPv4 backbone block (l
 assertEq( PCMod.IPv4.BackbonePrefix( 258 ), "10.1.2.0/24", "IPv4 backbone block (16-bit id spans 2nd+3rd octet)" )
 assertEq( PCMod.IPv4.BackboneAddress( 3, 1 ), "10.0.3.1", "IPv4 backbone gateway" )
 assertEq( PCMod.IPv4.BackboneAddress( 258, 5 ), "10.1.2.5", "IPv4 16-bit backbone router /32" )
+local p4 = PCMod.IPv4.Parse( "10.1.2.5" )
+assertTrue( p4 ~= nil and p4.bb == 258 and p4.host == 5, "IPv4.Parse splits 16-bit backbone + host" )
+assertEq( PCMod.IPv4.Parse( "192.168.0.2" ), nil, "IPv4.Parse rejects 192.168" )
+assertTrue( PCMod.IPv4.IsBackbone( "10.0.3.2" ), "IsBackbone true for 10.x" )
+assertTrue( not PCMod.IPv4.IsBackbone( "192.168.5.2" ), "IsBackbone false for 192.168" )
 
 -- FromIPv4: only loopback and the backbone have a stateless mapping; a LAN's
 -- /64 depends on its upstream backbone, so it is stored, not derived.

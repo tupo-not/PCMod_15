@@ -638,10 +638,10 @@ end
 //     (8 global bits + 16 backbone-id bits; hi and lo are the two octets of the
 //     16-bit backbone id seen in fd00:<bb>::/32)
 //   * each LAN router owns one /32 of that block: 10.<hi>.<lo>.<host>/32
-// The /32 is the router's NAT address: its private LAN (192.168.x.x) is hidden
-// behind it when the router talks on the IPv6 backbones. The backbone router
-// itself is the host .1 of its block (its ::1 gateway). IPv4 remains LAN-local
-// only; all cross-router traffic uses IPv6.
+// The /32 is the router's public NAT address: its private LAN (192.168.x.x) is
+// hidden behind it, and 10.x traffic routes across the backbones so one router
+// can reach another router's /32 (source and/or destination NAT'ed at the edge).
+// The 192.168 address space stays LAN-local and overlapping; only 10.x routes.
 // ---------------------------------------------------------------------------------------------------------
 PCMod.IPv4 = PCMod.IPv4 or {}
 
@@ -664,6 +664,23 @@ function PCMod.IPv4.BackboneAddress( bb, host )
 	host = tonumber( host ) or 1
 	if (host < 1) then host = 1 end
 	return "10." .. tostring( hi ) .. "." .. tostring( lo ) .. "." .. tostring( host )
+end
+
+// Parse a 10.x backbone IPv4 into { bb = 16-bit backbone id, host = 4th octet }.
+// Returns nil for any address not in 10.0.0.0/8.
+function PCMod.IPv4.Parse( addr )
+	if (type( addr ) != "string") then return nil end
+	local a, b, c, d = string.match( addr, "^(%d+)%.(%d+)%.(%d+)%.(%d+)$" )
+	if (!a) then return nil end
+	a, b, c, d = tonumber( a ), tonumber( b ), tonumber( c ), tonumber( d )
+	if ((!a) || (!b) || (!c) || (!d)) then return nil end
+	if (a != 10) then return nil end
+	return { bb = (b * 256) + c, host = d }
+end
+
+// True when addr is in the backbone 10.0.0.0/8 space (routable across backbones).
+function PCMod.IPv4.IsBackbone( addr )
+	return (PCMod.IPv4.Parse( addr ) != nil)
 end
 
 // ---------------------------------------------------------------------------------------------------------

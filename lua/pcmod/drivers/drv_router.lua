@@ -184,7 +184,8 @@ function DRV:ProcessPacket( pid, pass, side )
 	end
 	// Port forwarding (NAT). A reply from a forwarded internal host is source-
 	// NAT'ed back to the original peer; an inbound packet to a forwarded port is
-	// destination-NAT'ed to the internal host.
+	// destination-NAT'ed to the internal host. A reply to an outbound masquerade
+	// is destination-NAT'ed back to the internal host that initiated it.
 	local isSelf = (self.Entity.IsAddressedTo && self.Entity:IsAddressedTo( packet.Dest ))
 	if (isSelf) then
 		local flow = self:GetForwardFlow( packet.Source, packet.Port )
@@ -197,6 +198,16 @@ function DRV:ProcessPacket( pid, pass, side )
 				local rpid = PCMod.Network.CreatePacket( wanSrc, flow.src, flow.port, packet.Body )
 				if (rpid) then self:ProcessPacket( rpid ) end
 			end
+			return
+		end
+		// Reply to an outbound masquerade: translate the destination back from
+		// this router's WAN /32 to the internal host that initiated the flow.
+		local nat = self:GetNatOut( packet.Port )
+		local wan = self.Entity.GetFullBIP && self.Entity:GetFullBIP()
+		if (nat && wan && (PCMod.IPv6.ToIPv4( packet.Dest ) == wan)) then
+			packet.Delivered = true
+			local mpid = PCMod.Network.CreatePacket( packet.Source, nat.ip, packet.Port, packet.Body )
+			if (mpid) then self:ProcessPacket( mpid ) end
 			return
 		end
 		local rule = self:GetForwardRule( packet.Port )
@@ -242,15 +253,45 @@ function DRV:ProcessPacket( pid, pass, side )
 	local dest6 = PCMod.IPv6.IsIPv6( packet.Dest )
 
 	if (!dest6) then
-		// IPv4 never leaves the LAN it was born on (real private addressing;
-		// cross-router traffic goes over IPv6).
+		// Same-LAN IPv4 (192.168.x) is delivered locally and never leaves it.
 		local port = self:HasPC( packet.Dest )
 		if (port) then
 			self.Entity:PushData( port, { "deliver", pid, pass } )
 			return
 		end
 		if (self:DeliverToWirelessClient( packet )) then return end
-		PCMod.Msg( "[webgr]IPv4 target " .. tostring( packet.Dest ) .. " is not on this LAN; dropping", true )
+		// 10.x backbone IPv4 routes across backbones; at the LAN edge a router
+		// masquerades its private hosts behind its own /32.
+		local bb4 = PCMod.IPv4.Parse( packet.Dest )
+		if (bb4) then
+			if (self:IsBackbone()) then
+				// Backbone router: route my own /16 (host table) or a peer /16.
+				local mybb = self.Entity:GetBSubnet()
+				if (bb4.bb == mybb) then
+					local cport = self:HasRouter( packet.Dest )
+					if (cport) then
+						self.Entity:PushData( cport, { "deliver", pid, pass } )
+						return
+					end
+				else
+					local nPort = self:RouteForBB( bb4.bb )
+					if (nPort) then
+						self.Entity:PushData( nPort, { "deliver", pid, pass } )
+						return
+					end
+				end
+			elseif (self.Uplink) then
+				// LAN router: masquerade only traffic that originated from my own
+				// hosts (LAN-side); forward the rest upstream without re-NAT.
+				if (side == "lan") then
+					self:MasqueradeAndForward( packet, pass )
+				else
+					self.Entity:PushData( self.Uplink, { "deliver", pid, pass } )
+				end
+				return
+			end
+		end
+		PCMod.Msg( "[webgr]IPv4 target " .. tostring( packet.Dest ) .. " is not routable; dropping", true )
 		return
 	end
 
@@ -629,6 +670,7 @@ function DRV:FirewallBlocks( packet, side )
 	if ((packet.Port == 0) || (packet.Port == 80)) then return false end
 	// An established NAT reply flows back automatically (stateful pass).
 	if (self:GetForwardFlow( packet.Source, packet.Port )) then return false end
+	if (self:GetNatOut( packet.Port )) then return false end
 	for _, r in ipairs( c.FirewallRules or {} ) do
 		if ((r.dir == dir) || (r.dir == "any")) then
 			local m = true
@@ -727,6 +769,47 @@ function DRV:GetForwardFlow( src, port )
 		return nil
 	end
 	return f
+end
+
+// Outbound masquerade (SNAT): remember which internal host sits behind each
+// outbound source port so a reply to this router's WAN /32 is translated back.
+function DRV:RememberNatOut( port, ip )
+	self.NatOut = self.NatOut or {}
+	self.NatOut[ tostring( port ) ] = { ip = ip, time = CurTime() }
+	local now = CurTime()
+	for k, v in pairs( self.NatOut ) do
+		if ((!v.time) || (v.time < now - 120)) then self.NatOut[ k ] = nil end
+	end
+end
+
+function DRV:GetNatOut( port )
+	local f = self.NatOut && self.NatOut[ tostring( port ) ]
+	if (!f) then return nil end
+	if (f.time < (CurTime() - 120)) then
+		self.NatOut[ tostring( port ) ] = nil
+		return nil
+	end
+	return f
+end
+
+// Masquerade an outbound LAN packet (SNAT): rewrite its source to this router's
+// WAN /32, remember the internal source per port, and forward a fresh packet
+// upstream. The reply is translated back in ProcessPacket (masquerade reply).
+function DRV:MasqueradeAndForward( packet, pass )
+	local wan = self.Entity.GetFullBIP && self.Entity:GetFullBIP()
+	if (!wan) then
+		PCMod.Msg( "[webgr]No WAN /32 to masquerade behind; dropping", true )
+		return
+	end
+	self:RememberNatOut( packet.Port, packet.Source )
+	packet.Delivered = true
+	local npid = PCMod.Network.CreatePacket( wan, packet.Dest, packet.Port, packet.Body )
+	if (!npid) then return end
+	local mem = self.Entity:Memory()
+	if (!mem.P) then mem.P = {} end
+	mem.P[ npid ] = true
+	self.Entity:UpdateMemory( mem )
+	self.Entity:PushData( self.Uplink, { "deliver", npid, pass } )
 end
 
 function DRV:ApplyWebSetting( key, value )
@@ -939,4 +1022,5 @@ function DRV:OnRemove()
 	self.Neighbors = {}
 	self.Uplink = nil
 	self.ForwardFlows = {}
+	self.NatOut = {}
 end

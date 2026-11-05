@@ -141,14 +141,19 @@ PCMod Improvement TODO List
   is added/removed, so IPv6 routes across any number of backbones. LAN routers
   auto-renumber their LAN (and every client lease) when their upstream /32-/64
   changes on connect/disconnect
-- DONE: Private, isolated LANs (NAT-less "real internet" model): each router
-  owns 192.168.0.0/24 or /16 (cfg.LanNetmask), overlapping with every other
-  router - a LAN knows nothing about upstream. IPv4 never leaves its LAN;
-  cross-router traffic is IPv6 only
+- DONE: Private, isolated LANs: each router owns 192.168.0.0/24 or /16
+  (cfg.LanNetmask), overlapping with every other router - a LAN knows nothing
+  about upstream. 192.168.x stays LAN-local; the 10.x backbone space routes
+  across backbones and is NAT'ed at the edge
+- DONE: Full IPv4 NAT: 10.x backbone /32s route across the backbone graph, a LAN
+  router masquerades (source-NAT) its private hosts behind its own /32, and a
+  router NATs inbound forwarded ports (DNAT) to an internal host - replies are
+  translated back at both edges, so a client behind one router reaches a service
+  behind another router's /32 (e.g. 10.0.2.2:72 -> 192.168.0.2:72)
 - DONE: Explicit IPv6 routing table: backbones map child /64s and peer /32s to
   ports, LAN routers forward non-local IPv6 upstream via their uplink, and the
   packet source is chosen by destination family (IPv6 for the WAN, private IPv4
-  locally) so replies route back over IPv6
+  locally) so replies route back
 - DONE: LAN DHCP moved onto the router (per-router lease pool, /16 spans both
   host octets); replaced the global subnet allocator
 - DONE: IPv4 backbone hierarchy now mirrors IPv6: 10.0.0.0/8 -> one block per
