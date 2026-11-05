@@ -29,6 +29,16 @@ util = { Compress = function( s ) return s end }
 local ent = {}
 function ent:EntIndex() return 1 end
 function ent:IsValid() return true end
+PCMod.Data[ 1 ].IP = { Static = false, Add = false, Sub = false, Full = false }
+function ent:Data() return PCMod.Data[ 1 ] end
+function ent:SetStaticIP( addr )
+	if (type( addr ) == "string" and addr ~= "") then
+		self:Data().IP.Static = addr
+	else
+		self:Data().IP.Static = false
+	end
+	return true
+end
 
 -- Wireless scan helpers: two fake routers in range (FindInSphere is chosen
 -- because cfg.WirelessRange > 0).
@@ -152,5 +162,12 @@ prog:DoCommand( "open_devman", {} )
 assertEq( os.LastCommand, "sys_openprog deviceman", "legacy Device Manager command" )
 prog:DoCommand( "open_nettools", {} )
 assertEq( os.LastCommand, "sys_openprog nettools", "legacy Network Tools command" )
+
+-- Static IP: set_static_ip forwards to the entity and RefreshNetwork surfaces it.
+prog:DoCommand( "set_static_ip", { "192.168.5.7" } )
+assertEq( prog.DeviceData.Net.Static, "192.168.5.7", "static IP surfaced in network data" )
+assertEq( PCMod.Data[ 1 ].IP.Static, "192.168.5.7", "static IP stored on entity" )
+prog:DoCommand( "set_static_ip", { "" } )
+assertEq( prog.DeviceData.Net.Static, nil, "cleared static IP shows DHCP" )
 
 print( "CONTROL PANEL PROGRAM TESTS PASSED" )

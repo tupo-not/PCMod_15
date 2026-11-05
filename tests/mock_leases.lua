@@ -60,4 +60,23 @@ assertEq( DRV:AssignLease( big ), 300, "host 300 from a /16 pool" )
 assertEq( big.sub, 1, "/16 host 300 -> third octet 1" )
 assertEq( big.ip, 44, "/16 host 300 -> fourth octet 44" )
 
+-- A PC with a configured static IP keeps it: the lease slot is still reserved
+-- (so it counts against the pool) but the address itself is not overwritten.
+local function mkStaticPC( idx, addr )
+    local o = mkPC( idx )
+    function o:Data() return { IP = { Static = addr } } end
+    return o
+end
+PCMod.Cfg.LanNetmask = 24
+PCMod.Cfg.DHCPStart = 2
+PCMod.Cfg.DHCPEnd = 5
+DRV.Leases = {}
+local stat = mkStaticPC( 40, "192.168.5.7" )
+stat:SetSubnet( 5 )
+stat:SetIP( 7 )
+assertEq( DRV:AssignLease( stat ), 2, "static PC still reserves a lease slot" )
+assertEq( stat.sub, 5, "static PC keeps its subnet" )
+assertEq( stat.ip, 7, "static PC keeps its host" )
+assertEq( stat.upbb, 3, "static PC still gets backbone info" )
+
 print( "ALL LEASE TESTS PASSED" )

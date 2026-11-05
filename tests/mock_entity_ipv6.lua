@@ -213,4 +213,21 @@ local pastedPeer = { IsValid = function() return true end, IsPCMod = true }
 ent:ApplyDupeInfo( nil, ent, linfo, function( id ) if (id == 42) then return pastedPeer end end )
 assertTrue( rec ~= nil and rec.srcprt == 1 and rec.destprt == 3 and rec.destent == pastedPeer, "dupe re-links ports via LinkPorts" )
 
+-- Static IP configuration (LAN-only 192.168.x.y: parse, reject, clear).
+PCMod.Data[1].IP = { Add = false, Sub = false, Full = false, V6 = false, Back = { Add = false, Sub = false, Full = false, V6 = false } }
+assertTrue( ent:SetStaticIP( "192.168.5.7" ) == true, "static IP accepted" )
+assertEq( PCMod.Data[1].IP.Static, "192.168.5.7", "static IP stored" )
+assertEq( ent:GetStaticIP(), "192.168.5.7", "GetStaticIP returns stored value" )
+assertEq( ent:GetSubnet(), 5, "static subnet octet" )
+assertEq( ent:GetIP(), 7, "static host octet" )
+assertEq( ent:GetFullIP(), "192.168.5.7", "static full IPv4" )
+assertTrue( ent:SetStaticIP( "10.0.0.1" ) == false, "non-192.168 rejected" )
+assertTrue( ent:SetStaticIP( "192.168.0.0" ) == false, ".0 host rejected" )
+assertTrue( ent:SetStaticIP( "192.168.0.255" ) == false, ".255 host rejected" )
+assertTrue( ent:SetStaticIP( "garbage" ) == false, "malformed rejected" )
+assertEq( ent:GetStaticIP(), "192.168.5.7", "rejected input leaves prior static IP intact" )
+assertTrue( ent:SetStaticIP( "" ) == true, "clear accepted" )
+assertEq( ent:GetStaticIP(), false, "static cleared" )
+assertEq( ent:GetIP(), false, "host cleared for DHCP" )
+
 print( "ALL ENTITY IPV6 TESTS PASSED" )

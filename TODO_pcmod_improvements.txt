@@ -185,6 +185,16 @@ PCMod Improvement TODO List
   rebuild their topology, PCs get DHCP leases). Router backbone/subnet ids stay
   fresh on paste on purpose - a copy keeps a unique address identity so it never
   collides with the original
+- DONE: Two computers can now be wired together directly with one network cable
+  (no router): the wire tool allows a "network"-to-"network" link between two
+  PCs, and the network driver accepts a raw sendpacket from a directly-connected
+  peer and delivers it when addressed to this PC (so ping/chat work over a
+  crossover link)
+- DONE: Static IP configuration: the Control Panel's Network page has a "Static
+  IP" box + "Set Static IP" button that stores 192.168.x.y (parsed to subnet/
+  host) on the PC, and the router's DHCP skips a client that already has a
+  static address (leaving it set while still reserving a lease slot). Clearing
+  the box falls back to DHCP
 - DONE: Explicit IPv6 routing table: backbones map child /64s and peer /32s to
   ports, LAN routers forward non-local IPv6 upstream via their uplink, and the
   packet source is chosen by destination family (IPv6 for the WAN, private IPv4

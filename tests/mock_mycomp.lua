@@ -28,14 +28,15 @@ RunConsoleCommand=function(cmd,val) ran={cmd=cmd,val=val} end
 d:ButtonClick('btnApplyScale')
 assertTrue(ran and ran.cmd=='pc_guiscale' and ran.val=='1.25', 'apply scale command')
 assertEq(#d.Listboxes.lstSections.Order, 3, 'three control panel categories')
-d.Net={IPv4='192.168.1.2',IPv6='fd00:c0:a8:1::2',Prefix='fd00:c0:a8:1::/64',Gateway='fd00:c0:a8:1::1',LinkLocal='fe80::2'}
+d.Net={IPv4='192.168.1.2',Static='192.168.5.7',IPv6='fd00:c0:a8:1::2',Prefix='fd00:c0:a8:1::/64',Gateway='fd00:c0:a8:1::1',LinkLocal='fe80::2'}
 d.Wireless={{EntIndex=12,Class='pcmod_router',Distance=342,Signal=80}}
 d:ListboxSelect('lstSections','network')
 assertTrue(d.Listboxes.lstNetInfo ~= nil, 'network page exists')
 assertTrue(d.Listboxes.lstWireless ~= nil, 'wireless networks list exists')
 assertTrue(d.Listboxes.lstGuiScale == nil, 'OS controls hidden on network page')
-assertEq(#d.Listboxes.lstNetInfo.Order, 5, 'network information rows')
+assertEq(#d.Listboxes.lstNetInfo.Order, 6, 'network information rows')
 assertTrue(string.find(d.Listboxes.lstNetInfo.List.gateway, 'fd00:c0:a8:1::1', 1, true) ~= nil, 'gateway shown')
+assertTrue(string.find(d.Listboxes.lstNetInfo.List.static, '192.168.5.7', 1, true) ~= nil, 'static IP shown')
 assertEq(#d.Listboxes.lstWireless.Order, 1, 'wireless network listed')
 assertTrue(string.find(d.Listboxes.lstWireless.List['12'], 'Signal 80%', 1, true) ~= nil, 'wireless signal shown')
 assertTrue(d.Textboxes.txtWifiPass ~= nil, 'wifi password box exists')

@@ -22,8 +22,13 @@ function PROG:RefreshNetwork()
 		local full = os:GetFullIP()
 		if (full) then ipv4 = full end
 	end
+	local static = nil
+	local selfEnt = self.Entity
+	local ipdata = (selfEnt && selfEnt.Data && selfEnt:Data() && selfEnt:Data().IP) or nil
+	if (ipdata && ipdata.Static) then static = ipdata.Static end
 	self.DeviceData.Net = {
 		IPv4 = ipv4,
+		Static = static,
 		IPv6 = os:GetIPv6(),
 		Prefix = os:GetIPv6Prefix(),
 		Gateway = os:GetIPv6Gateway(),
@@ -187,6 +192,15 @@ function PROG:DoCommand( com, args )
 		return
 	end
 	if (com == "refresh_network") then
+		self:RefreshNetwork()
+		self:UpdateSS()
+		return
+	end
+	if (com == "set_static_ip") then
+		local addr = args[1]
+		if (self.Entity && self.Entity.SetStaticIP) then
+			self.Entity:SetStaticIP( addr )
+		end
 		self:RefreshNetwork()
 		self:UpdateSS()
 		return

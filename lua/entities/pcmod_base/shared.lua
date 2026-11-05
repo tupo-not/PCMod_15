@@ -406,6 +406,30 @@ if (SERVER) then
 			self:SetIPText()
 		end
 
+		// Configure a static LAN IP (192.168.x.y). Pass "" or false to clear it and
+		// fall back to DHCP. Returns false on a malformed/out-of-range address.
+		function ENT:SetStaticIP( addr )
+			local ip = self:Data().IP
+			if (type( addr ) == "string" && addr != "") then
+				local a, b, c, d = string.match( addr, "^(%d+)%.(%d+)%.(%d+)%.(%d+)$" )
+				if ((!a) || (a != "192") || (b != "168")) then return false end
+				c, d = tonumber( c ), tonumber( d )
+				if ((!c) || (!d) || (c < 0) || (c > 255) || (d < 1) || (d > 254)) then return false end
+				ip.Static = addr
+				self:SetSubnet( c )
+				self:SetIP( d )
+				return true
+			end
+			ip.Static = false
+			self:SetSubnet( false )
+			self:SetIP( false )
+			return true
+		end
+
+		function ENT:GetStaticIP()
+			return self:Data().IP.Static
+		end
+
 		function ENT:SetBSubnet( subnet )
 			PCMod.Data[ self:EntIndex() ].IP.Back.Sub = subnet
 			self:SetBIPText()

@@ -477,12 +477,17 @@ function DRV:AssignLease( pc )
 	end
 	if (!host) then return nil end
 	self.Leases[ host ] = pc
-	if (mask == 16) then
-		pc:SetSubnet( math.floor( host / 256 ) )
-		pc:SetIP( host % 256 )
-	else
-		pc:SetSubnet( 0 )
-		pc:SetIP( host )
+	// A PC with a configured static IP keeps it; only assign a DHCP address when
+	// it has none.
+	local ipdata = pc.Data && pc:Data() && pc:Data().IP
+	if (!(ipdata && ipdata.Static)) then
+		if (mask == 16) then
+			pc:SetSubnet( math.floor( host / 256 ) )
+			pc:SetIP( host % 256 )
+		else
+			pc:SetSubnet( 0 )
+			pc:SetIP( host )
+		end
 	end
 	local ip = self.Entity:Data().IP
 	if (pc.SetUpBB) then pc:SetUpBB( ip.UpBB or 0 ) end

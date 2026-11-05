@@ -51,6 +51,7 @@ function DEV:SwitchSection( section )
 	end
 	if (self.Section == "network") then
 		self.WifiPassDraft = self:GetTextboxText( "txtWifiPass" )
+		self.StaticIPDraft = self:GetTextboxText( "txtStaticIP" )
 	end
 	self.Section = section
 	self:ReinitializeSelf()
@@ -96,7 +97,10 @@ function DEV:InitializeNetwork( x, y, w, h )
 	self:CreateButton2( self.Th, "btnWifiDisconnect", x+(w*0.805), y+(h*0.69), w*0.16, h*0.07, "Disconnect" )
 	self:CreateButton2( self.Th, "btnRefreshNetwork", x+(w*0.325), y+(h*0.88), w*0.28, h*0.07, "Refresh" )
 	self:CreateButton2( self.Th, "btnNetTools", x+(w*0.63), y+(h*0.88), w*0.335, h*0.07, "Network Tools" )
+	self:CreateTextbox( self.Th, "txtStaticIP", x+(w*0.325), y+(h*0.74), w*0.28, h*0.055, "Static IP:" )
+	self:CreateButton2( self.Th, "btnSetIP", x+(w*0.325), y+(h*0.81), w*0.28, h*0.055, "Set Static IP" )
 	if (self.WifiPassDraft) then self:SetTextboxText( "txtWifiPass", self.WifiPassDraft ) end
+	if (self.StaticIPDraft) then self:SetTextboxText( "txtStaticIP", self.StaticIPDraft ) end
 end
 
 function DEV:InitializeIO( x, y, w, h )
@@ -138,6 +142,7 @@ function DEV:BuildNetworkInfo()
 	local net = self.Net
 	if (type( net ) != "table") then net = {} end
 	self:AddListboxItem( "lstNetInfo", "ipv4", "IPv4 Address: " .. NetValue( net.IPv4 ) )
+	self:AddListboxItem( "lstNetInfo", "static", "Static IP: " .. tostring( net.Static or "DHCP (auto)" ) )
 	self:AddListboxItem( "lstNetInfo", "ipv6", "IPv6 Address: " .. NetValue( net.IPv6 ) )
 	self:AddListboxItem( "lstNetInfo", "prefix", "IPv6 Subnet: " .. NetValue( net.Prefix ) )
 	self:AddListboxItem( "lstNetInfo", "gateway", "IPv6 Gateway: " .. NetValue( net.Gateway ) )
@@ -239,6 +244,11 @@ function DEV:ButtonClick( btn )
 	end
 	if (btn == "btnRefreshNetwork") then
 		self:RunProgCommand( "mycomputer", "refresh_network" )
+		return
+	end
+	if (btn == "btnSetIP") then
+		self.StaticIPDraft = self:GetTextboxText( "txtStaticIP" )
+		self:RunProgCommand( "mycomputer", "set_static_ip", self.StaticIPDraft or "" )
 		return
 	end
 	if (btn == "btnWifiConnect") then
