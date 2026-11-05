@@ -169,6 +169,15 @@ PCMod Improvement TODO List
   and a coloured beam preview shows the cable being drawn; colour/width/material
   are configurable and the cable is created server-side after full validation
   (type + CanWireSameType + not-connected + not-self) through PCMod.Wiring.LinkPorts
+- DONE: Wire tool: on-screen HUD port list, mouse-wheel port cycling, two-stage
+  left-click select, coloured beam preview, colour/width/material, and clear
+  on-screen notices for rejected wirings (type mismatch / connected / same
+  device). Single-player click forwarding (the toolgun skips client callbacks
+  in SP) and the activated-toolobject fix make both SP and MP work
+- DONE: PCMod devices reject the sandbox Remover tool by default (a stray RMB
+  removes an entity plus everything constrained to it, wiping a wired network):
+  ENT:CanTool blocks "remover"; hold Shift to override, or set
+  cfg.RemoverProtection=false
 - DONE: Duplicator re-wires port links on paste: PreEntityCopy records each
   connected port (peer entity + remote port), and PostEntityPaste re-establishes
   the ConEnt/RemotePort bookkeeping through PCMod.Wiring.LinkPorts and re-fires

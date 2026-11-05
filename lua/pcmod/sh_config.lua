@@ -94,6 +94,8 @@ cfg.IO_Outputs = { "1", "2", "3", "4", "5", "6" } -- A list of all the outputs o
 
 cfg.AdvancedMode = false -- Enable/disable advanced mode (Using a PC without camlock)
 
+cfg.RemoverProtection = true -- Should PCMod devices reject the remover tool? (hold Shift to bypass)
+
 cfg.MaxNetworkPass = 50 -- What's the maximum amount of routers a packet can pass through in one go?
 cfg.MaxNetworkPid = 500 -- Single source for this setting (AUDIT2 A-05, Round 19): slot capacity of PCMod.Network.Packets - packet ids are recycled within [1, this] (sv_network.lua)
 
