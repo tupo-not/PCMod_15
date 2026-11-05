@@ -26,6 +26,7 @@ FIXTURES = {
     "pcmod_ss_base.lua": "pcmod/ssdevices/base.lua",
     "mycomp.lua": "pcmod/ssdevices/dev_win_mycomp.lua",
     "pcmod_mycomp_prog.lua": "pcmod/programs/pr_mycomputer.lua",
+    "pcmod_chatserv.lua": "pcmod/programs/pr_chatserv.lua",
     "pcmod_browser.lua": "pcmod/programs/pr_browser.lua",
     "pcmod_web.lua": "pcmod/web.lua",
     "pcmod_files_ui.lua": "pcmod/ssdevices/dev_win_files.lua",

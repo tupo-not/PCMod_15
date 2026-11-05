@@ -54,6 +54,7 @@ TESTS=(
     mock_keyboard
     mock_mycomp
     mock_mycomp_prog
+    mock_chatserv
     mock_browser
     mock_web
     mock_ui_scale

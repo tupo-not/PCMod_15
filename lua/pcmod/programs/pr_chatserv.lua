@@ -40,6 +40,12 @@ function PROG:TriggerState( st )
 end
 
 function PROG:UpdateSS()
+	if (!self.DeviceData) then self.DeviceData = {} end
+	// This program builds its own screen-space payloads instead of calling the
+	// base UpdateSS, so it has to stamp the window-manager fields itself.
+	self.DeviceData.ProgName = self.Name
+	self.DeviceData.WindowDrag = (self.OS == "personal")
+	self.DeviceData.WindowResize = (self.OS == "personal")
 	if (self.State == 1) then
 		local ss = self:GetScreenSpace()
 		// local dms = self:GetDimensions()
