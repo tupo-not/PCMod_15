@@ -60,14 +60,15 @@ if (SERVER) then
 		local b = net.ReadUInt( 8 )
 
 		// Validate everything server-side (never trust the client).
-		if ((!IsValid( ent1 )) || (!IsValid( ent2 )) || (!ent1.IsPCMod) || (!ent2.IsPCMod)) then return end
-		if (ent1 == ent2) then return end
+		if ((!IsValid( ent1 )) || (!IsValid( ent2 ))) then PCMod.Notice( "Cannot wire: invalid entity", ply ) return end
+		if ((!ent1.IsPCMod) || (!ent2.IsPCMod)) then PCMod.Notice( "Cannot wire: not a PCMod entity", ply ) return end
+		if (ent1 == ent2) then PCMod.Notice( "Cannot wire: same entity", ply ) return end
 		local p1 = ent1:Ports()[ port1 ]
 		local p2 = ent2:Ports()[ port2 ]
-		if ((!p1) || (!p2)) then return end
-		if (p1.Connected || p2.Connected) then return end
-		if (p1.Type != p2.Type) then return end
-		if ((ent1:GetClass() == ent2:GetClass()) && (!p1.CanWireSameType)) then return end
+		if ((!p1) || (!p2)) then PCMod.Notice( "Cannot wire: bad port", ply ) return end
+		if (p1.Connected || p2.Connected) then PCMod.Notice( "Cannot wire: port already connected", ply ) return end
+		if (p1.Type != p2.Type) then PCMod.Notice( "Cannot wire: port types differ", ply ) return end
+		if ((ent1:GetClass() == ent2:GetClass()) && (!p1.CanWireSameType)) then PCMod.Notice( "Cannot wire: same-class ports cannot connect", ply ) return end
 
 		// Physical cable (constraint rope) between the two hit points.
 		local addlength = 100
@@ -141,7 +142,7 @@ if (CLIENT) then
 	end
 
 	function TOOL:LeftClick( trace )
-		if (!IsFirstTimePredicted()) then return end
+		if ((!game.SinglePlayer()) && (!IsFirstTimePredicted())) then return end
 		local ent = trace.Entity
 		if ((!IsValid( ent )) || (!ent.IsPCMod)) then self:Reset() return false end
 		local ports = self:GetPorts( ent )
@@ -191,6 +192,7 @@ if (CLIENT) then
 		self.SelIndex = self.SelIndex + dir
 		if (self.SelIndex > #ports) then self.SelIndex = 1 end
 		if (self.SelIndex < 1) then self.SelIndex = #ports end
+		self:GetOwner():EmitSound( "weapons/pistol/pistol_empty.wav" )
 		return true
 	end
 	function TOOL:ScrollUp( trace ) return self:Scroll( trace, -1 ) end
