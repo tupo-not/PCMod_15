@@ -1,3 +1,9 @@
+// ---------------------------------------------------------------------------------------------------------
+// pcwire.lua - Wire-tool style wiring for PCMod entities.
+// Connects two ports (network / vga / usb / etc) between two PCMod entities with
+// a rendered cable. Ports are shown in an on-screen HUD list (mouse wheel to
+// cycle, left-click to pick), instead of the old popup.
+// ---------------------------------------------------------------------------------------------------------
 
 TOOL.Category		= "PCMod - Wiring"
 TOOL.Name			= "#Wire Tool"
@@ -7,340 +13,323 @@ TOOL.ConfigName		= ""
 
 if (!ToolOnly) then cleanup.Register( "computers" ) end
 
-if ((CLIENT) && (!ToolOnly)) then
-
+if (CLIENT) then
 	language.Add( "tool.pcwire.name", "Wire Tool" )
-	language.Add( "tool.pcwire.desc", "Wires together two ports on a device" )
-	language.Add( "tool.pcwire.0", "Left-Click: Select the primary device. Right-Click: Reset tool." )
-	language.Add( "tool.pcwire.1", "Left-Click: Select another device to connect to. Right-Click: Reset tool. Reload: Attach to cable tie." )
+	language.Add( "tool.pcwire.desc", "Connect two ports on PCMod devices with a cable" )
+	language.Add( "tool.pcwire.0", "Left-Click: Pick a port. Mouse wheel: Cycle ports. Right-Click: Reset." )
+	language.Add( "tool.pcwire.1", "Left-Click: Pick the port to connect to. Right-Click: Reset." )
+end
+
+TOOL.ClientConVar = {
+	material	= "cable/rope",
+	width		= "2",
+	r			= "255",
+	g			= "210",
+	b			= "90",
+}
+
+// Marker so the mouse-wheel bind hook can tell this exact tool is active.
+TOOL.ScrollablePCWire = true
+
+// ---------------------------------------------------------------------------------------------------------
+// Server: validate the wiring and create the rope + logical port link.
+// ---------------------------------------------------------------------------------------------------------
+if (SERVER) then
+
+	util.AddNetworkString( "pcmod_reqports" )
+	net.Receive( "pcmod_reqports", function( len, ply )
+		local ent = net.ReadEntity()
+		if ((IsValid( ent )) && (ent.IsPCMod)) then
+			PC_BeamPorts( ent, ply )
+		end
+	end )
+
+	util.AddNetworkString( "pcwire_upload" )
+	net.Receive( "pcwire_upload", function( len, ply )
+		if ((!ply) || (!ply:IsPlayer())) then return end
+		local ent1 = net.ReadEntity()
+		local port1 = net.ReadUInt( 8 )
+		local ent2 = net.ReadEntity()
+		local port2 = net.ReadUInt( 8 )
+		local lpos1 = net.ReadVector()
+		local lpos2 = net.ReadVector()
+		local material = net.ReadString()
+		local width = net.ReadFloat()
+		local r = net.ReadUInt( 8 )
+		local g = net.ReadUInt( 8 )
+		local b = net.ReadUInt( 8 )
+
+		// Validate everything server-side (never trust the client).
+		if ((!IsValid( ent1 )) || (!IsValid( ent2 )) || (!ent1.IsPCMod) || (!ent2.IsPCMod)) then return end
+		if (ent1 == ent2) then return end
+		local p1 = ent1:Ports()[ port1 ]
+		local p2 = ent2:Ports()[ port2 ]
+		if ((!p1) || (!p2)) then return end
+		if (p1.Connected || p2.Connected) then return end
+		if (p1.Type != p2.Type) then return end
+		if ((ent1:GetClass() == ent2:GetClass()) && (!p1.CanWireSameType)) then return end
+
+		// Physical cable (constraint rope) between the two hit points.
+		local addlength = 100
+		local length = (ent1:GetPos() - ent2:GetPos()):Length() + addlength
+		local const, rope = constraint.Rope( ent1, ent2, 0, 0, lpos1, lpos2, length, 0, 0, width, material, false )
+		local rps = {}
+		if (const || rope) then rps = { { const, rope } } end
+
+		PCMod.Wiring.LinkPorts( ent1, port1, ent2, port2, rps, nil )
+	end )
 
 end
 
-TOOL.ClientConVar[ "material" ] = "cable/rope"
-TOOL.ClientConVar[ "width" ] = "2"
+// ---------------------------------------------------------------------------------------------------------
+// Client: interactive HUD-driven wiring tool.
+// ---------------------------------------------------------------------------------------------------------
+if (CLIENT) then
 
-TOOL.RopeTable = {}
+	TOOL.Stage = 0          -- 0 = picking first port, 1 = picking second port
+	TOOL.SelIndex = 1       -- which port is highlighted in the HUD
+	TOOL.Ent1 = nil
+	TOOL.Port1 = nil
+	TOOL.LPos1 = nil
+	TOOL.AimedEnt = nil
+	TOOL.Previewing = false
 
-function TOOL:SelectPort( entid, portid )
-	if (!entid) then return end -- Arg 1
-	if (!portid) then return end -- Arg 2
-	local ent = ents.GetByIndex( entid )
-	if (!ent) then return end -- Entity
-	if (!ent.IsPCMod) then return end -- Valid entity
-	local prt = ent:Ports()[ portid ]
-	if (!prt) then return end -- Port
-	PCMod.Msg( "Firing off toolgun...", true )
-	local tr = self:GetOwner():GetEyeTrace()
-	if (tr.Entity != ent) then
-		self:GetOwner():SetEyeAngles( (ent:GetPos() - self:GetOwner():GetShootPos()):Angle() )
+	// Human-readable name for a port type.
+	local function PortName( typ )
+		if (!typ) then return "?" end
+		for _, wt in ipairs( PCMod.Cfg.WireTypes or {} ) do
+			if (wt.Name == typ) then return wt.ExtName or wt.Name end
+		end
+		return typ
 	end
-	local wep = self:GetOwner():GetActiveWeapon()
-	if (wep) then
-		self:GetOwner().SelPort = portid
-		wep:PrimaryAttack()
-	end
-end
 
-function TOOL:LeftClick( trace )
-
-	// If the target is a player, stop here.
-	if ( trace.Entity && trace.Entity:IsPlayer() ) then
-		self:Flush()
+	local function CanSameType( typ )
+		for _, wt in ipairs( PCMod.Cfg.WireTypes or {} ) do
+			if (wt.Name == typ) then return (wt.SameType == true) end
+		end
 		return false
 	end
-	
-	// If there is no physics object, stop here.
-	if ( SERVER && !util.IsValidPhysicsObject( trace.Entity, trace.PhysicsBone ) ) then
-		self:Flush()
+
+	// The ports of an entity as beamed from the server: { [n] = { Type, Connected } }.
+	function TOOL:GetPorts( ent )
+		if (!IsValid( ent )) then return nil end
+		return PCMod.PortData && PCMod.PortData[ ent:EntIndex() ]
+	end
+
+	function TOOL:RequestPorts( ent )
+		if (!IsValid( ent )) then return end
+		net.Start( "pcmod_reqports" )
+			net.WriteEntity( ent )
+		net.SendToServer()
+	end
+
+	function TOOL:Reset()
+		self.Stage = 0
+		self.SelIndex = 1
+		self.Ent1 = nil
+		self.Port1 = nil
+		self.LPos1 = nil
+		self:StopPreview()
+	end
+
+	function TOOL:Deploy() self:Reset() end
+	function TOOL:Holster() self:Reset() end
+
+	function TOOL:RightClick( trace )
+		self:Reset()
 		return false
 	end
-	
-	// Clients can stop here
-	local iNum = self:NumObjects()
-	if ( CLIENT ) then
-		if ( iNum > 0 ) then self:ClearObjects() end
+
+	function TOOL:LeftClick( trace )
+		if (!IsFirstTimePredicted()) then return end
+		local ent = trace.Entity
+		if ((!IsValid( ent )) || (!ent.IsPCMod)) then self:Reset() return false end
+		local ports = self:GetPorts( ent )
+		if ((!ports) || (#ports == 0)) then return false end
+		local prt = ports[ self.SelIndex ]
+		if ((!prt) || (prt.Connected)) then return false end
+
+		if (self.Stage == 0) then
+			self.Ent1 = ent
+			self.Port1 = self.SelIndex
+			self.LPos1 = ent:WorldToLocal( trace.HitPos )
+			self.Stage = 1
+			self.SelIndex = 1
+			self:BeginPreview()
+			return
+		end
+
+		// Stage 1: connect to the second entity.
+		if (ent == self.Ent1) then return false end
+		local p1 = (self.Ent1 && self:GetPorts( self.Ent1 )) and self:GetPorts( self.Ent1 )[ self.Port1 ]
+		if (!p1) then self:Reset() return false end
+		if (p1.Type != prt.Type) then return false end
+		if ((ent:GetClass() == self.Ent1:GetClass()) && (!CanSameType( p1.Type ))) then return false end
+
+		net.Start( "pcwire_upload" )
+			net.WriteEntity( self.Ent1 )
+			net.WriteUInt( self.Port1, 8 )
+			net.WriteEntity( ent )
+			net.WriteUInt( self.SelIndex, 8 )
+			net.WriteVector( self.LPos1 )
+			net.WriteVector( ent:WorldToLocal( trace.HitPos ) )
+			net.WriteString( self:GetClientInfo( "material" ) )
+			net.WriteFloat( self:GetClientNumber( "width" ) )
+			net.WriteUInt( self:GetClientNumber( "r" ), 8 )
+			net.WriteUInt( self:GetClientNumber( "g" ), 8 )
+			net.WriteUInt( self:GetClientNumber( "b" ), 8 )
+		net.SendToServer()
+
+		self:Reset()
+	end
+
+	function TOOL:Scroll( trace, dir )
+		local ent = trace.Entity
+		if ((!IsValid( ent )) || (!ent.IsPCMod)) then return end
+		local ports = self:GetPorts( ent )
+		if ((!ports) || (#ports == 0)) then return end
+		self.SelIndex = self.SelIndex + dir
+		if (self.SelIndex > #ports) then self.SelIndex = 1 end
+		if (self.SelIndex < 1) then self.SelIndex = #ports end
 		return true
 	end
-	
-	// If there is no entity, stop here
-	if ((!trace.Entity) || (!trace.Entity:IsValid()) || (!trace.Entity.IsPCMod)) then
-		self:Flush()
-		return false
-	end
-	
-	// Get the player
-	local ply = self:GetOwner()
-	
-	// Get our object data
-	local Phys = trace.Entity:GetPhysicsObjectNum( trace.PhysicsBone )
-	local id = trace.Entity:EntIndex()
-	local ent = trace.Entity
-	
-	// If we are looking for new connection:
-	if (iNum == 0) then
-		if (#ent:Ports()==0) then
-			PCMod.Notice( "That entity has no ports!", ply )
-			self:Flush()
-			return false
+	function TOOL:ScrollUp( trace ) return self:Scroll( trace, -1 ) end
+	function TOOL:ScrollDown( trace ) return self:Scroll( trace, 1 ) end
+
+	function TOOL:Think()
+		local ent = self:GetOwner():GetEyeTrace().Entity
+		if (ent != self.AimedEnt) then
+			self.AimedEnt = ent
+			self.SelIndex = 1
+			self:RequestPorts( ent )
 		end
-		if (!ply.SelPort) then
-			PC_BeamPorts( ent, ply )
-			timer.Create( "AskForPort_" .. ply:Nick(), 0.1, 1, function()
-				// ply:SendLua( "PCMod.Gui.AskForPort( " .. tostring( ent:EntIndex() ) .. " );" )
-				PC_AskForPort( ply, ent:EntIndex() )
-			end )
-			return true
-		else
-			self:SetObject( iNum + 1, ent, trace.HitPos, Phys, trace.PhysicsBone, trace.HitNormal )
-			self:AddRopeTarget( trace )
-			//ent:SetColor( 200, 200, 255, 150 )
-			local prt = ply.SelPort
-			ply.SelPort = nil
-			if ((!ent:Ports()[ prt ]) || (ent:Ports()[ prt ].Connected)) then
-				PCMod.Notice( "Invalid port!", ply )
-				self:Flush()
-				return false
+	end
+
+	// -------------------------------------------------------------------------
+	// Beam preview of the cable being drawn.
+	// -------------------------------------------------------------------------
+	function TOOL:BeginPreview()
+		if (self.Previewing) then return end
+		self.Previewing = true
+		hook.Add( "PostDrawOpaqueRenderables", "PCMod.WirePreview", function()
+			if (!IsValid( self.Ent1 )) then self:StopPreview() return end
+			local col = Color( self:GetClientNumber( "r" ), self:GetClientNumber( "g" ), self:GetClientNumber( "b" ) )
+			local width = self:GetClientNumber( "width" )
+			local start = self.Ent1:LocalToWorld( self.LPos1 )
+			local tr = util.GetPlayerTrace( self:GetOwner() )
+			tr.filter = { self:GetOwner() }
+			local aim = util.TraceLine( tr ).HitPos
+			render.SetMaterial( Material( self:GetClientInfo( "material" ) ) )
+			render.StartBeam( 2 )
+				render.AddBeam( start, width, 0, col )
+				render.AddBeam( aim, width, 1, Color( 255, 255, 255 ) )
+			render.EndBeam()
+		end )
+	end
+
+	function TOOL:StopPreview()
+		if (!self.Previewing) then return end
+		self.Previewing = false
+		hook.Remove( "PostDrawOpaqueRenderables", "PCMod.WirePreview" )
+	end
+
+	// -------------------------------------------------------------------------
+	// HUD port list
+	// -------------------------------------------------------------------------
+	function TOOL:DrawHUD()
+		local ent = self:AimedTarget()
+		local ports = self:GetPorts( ent )
+		if ((!ent) || (!IsValid( ent )) || (!ports) || (#ports == 0)) then return end
+
+		surface.SetFont( "Trebuchet18" )
+		local _, th = surface.GetTextSize( "X" )
+		local w = 220
+		local h = (#ports * th) + 34
+		local x = (ScrW() / 2) + 24
+		local y = (ScrH() / 2) - (h / 2)
+
+		draw.RoundedBox( 6, x, y, w, h, Color( 40, 40, 60, 220 ) )
+
+		local title = (self.Stage == 0) and "Ports:" or "Connect to (ports):"
+		surface.SetTextColor( 255, 255, 255 )
+		surface.SetTextPos( x + 8, y + 4 )
+		surface.DrawText( title )
+
+		for i, p in ipairs( ports ) do
+			local yy = y + 24 + ((i - 1) * th)
+			local typeName = PortName( p.Type )
+			local txt = tostring( i ) .. ": " .. typeName
+			local col = Color( 255, 255, 255 )
+			if (p.Connected) then
+				col = Color( 255, 120, 120 )
+				txt = txt .. "  (connected)"
 			end
-			ply.FirstSelPort = prt
-			ply.FirstSelPortType = ent:Ports()[ prt ].Type
-			self:SetStage( iNum + 1 )
-			return true
-		end
-	end
-	
-	if (iNum == 1) then
-		if (#ent:Ports()==0) then
-			PCMod.Notice( "That entity has no ports!", ply )
-			self:Flush()
-			return false
-		end
-		if (!ply.SelPort) then
-			PC_BeamPorts( ent, ply )
-			timer.Create( "AskForPort_" .. ply:Nick(), 0.1, 1, function()
-				// ply:SendLua( "PCMod.Gui.AskForPort( " .. tostring( ent:EntIndex() ) .. ", \"" .. ply.FirstSelPortType .. "\", false );" )
-				PC_AskForPort( ply, ent:EntIndex(), ply.FirstSelPortType, false )
-			end )
-			return true
-		else
-			self:SetObject( iNum + 1, ent, trace.HitPos, Phys, trace.PhysicsBone, trace.HitNormal )
-			self:AddRopeTarget( trace )
-			//ent:SetColor( 200, 200, 255, 150 )
-			local prt = ply.SelPort
-			if ((!ent:Ports()[ prt ]) || (ent:Ports()[ prt ].Connected)) then
-				PCMod.Notice( "Invalid port!", ply )
-				self:Flush()
-				return false
+			if (i == self.SelIndex) then
+				draw.RoundedBox( 4, x + 4, yy, w - 8, th + 2, Color( 0, 150, 0, 180 ) )
+				col = Color( 255, 255, 255 )
 			end
-			local ptype = ent:Ports()[ prt ].Type
-			if (ptype != ply.FirstSelPortType) then
-				PCMod.Notice( "Ports don't match!", ply )
-				self:Flush()
-				return false
-			end
-			if (self:GetEnt(1) == ent) then
-				PCMod.Notice( "Cannot wire!", ply )
-				self:Flush()
-				return false
-			end
-			if ((self:GetEnt(1).Class == ent.Class) && (!ent:Ports()[ prt ].CanWireSameType)) then
-				PCMod.Notice( "Cannot wire!", ply )
-				self:Flush()
-				return false
-			end
+			surface.SetTextColor( col.r, col.g, col.b )
+			surface.SetTextPos( x + 10, yy )
+			surface.DrawText( txt )
 		end
 	end
-	
 
-	// Setup our variables
-	local forcelimit = 0
-	local addlength = 100
-	local material = self:GetClientInfo( "material" )
-	local width = self:GetClientNumber( "width" ) 
-	local rigid	= false
-	
-	// Get information we're about to use
-	local Ent1,  Ent2  = self:GetEnt(1),	 self:GetEnt(2)
-	local Port1, Port2 = ply.FirstSelPort,      ply.SelPort
-	local Bone1, Bone2 = self:GetBone(1),	 self:GetBone(2)
-	local WPos1, WPos2 = self:GetPos(1),	 self:GetPos(2)
-	local LPos1, LPos2 = self:GetLocalPos(1),self:GetLocalPos(2)
-	local length = ( WPos1 - WPos2):Length()
-	
-	// Check that both entities aren't the same ent
-	if (Ent1 == Ent2) then
-		// Nono!
-		PCMod.Notice( "You can't link an entity to itself!", ply )
-		self:Flush()
-		return false
+	// The entity we're currently selecting ports on: in stage 1 we still aim at
+	// the second entity, but stay showing the first entity in case aim is empty.
+	function TOOL:AimedTarget()
+		local tr = self:GetOwner():GetEyeTrace()
+		if ((IsValid( tr.Entity )) && (tr.Entity.IsPCMod)) then return tr.Entity end
+		return (self.Stage == 1) and self.Ent1 or nil
 	end
 
-	// Create the rope(s)
-	// local const, rope = constraint.Rope( Ent1, Ent2, Bone1, Bone2, LPos1, LPos2, length+addlength, 0, forcelimit, width, material, rigid )
-	self:AddCableTieData( Ent1, Port1, Ent2, Port2 )
-	local cties = self:GetRopeTableTargetList()
-	local rps = self:RopeTheTable( width, material, addlength )
-	
-	// Link the entities
-	PCMod.Msg( "Linking now!", true )
-	PCMod.Wiring.LinkPorts( Ent1, Port1, Ent2, Port2, rps, cties )
-	
-	// Flush us
-	self:Flush()
-	
-	// This was successful!
-	return true
-end
-
-function TOOL:AddRopeTarget( trace )
-	local rdata = {}
-	local ent = trace.Entity
-	if ((!ent) || (!ent:IsValid())) then return end
-	rdata.Entity = ent
-	rdata.Bone = trace.PhysicsBone
-	rdata.LPos = ent:WorldToLocal( trace.HitPos )
-	table.insert( self.RopeTable, rdata )	
-end
-
-function TOOL:AddCableTieData( ent1, port1, ent2, port2 )
-	for _, v in pairs( self.RopeTable ) do
-		local ent = v.Entity
-		if ((ent) && (ent:IsValid()) && (ent.IsCableTie)) then
-			local tmp = {}
-			tmp.EntA = ent1
-			tmp.EntB = ent2
-			tmp.PortA = port1
-			tmp.PortB = port2
-			table.insert( ent.LinkedPorts, tmp )
-		end
-	end
-end
-
-function TOOL:FlushRopeTargets()
-	for _, v in pairs( self.RopeTable ) do
-		local ent = v.Entity
-		//if ((ent) && (ent:IsValid())) then ent:SetColor( 255, 255, 255, 255 ) end
-	end
-end
-
-function TOOL:GetRopeTableTargetList()
-	local tmp = {}
-	for _, v in pairs( self.RopeTable ) do
-		local ent = v.Entity
-		if ((ent) && (ent:IsValid()) && (ent.IsCableTie)) then
-			table.insert( tmp, v.Entity )
-		end
-	end
-	return tmp
-end
-
-function TOOL:RopeTheTable( width, material, addlength )
-	local rs = self.RopeTable
-	if (!rs) then return {} end
-	if (#rs == 0) then return {} end
-	if (#rs == 1) then return {} end
-	local cnt
-	local rps = {}
-	self:FlushRopeTargets()
-	for cnt=1, (#rs-1) do
-		local a = rs[ cnt ]
-		local b = rs[ cnt+1 ]
-		if ((a) && (b)) then
-			local const, rope = constraint.Rope( a.Entity, b.Entity, 0, 0, a.LPos, b.LPos, (a.Entity:GetPos() - b.Entity:GetPos()):Length()+addlength, 0, 0, width, material, false )
-			table.insert( rps, { const, rope } )
-		end
-	end
-	self.RopeTable = {}
-	return rps
-end
-
-function TOOL:Reload( trace )
-	// If the target is a player, stop here.
-	if ( trace.Entity && trace.Entity:IsPlayer() ) then
-		return false
-	end
-	
-	// If there is no physics object, stop here.
-	if ( SERVER && !util.IsValidPhysicsObject( trace.Entity, trace.PhysicsBone ) ) then
-		return false
-	end
-	
-	// Clients can stop here
-	local iNum = self:NumObjects()
-	if ( CLIENT ) then return true end
-	
-	// If there is no entity, stop here
-	if ((!trace.Entity) || (!trace.Entity:IsValid()) || (!trace.Entity.IsCableTie)) then return false end
-	
-	// Get the player
-	local ply = self:GetOwner()
-	
-	// Get our object data
-	local Phys = trace.Entity:GetPhysicsObjectNum( trace.PhysicsBone )
-	local id = trace.Entity:EntIndex()
-	local ent = trace.Entity
-	
-	// If we are looking for new connection then stop
-	if (iNum == 0) then return end
-	
-	// Add rope data
-	local rdata = {}
-	rdata.Entity = ent
-	rdata.Bone = trace.PhysicsBone
-	rdata.LPos = ent:WorldToLocal( trace.HitPos )
-	table.insert( self.RopeTable, rdata )
-	//ent:SetColor( 200, 200, 255, 150 )
-	
-	// Return yes
-	return true
-end
-
-function TOOL:Flush()
-	local ply = self:GetOwner()
-	local Ent1,  Ent2  = self:GetEnt(1),	 self:GetEnt(2)
-	ply.FirstSelPort = nil
-	ply.SelPort = nil
-	self:ClearObjects()
-	self:FlushRopeTargets()
-	self.RopeTable = {}
-end
-
-function TOOL:Holster()
-	self:Flush()
-end
-
-function TOOL:Deploy()
-	self:Flush()
-end
-
-function TOOL:RightClick( trace )
-	
-	self:Flush()
-	return false
-
-end
-
-function TOOL.BuildCPanel( CPanel )
-
-	// Header
-	CPanel:AddControl( "Header", { Text = "#Tool_pcwire_name", Description	= "#Tool_pcwire_desc" }  )
-	
-	// Rope Width
-	CPanel:AddControl( "Slider", {
-		Label = "Width:",
-		Type = "Float",
-		Min = "0",
-		Max = "5",
-		Command = "pcwire_width"
-	})
-	
-	// Material Selection
-	CPanel:AddControl( "MatSelect", { 
-			Height = "1", 
-			Label = "Material:", 
-			ItemWidth = 24, 
-			ItemHeight = 64, 
-			ConVar = "pcwire_material", 
-			Options = list.Get( "WireMaterials" ) 
+	function TOOL.BuildCPanel( CPanel )
+		CPanel:AddControl( "Header", { Text = "#Tool_pcwire_name", Description = "#Tool_pcwire_desc" } )
+		CPanel:AddControl( "Slider", {
+			Label = "Width:",
+			Type = "Float",
+			Min = "0",
+			Max = "5",
+			Command = "pcwire_width"
 		} )
+		CPanel:AddControl( "MatSelect", {
+			Height = "1",
+			Label = "Material:",
+			ItemWidth = 24,
+			ItemHeight = 64,
+			ConVar = "pcwire_material",
+			Options = list.Get( "WireMaterials" )
+		} )
+		CPanel:AddControl( "Color", {
+			Label = "Colour:",
+			Red = "pcwire_r",
+			Green = "pcwire_g",
+			Blue = "pcwire_b"
+		} )
+	end
+
+	// Mouse-wheel cycles the highlighted port while this tool is active.
+	local function GetPCWireTool( ply )
+		local wep = ply:GetActiveWeapon()
+		if ((!IsValid( wep )) || (wep:GetClass() != "gmod_tool")) then return nil end
+		local obj = wep:GetTable() && wep:GetTable():GetToolObject()
+		if ((obj) && (obj.ScrollablePCWire)) then return obj end
+		return nil
+	end
+
+	local function ScrollBind( ply, bind, pressed )
+		if (!pressed) then return end
+		local self = GetPCWireTool( ply )
+		if (!self) then return end
+		if (bind == "invnext") then return self:ScrollDown( ply:GetEyeTraceNoCursor() ) end
+		if (bind == "invprev") then return self:ScrollUp( ply:GetEyeTraceNoCursor() ) end
+	end
+
+	if (game.SinglePlayer()) then
+		timer.Simple( 5, function()
+			hook.Add( "PlayerBindPress", "pcwire_scroll", ScrollBind )
+		end )
+	else
+		hook.Add( "PlayerBindPress", "pcwire_scroll", ScrollBind )
+	end
 
 end

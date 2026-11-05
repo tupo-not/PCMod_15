@@ -163,6 +163,12 @@ PCMod Improvement TODO List
   boots an on computer back up. PCTool.SpawnEntity (the registered duplicator
   function) also restores the saved hard drive. AdvDupe2 works through the same
   vanilla duplicator hooks it wraps
+- DONE: Wire tool rebuilt with a Wiremod-style UX: the on-screen HUD lists the
+  aimed entity's ports (name/type, connected state), the mouse wheel cycles the
+  highlighted port, left-click picks it in two stages (first port, then second),
+  and a coloured beam preview shows the cable being drawn; colour/width/material
+  are configurable and the cable is created server-side after full validation
+  (type + CanWireSameType + not-connected + not-self) through PCMod.Wiring.LinkPorts
 - DONE: Duplicator re-wires port links on paste: PreEntityCopy records each
   connected port (peer entity + remote port), and PostEntityPaste re-establishes
   the ConEnt/RemotePort bookkeeping through PCMod.Wiring.LinkPorts and re-fires
