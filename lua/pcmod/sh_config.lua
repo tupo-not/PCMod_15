@@ -35,7 +35,8 @@ cfg.RPCost = { -- Costs can be overridden in sh_settings.lua or server config
 	pcmod_printer	=	100, -- Cost for a printer
 	pcmod_hdcopier	=	150, -- Cost for a hard drive copier
 	pcmod_pwcrack	=	600, -- Cost for a password cracker
-	pcmod_splitter	=	25, -- Cost for a sound splitter
+	pcmod_splitter	=	25, -- Cost for an audio amplifier
+	pcmod_switch	=	60, -- Cost for a network switch
 	["#WLSS_R"]		=	100, -- Cost for a wireless router
 	pcmod_laptop	=	350, -- Cost for a laptop
 } -- Costs can be overridden in sh_settings.lua or server config
@@ -110,7 +111,7 @@ cfg.WireTypes[ 2 ] = { Name="usb", 		ExtName="USB Port", 		SameType=false } -- U
 cfg.WireTypes[ 3 ] = { Name="network", 	ExtName="Network", 			SameType=false } -- Network Cable (Tower -> Router)
 cfg.WireTypes[ 4 ] = { Name="optic", 	ExtName="Fibre Optic", 		SameType=true } -- Fibre optic cable (Router -> Router)
 cfg.WireTypes[ 5 ] = { Name="ps2", 		ExtName="PS2 Connection", 	SameType=false } -- PS2 cable (Keyboard -> Tower)
-cfg.WireTypes[ 6 ] = { Name="minijack", ExtName="Mini-Jack Port", 	SameType=false } -- MiniJack port (Splitter -> Tower)
-cfg.WireTypes[ 7 ] = { Name="phono",	ExtName="Phono Connection",	SameType=false } -- Phono cable (Speaker -> Splitter)
+cfg.WireTypes[ 6 ] = { Name="minijack", ExtName="Mini-Jack Port", 	SameType=false } -- MiniJack port (Audio Amplifier -> Tower)
+cfg.WireTypes[ 7 ] = { Name="phono",	ExtName="Phono Connection",	SameType=false } -- Phono cable (Speaker -> Audio Amplifier)
 
 cfg.Loaded = true -- Do not edit

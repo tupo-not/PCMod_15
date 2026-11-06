@@ -1,10 +1,10 @@
 if (!PCTool) then include( "pcmod/sh_tool.lua" ) end
 
-TOOL.Name = "Splitter"
+TOOL.Name = "Audio Amplifier"
 TOOL.Class = "pcspawn_splitter"
-TOOL.Desc = "Spawns a splitter"
+TOOL.Desc = "Spawns an audio amplifier"
 TOOL.Inst = {
-	{ "Spawn a splitter" }
+	{ "Spawn an audio amplifier" }
 }
 
 TOOL.ModelList = {
@@ -14,7 +14,7 @@ TOOL.ModelList = {
 TOOL.Type = "spawner"
 TOOL.SpawnType = "Hardware"
 
-TOOL.EntName = "Splitter"
+TOOL.EntName = "Audio Amplifier"
 TOOL.EntClass = "pcmod_splitter"
 TOOL.DefaultMax = 8
 TOOL.Model = TOOL.ModelList[ 1 ]

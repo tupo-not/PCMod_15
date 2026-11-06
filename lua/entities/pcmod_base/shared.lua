@@ -1326,7 +1326,7 @@ if (SERVER) then
 				for _, link in ipairs( info.links ) do
 					local peer = GetEntByID( link.peer )
 					if (peer && peer:IsValid() && peer.IsPCMod) then
-						PCMod.Wiring.LinkPorts( self, link.port, peer, link.remote, nil, nil )
+						PCMod.Wiring.LinkPorts( self, link.port, peer, link.remote, nil )
 					end
 				end
 			end

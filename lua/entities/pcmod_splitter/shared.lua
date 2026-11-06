@@ -1,11 +1,11 @@
 // ---------------------------------------------------------------------------------------------------------
 // pcmod_splitter
-// Splitter entity - connects minijack -> phono
+// Audio Amplifier entity - connects minijack -> phono
 // ---------------------------------------------------------------------------------------------------------
 
 ENT.Type = "anim"
 ENT.Base = "pcmod_base"
-ENT.PrintName = "Splitter"
+ENT.PrintName = "Audio Amplifier"
 ENT.Class = "pcmod_splitter"
 
 ENT.ItemModel = "models/props_lab/tpplug.mdl"
