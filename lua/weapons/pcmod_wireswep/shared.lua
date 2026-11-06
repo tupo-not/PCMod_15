@@ -28,8 +28,8 @@ if (SERVER) then
 
 end
 
-SWEP.Spawnable = true
-SWEP.AdminSpawnable = true
+SWEP.Spawnable = false
+SWEP.AdminSpawnable = false
 
 SWEP.ViewModel = "models/weapons/v_toolgun.mdl"
 SWEP.WorldModel = "models/weapons/w_toolgun.mdl"
@@ -37,7 +37,7 @@ SWEP.WorldModel = "models/weapons/w_toolgun.mdl"
 util.PrecacheModel( SWEP.ViewModel )
 util.PrecacheModel( SWEP.WorldModel )
 
-SWEP.ShootSound	= Sound( "Airboat.FireGunRevDown" )
+SWEP.ShootSound	= Sound( "Toolgun.Single" )
 
 SWEP.Primary.ClipSize = -1
 SWEP.Primary.DefaultClip = -1
