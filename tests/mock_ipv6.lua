@@ -156,4 +156,20 @@ assertTrue( v6.Matches( "::ffff:192.168.5.2", "192.168.5.2", nil ), "Matches map
 assertTrue( not v6.Matches( "192.168.5.3", "192.168.5.2", nil ), "Matches rejects other" )
 assertTrue( not v6.Matches( nil, "192.168.5.2", nil ), "Matches rejects nil" )
 
+-- IPv4 LAN/netmask helpers used by the Network page.
+local v4 = PCMod.IPv4
+assertEq( v4.MaskToBits( "255.255.255.0" ), 24, "dotted /24" )
+assertEq( v4.MaskToBits( "255.255.255.192" ), 26, "dotted /26" )
+assertEq( v4.MaskToBits( "/20" ), 20, "slash prefix" )
+assertEq( v4.MaskToBits( "16" ), 16, "bare prefix" )
+assertEq( v4.MaskToBits( "255.0.255.0" ), nil, "non-contiguous mask rejected" )
+assertEq( v4.BitsToMask( 24 ), "255.255.255.0", "bits -> /24" )
+assertEq( v4.BitsToMask( 26 ), "255.255.255.192", "bits -> /26" )
+assertEq( v4.BitsToMask( 16 ), "255.255.0.0", "bits -> /16" )
+assertEq( v4.ParseLan( "192.168.5.7" ).sub, 5, "ParseLan third octet" )
+assertEq( v4.ParseLan( "192.168.5.7" ).add, 7, "ParseLan host" )
+assertTrue( v4.ParseLan( "10.0.0.1" ) == nil, "ParseLan rejects backbone" )
+assertTrue( v4.ParseLan( "192.168.5.0" ) == nil, "ParseLan rejects network address" )
+assertTrue( v4.ParseLan( "192.168.5.255" ) == nil, "ParseLan rejects broadcast" )
+
 print( "ALL IPV6 TESTS PASSED" )

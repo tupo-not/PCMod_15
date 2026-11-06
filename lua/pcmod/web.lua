@@ -1,6 +1,6 @@
 // ---------------------------------------------------------------------------------------------------------
 // web.lua - a tiny HTML subset for the in-game browser.
-// Supported: <h1>/<h2>/<h3>, <p>, <br>, <b>/<strong>, <a href="...">, <ul>/<li>,
+// Supported: <h1>/<h2>/<h3>, <p>, <br>, <hr>, <b>/<strong>, <a href="...">, <ul>/<li>,
 // <input type="text"> and <input type="submit">. Everything else is ignored.
 // ---------------------------------------------------------------------------------------------------------
 PCMod.Web = PCMod.Web or {}
@@ -61,6 +61,11 @@ PCMod.Web.Parse = function( html )
 		i = gt + 1
 
 		if ((tag == "br") || (tag == "br/")) then
+			appendLine()
+		elseif (tag == "hr") then
+			// Section separator: a full line of dashes.
+			appendLine()
+			emit( string.rep( "-", 28 ) )
 			appendLine()
 		elseif ((tag == "p") || (tag == "/p")) then
 			appendLine()

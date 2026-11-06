@@ -683,6 +683,106 @@ function PCMod.IPv4.IsBackbone( addr )
 	return (PCMod.IPv4.Parse( addr ) != nil)
 end
 
+// Parse a private LAN IPv4 (192.168.c.d) into { sub = c, add = d }.
+// Host id 0 is the network address and 255 is broadcast, so d runs 1-254.
+function PCMod.IPv4.ParseLan( addr )
+	if (type( addr ) != "string") then return nil end
+	local a, b, c, d = string.match( addr, "^(%d+)%.(%d+)%.(%d+)%.(%d+)$" )
+	if (!a) then return nil end
+	a, b, c, d = tonumber( a ), tonumber( b ), tonumber( c ), tonumber( d )
+	if ((!a) || (!b) || (!c) || (!d)) then return nil end
+	if ((a != 192) || (b != 168) || (c < 0) || (c > 255) || (d < 1) || (d > 254)) then return nil end
+	return { sub = c, add = d, full = "192.168." .. c .. "." .. d }
+end
+
+// Netmask text ("255.255.255.0", "/24" or "24") -> prefix bits (0-32), or nil.
+function PCMod.IPv4.MaskToBits( mask )
+	if (type( mask ) == "number") then
+		local n = math.floor( mask )
+		if ((n >= 0) && (n <= 32)) then return n end
+		return nil
+	end
+	if (type( mask ) != "string") then return nil end
+	local s = string.Trim( mask )
+	local pref = string.match( s, "^/?(%d+)$" )
+	if (pref) then
+		local n = tonumber( pref )
+		if ((n >= 0) && (n <= 32)) then return n end
+		return nil
+	end
+	local a, b, c, d = string.match( s, "^(%d+)%.(%d+)%.(%d+)%.(%d+)$" )
+	if (!a) then return nil end
+	a, b, c, d = tonumber( a ), tonumber( b ), tonumber( c ), tonumber( d )
+	local bits = 0
+	local zeroSeen = false
+	for _, oct in ipairs( { a, b, c, d } ) do
+		if ((!oct) || (oct < 0) || (oct > 255)) then return nil end
+		for i = 7, 0, -1 do
+			local bit = math.floor( oct / (2 ^ i) ) % 2
+			if (bit == 1) then
+				if (zeroSeen) then return nil end
+				bits = bits + 1
+			else
+				zeroSeen = true
+			end
+		end
+	end
+	return bits
+end
+
+// Prefix bits (0-32) -> dotted netmask ("255.255.255.0").
+function PCMod.IPv4.BitsToMask( bits )
+	local n = math.floor( tonumber( bits ) or 0 )
+	if (n < 0) then n = 0 end
+	if (n > 32) then n = 32 end
+	local octs = {}
+	for i = 1, 4 do
+		local b = n - ((i - 1) * 8)
+		if (b < 0) then b = 0 end
+		if (b > 8) then b = 8 end
+		octs[ i ] = 256 - (2 ^ (8 - b))
+	end
+	return table.concat( octs, "." )
+end
+
+// ---------------------------------------------------------------------------------------------------------
+// MAC addresses
+// ---------------------------------------------------------------------------------------------------------
+// Network hardware is identified by a random, locally administered MAC address.
+// The address is generated once when the entity spawns and is saved by the
+// duplicator (BuildDupeInfo/ApplyDupeInfo in pcmod_base).
+PCMod.MAC = {}
+PCMod.MAC.BROADCAST = "FF:FF:FF:FF:FF:FF"
+
+local MAC_PATTERN = "^%x%x:%x%x:%x%x:%x%x:%x%x:%x%x$"
+
+function PCMod.MAC.Random()
+	return string.format( "%02X:%02X:%02X:%02X:%02X:%02X",
+		math.random( 0, 255 ), math.random( 0, 255 ), math.random( 0, 255 ),
+		math.random( 0, 255 ), math.random( 0, 255 ), math.random( 0, 255 ) )
+end
+
+// Returns the canonical upper-case form, or nil when the string is not a MAC.
+function PCMod.MAC.Normalize( mac )
+	if ((type( mac ) != "string") || (!string.match( mac, MAC_PATTERN ))) then return nil end
+	return string.upper( mac )
+end
+
+function PCMod.MAC.IsValid( mac )
+	return (PCMod.MAC.Normalize( mac ) != nil)
+end
+
+function PCMod.MAC.IsBroadcast( mac )
+	local m = PCMod.MAC.Normalize( mac )
+	return (m != nil) && (m == PCMod.MAC.BROADCAST)
+end
+
+function PCMod.MAC.Equal( a, b )
+	local na = PCMod.MAC.Normalize( a )
+	local nb = PCMod.MAC.Normalize( b )
+	return (na != nil) && (na == nb)
+end
+
 // ---------------------------------------------------------------------------------------------------------
 // Count - Returns a count of total characters found in a string
 // ---------------------------------------------------------------------------------------------------------

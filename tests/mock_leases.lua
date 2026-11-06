@@ -5,6 +5,7 @@ PCMod = {
     Network = { Packets = {} },
     DeriveDriver = function() return {} end,
 }
+math.Clamp = function( v, a, b ) if (v < a) then return a end if (v > b) then return b end return v end
 
 dofile( "pcmod_sh_common.lua" )
 dofile( "pcmod_drv_router.lua" )
@@ -16,20 +17,46 @@ local function assertTrue( v, m )
     if (not v) then error( "FAILED: " .. m, 2 ) end
 end
 
+local routData = { IP = { UpBB = 3, LanID = 5 } }
 local routerEnt = {}
-function routerEnt:Data() return { IP = { UpBB = 3, LanID = 5 } } end
+function routerEnt:Data() return routData end
 function routerEnt:GetClass() return "pcmod_router" end
 function routerEnt:GetBSubnet() return 3 end
+function routerEnt:EntIndex() return 1 end
+// The real entity re-syncs its address text here; the mock just records it.
+function routerEnt:SetSubnet( s ) routData.IP.Sub = s end
+function routerEnt:SetIP( h ) routData.IP.Add = h end
 DRV.Entity = routerEnt
 
 local function mkPC( idx )
-    local o = { idx = idx, sub = false, ip = false, upbb = false, lanid = false }
+    local o = { idx = idx, sub = false, ip = false, upbb = false, lanid = false, extras = {} }
+    o.ipdata = { Extra = o.extras }
     function o:IsValid() return true end
     function o:EntIndex() return self.idx end
-    function o:SetSubnet( s ) self.sub = s end
-    function o:SetIP( h ) self.ip = h end
+    function o:Data() return { IP = self.ipdata } end
+    function o:SetSubnet( s ) self.sub = s self.ipdata.Sub = s end
+    function o:SetIP( h ) self.ip = h self.ipdata.Add = h end
     function o:SetUpBB( b ) self.upbb = b end
     function o:SetLanID( n ) self.lanid = n end
+    function o:AddExtraIP( s, a, ub, lid, r )
+        for _, ex in ipairs( self.extras ) do
+            if (ex.Sub == s && ex.Add == a) then return ex end
+        end
+        local ex = { Sub = s, Add = a, UpBB = ub or 0, LanID = lid or 0, Router = r }
+        self.extras[ #self.extras + 1 ] = ex
+        return ex
+    end
+    function o:ReleaseExtraIP( s, a )
+        for i, ex in ipairs( self.extras ) do
+            if (ex.Sub == s && ex.Add == a) then table.remove( self.extras, i ) return true end
+        end
+        return false
+    end
+    function o:UpdateExtraIPRouter( r, ub, lid )
+        for _, ex in ipairs( self.extras ) do
+            if (ex.Router == r) then ex.UpBB = ub or 0 ex.LanID = lid or 0 end
+        end
+    end
     return o
 end
 
@@ -54,6 +81,7 @@ assertEq( DRV:AssignLease( mkPC( 20 ) ), 3, "released lease reused" )
 PCMod.Cfg.LanNetmask = 16
 PCMod.Cfg.DHCPStart = 300
 PCMod.Cfg.DHCPEnd = 300
+routData.RouterCfg = {}
 DRV.Leases = {}
 local big = mkPC( 30 )
 assertEq( DRV:AssignLease( big ), 300, "host 300 from a /16 pool" )
@@ -70,6 +98,7 @@ end
 PCMod.Cfg.LanNetmask = 24
 PCMod.Cfg.DHCPStart = 2
 PCMod.Cfg.DHCPEnd = 5
+routData.RouterCfg = {}
 DRV.Leases = {}
 local stat = mkStaticPC( 40, "192.168.5.7" )
 stat:SetSubnet( 5 )
@@ -78,5 +107,135 @@ assertEq( DRV:AssignLease( stat ), 2, "static PC still reserves a lease slot" )
 assertEq( stat.sub, 5, "static PC keeps its subnet" )
 assertEq( stat.ip, 7, "static PC keeps its host" )
 assertEq( stat.upbb, 3, "static PC still gets backbone info" )
+DRV:ReleaseLease( stat )
+assertEq( stat.sub, 5, "static subnet survives lease release" )
+assertEq( stat.ip, 7, "static address survives lease release" )
+
+-- A laptop wired to this router that joins and leaves Wi-Fi keeps its lease
+-- (and address): Wi-Fi shares the lease the cable already earned.
+DRV.Leases = {}
+DRV.WirelessClients = {}
+DRV.LAN = {}
+local lap = mkPC( 50 )
+DRV.LAN[ 1 ] = { Connected = true, ConEnt = lap }
+assertEq( DRV:AssignLease( lap ), 2, "wired lease" )
+assertEq( lap.ip, 2, "wired address" )
+assertEq( lap.ipdata.Router, 1, "primary lease owner recorded" )
+assertEq( DRV:AddWirelessClient( lap ), "assigned", "wired client joins wi-fi" )
+assertEq( lap.ip, 2, "joining wi-fi keeps the wired address" )
+assertEq( #lap.extras, 0, "same-router wi-fi does not add a secondary address" )
+DRV:RemoveWirelessClient( lap )
+assertTrue( DRV.Leases[ 2 ] == lap, "wired client keeps its lease after leaving wi-fi" )
+assertEq( lap.ip, 2, "wired client keeps its address after leaving wi-fi" )
+
+-- A pure Wi-Fi client that leaves loses both the lease and the address.
+DRV.LAN[ 1 ] = nil
+local air = mkPC( 51 )
+assertEq( DRV:AddWirelessClient( air ), "assigned", "wi-fi-only client joins" )
+assertEq( air.ip, 3, "wi-fi-only client leased" )
+DRV:RemoveWirelessClient( air )
+assertTrue( DRV.Leases[ 3 ] == nil, "wi-fi-only lease released" )
+assertEq( air.ip, false, "wi-fi-only address cleared" )
+
+-- A device already leased on ANOTHER router gets a SECONDARY address here;
+-- leaving our Wi-Fi removes only that secondary, its primary stays intact.
+local roam = mkPC( 52 )
+roam:SetSubnet( 0 )
+roam:SetIP( 9 )
+roam.ipdata.Router = 777
+assertEq( DRV:AddWirelessClient( roam ), "assigned", "roaming client joins" )
+assertEq( roam.ip, 9, "roaming client keeps its primary address" )
+assertEq( #roam.extras, 1, "roaming client gains a secondary address" )
+assertEq( roam.extras[ 1 ].Add, 3, "secondary lease host" )
+assertEq( roam.extras[ 1 ].Router, 1, "secondary lease owner recorded" )
+DRV:RemoveWirelessClient( roam )
+assertTrue( DRV.Leases[ 3 ] == nil, "roaming lease bookkeeping dropped" )
+assertEq( #roam.extras, 0, "roaming secondary address removed" )
+assertEq( roam.ip, 9, "roaming primary address untouched" )
+
+-- Netmask + third octet settings renumber existing leases onto the new
+-- network, and the pool is clamped to the selected mask.
+DRV.Leases = {}
+DRV.WirelessClients = {}
+DRV.LAN = {}
+routData.RouterCfg = {}
+PCMod.Cfg.LanNetmask = 24
+PCMod.Cfg.DHCPStart = 2
+PCMod.Cfg.DHCPEnd = 254
+local nm = mkPC( 60 )
+assertEq( DRV:AssignLease( nm ), 2, "lease on the default /24 network" )
+assertEq( nm.sub, 0, "default third octet is 0" )
+assertEq( nm.ip, 2, "default /24 host" )
+DRV:SetLanNet( 7 )
+assertEq( routData.RouterCfg.LanNet, 7, "third octet stored" )
+assertEq( nm.sub, 7, "lease renumbered onto 192.168.7.0/24" )
+assertEq( nm.ip, 2, "host id kept while renumbering" )
+assertEq( DRV:GetLanPrefix(), "192.168.7.0/24", "LAN prefix reports the third octet" )
+assertEq( DRV:GetLanNetmask(), 24, "netmask getter" )
+
+DRV:SetLanNetmask( 16 )
+assertEq( DRV:GetLanNetmask(), 16, "netmask switched to /16" )
+assertEq( DRV:GetLanPrefix(), "192.168.0.0/16", "/16 prefix" )
+routData.RouterCfg.DHCPStart = 300
+routData.RouterCfg.DHCPEnd = 300
+DRV:ReleaseLease( nm )
+assertEq( DRV:AssignLease( nm ), 300, "lease from a /16 pool" )
+assertEq( nm.sub, 1, "/16 host 300 -> third octet 1" )
+assertEq( nm.ip, 44, "/16 host 300 -> fourth octet 44" )
+
+-- Switching back to /24 clamps the pool and renumbers the leases.
+routData.RouterCfg.DHCPStart = 2
+routData.RouterCfg.DHCPEnd = 65534
+DRV:SetLanNetmask( 24 )
+assertEq( routData.RouterCfg.DHCPStart, 2, "pool start kept in /24 range" )
+assertEq( routData.RouterCfg.DHCPEnd, 254, "pool end clamped into /24 range" )
+assertEq( nm.sub, 7, "lease renumbered back onto the /24 network" )
+assertEq( nm.ip, 2, "renumbered host id" )
+assertEq( DRV:GetLanNet(), 7, "third octet kept while changing mask" )
+
+-- Arbitrary masks in 16-32. /25 halves the block, /20 spans several /24s and
+-- /30 leaves exactly one client address.
+routData.RouterCfg = {}
+DRV.Leases = {}
+PCMod.Cfg.LanNetmask = 24
+DRV:SetLanNetmask( 25 )
+assertEq( DRV:GetLanNetmask(), 25, "/25 getter" )
+assertEq( DRV:GetLanPrefix(), "192.168.0.0/25", "/25 prefix" )
+assertEq( DRV:PoolMax(), 126, "/25 last host" )
+routData.RouterCfg.DHCPStart = 2
+routData.RouterCfg.DHCPEnd = 254
+DRV:ClampDHCPPool()
+assertEq( routData.RouterCfg.DHCPEnd, 126, "/25 pool clamps to the block" )
+local m25 = mkPC( 70 )
+assertEq( DRV:AssignLease( m25 ), 2, "/25 first lease" )
+assertEq( m25.sub, 0, "/25 third octet" )
+assertEq( m25.ip, 2, "/25 fourth octet" )
+
+DRV.Leases = {}
+routData.RouterCfg.DHCPStart = 2
+routData.RouterCfg.DHCPEnd = 300
+DRV:SetLanNetmask( 20 )
+assertEq( DRV:GetLanNetmask(), 20, "/20 getter" )
+assertEq( DRV:GetLanPrefix(), "192.168.0.0/20", "/20 prefix" )
+assertEq( DRV:PoolMax(), 4094, "/20 last host" )
+assertEq( routData.RouterCfg.DHCPEnd, 300, "/20 keeps a large pool" )
+local m20 = mkPC( 71 )
+assertEq( DRV:AssignLease( m20 ), 2, "/20 first lease" )
+assertEq( m20.sub, 0, "/20 low third octet" )
+assertEq( m20.ip, 2, "/20 low fourth octet" )
+
+DRV.Leases = {}
+routData.RouterCfg.DHCPStart = 2
+routData.RouterCfg.DHCPEnd = 300
+DRV:SetLanNetmask( 30 )
+assertEq( DRV:GetLanNetmask(), 30, "/30 getter" )
+assertEq( DRV:GetLanPrefix(), "192.168.0.0/30", "/30 prefix" )
+assertEq( DRV:PoolMax(), 2, "/30 single client id" )
+assertEq( routData.RouterCfg.DHCPEnd, 2, "/30 pool clamps to one client" )
+local m30 = mkPC( 72 )
+local m30b = mkPC( 73 )
+assertEq( DRV:AssignLease( m30 ), 2, "/30 first lease" )
+assertEq( m30.ip, 2, "/30 client address" )
+assertEq( DRV:AssignLease( m30b ), nil, "/30 pool exhausted" )
 
 print( "ALL LEASE TESTS PASSED" )

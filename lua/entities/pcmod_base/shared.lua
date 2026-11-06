@@ -161,6 +161,12 @@ if (SERVER) then
 			tmp.IP.Sub = false
 			tmp.IP.Full = false
 			tmp.IP.V6 = false
+			// EntIndex of the router that handed out the primary DHCP lease.
+			tmp.IP.Router = false
+			// Secondary addresses: leases from other routers this device is
+			// also linked to (a laptop that is cabled to one router and joined
+			// to another over Wi-Fi holds one address per network).
+			tmp.IP.Extra = {}
 			tmp.IP.Back = {}
 			tmp.IP.Back.Add = false
 			tmp.IP.Back.Sub = false
@@ -261,6 +267,7 @@ if (SERVER) then
 					PCMod.Msg( "This packet was directed at us! Port: " .. packet.Port, true )
 
 					PCMod.Network.Packets[ pid ].Delivered = true
+					packet.ViaWireless = false
 					
 					// Forward data to network driver
 					if (self.IsComputer) then
@@ -405,6 +412,79 @@ if (SERVER) then
 			return PCMod.Data[ self:EntIndex() ].IP.Back.Full
 		end
 
+		// -----------------------------------------------------------------------------------------------------
+		// Secondary addresses. A device can hold one lease per router it is
+		// linked to: the primary (IP.Sub/IP.Add, set by the first router that
+		// leased it) plus any number of secondaries handed out by other
+		// routers. Secondaries carry their own backbone / LAN ids so their
+		// emulated IPv6 form is derived independently of the primary.
+		// -----------------------------------------------------------------------------------------------------
+
+		function ENT:ExtraIPs()
+			local ip = self:Data().IP
+			ip.Extra = ip.Extra or {}
+			return ip.Extra
+		end
+
+		// Record a secondary lease. Returns the entry (existing one when the
+		// address is already present).
+		function ENT:AddExtraIP( sub, add, upbb, lanid, router )
+			if (!add) then return nil end
+			local list = self:ExtraIPs()
+			for _, ex in ipairs( list ) do
+				if ((ex.Sub == sub) && (ex.Add == add)) then return ex end
+			end
+			local ex = {
+				Sub = sub,
+				Add = add,
+				UpBB = upbb or 0,
+				LanID = lanid or 0,
+				Router = router,
+			}
+			list[ #list + 1 ] = ex
+			return ex
+		end
+
+		// Drop the secondary with this address. Returns true when found.
+		function ENT:ReleaseExtraIP( sub, add )
+			local list = self:ExtraIPs()
+			for i, ex in ipairs( list ) do
+				if ((ex.Sub == sub) && (ex.Add == add)) then
+					table.remove( list, i )
+					return true
+				end
+			end
+			return false
+		end
+
+		// Re-number the secondary(s) leased from `router` (its LAN /64 moved).
+		function ENT:UpdateExtraIPRouter( router, upbb, lanid )
+			local changed = false
+			for _, ex in ipairs( self:ExtraIPs() ) do
+				if (ex.Router == router) then
+					ex.UpBB = upbb or 0
+					ex.LanID = lanid or 0
+					changed = true
+				end
+			end
+			return changed
+		end
+
+		// Every secondary address this device answers on (one per additional
+		// router it is linked to).
+		// Each entry: { IPv4 = "192.168.s.h", IPv6 = "fd00:..", Router = entindex }.
+		function ENT:GetExtraAddresses()
+			local out = {}
+			for _, ex in ipairs( self:ExtraIPs() ) do
+				out[ #out + 1 ] = {
+					IPv4 = "192.168." .. tostring( ex.Sub ) .. "." .. tostring( ex.Add ),
+					IPv6 = PCMod.IPv6.Format( { 0xfd00, ex.UpBB or 0, 0, ex.LanID or 0, 0, 0, 0, (ex.Sub or 0) * 256 + (ex.Add or 0) } ),
+					Router = ex.Router,
+				}
+			end
+			return out
+		end
+
 		function ENT:SetSubnet( subnet )
 			PCMod.Data[ self:EntIndex() ].IP.Sub = subnet
 			self:SetIPText()
@@ -430,11 +510,14 @@ if (SERVER) then
 				c, d = tonumber( c ), tonumber( d )
 				if ((!c) || (!d) || (c < 0) || (c > 255) || (d < 1) || (d > 254)) then return false end
 				ip.Static = "192.168." .. c .. "." .. d
+				// A static address is not owned by any DHCP router.
+				ip.Router = false
 				self:SetSubnet( c )
 				self:SetIP( d )
 				return true
 			end
 			ip.Static = false
+			ip.Router = false
 			self:SetSubnet( false )
 			self:SetIP( false )
 			return true
@@ -627,15 +710,25 @@ if (SERVER) then
 		end
 
 		// True when addr (IPv4, emulated IPv6, mapped IPv6 or loopback) points
-		// at this entity's LAN or backbone address.
+		// at this entity's LAN or backbone address (primary or secondary).
 		function ENT:IsAddressedTo( addr )
 			if ((!addr) || (type( addr ) != "string")) then return false end
 			if (PCMod.IPv6.Matches( addr, self:GetFullIP(), self:GetIPv6() )) then return true end
 			if (PCMod.IPv6.Matches( addr, self:GetFullBIP(), self:GetBIPv6() )) then return true end
+			// Secondary addresses (leases from other routers).
+			for _, ex in ipairs( self:ExtraIPs() ) do
+				local full = "192.168." .. tostring( ex.Sub ) .. "." .. tostring( ex.Add )
+				local v6 = PCMod.IPv6.Format( { 0xfd00, ex.UpBB or 0, 0, ex.LanID or 0, 0, 0, 0, (ex.Sub or 0) * 256 + (ex.Add or 0) } )
+				if (PCMod.IPv6.Matches( addr, full, v6 )) then return true end
+			end
 			return false
 		end
-		
+
 		function ENT:GetSourceAddress( dest )
+			// Answering on one of our own addresses (multi-homed devices
+			// included): source from the exact address that was contacted so
+			// the reply goes back out on the same identity.
+			if (dest && self:IsAddressedTo( dest )) then return dest end
 			// Pick the routable source: IPv6 for IPv6 destinations (the WAN is
 			// IPv6-only), private IPv4 for anything LAN-local.
 			if (dest && PCMod.IPv6.IsIPv6( dest )) then
@@ -1438,6 +1531,8 @@ if (SERVER) then
 				if (rdrv && rdrv.SetWireless && (dt.IsWireless != nil)) then
 					rdrv:SetWireless( dt.IsWireless == true )
 				end
+				// Move the restored gateway onto the configured LAN network.
+				if (rdrv && rdrv.ApplyLanAddress) then rdrv:ApplyLanAddress() end
 			end
 
 			// Boot the computer back up if it was running when saved.

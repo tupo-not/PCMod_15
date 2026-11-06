@@ -177,9 +177,10 @@ function PCMod.Network.RegisterRouter( ent )
 		rtr.Ent:SetBSubnet( id )
 		rtr.Ent:SetBIP( 0 )
 	else
-		// A LAN router owns a private, isolated LAN. It does not consume a
-		// globally-unique subnet: every router's LAN is 192.168.0.0/24 (or /16),
-		// and the LAN knows nothing about the wider network.
+		// A LAN router owns a private, isolated LAN inside 192.168.0.0/16. It
+		// does not consume a globally-unique subnet: every router's LAN can
+		// overlap with every other router's, and the LAN knows nothing about
+		// the wider network.
 		rtr.Ent:SetSubnet( 0 )
 		rtr.Ent:SetIP( 1 )
 	end

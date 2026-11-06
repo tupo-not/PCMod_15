@@ -52,6 +52,7 @@ function DEV:Paint( x, y, w, h )
 		self:RenderFrame( self.Th, "System Information", x+(w*0.56), y+(h*0.1), w*0.4, h*0.88, Color( 255, 255, 255, 255 ) )
 		local info = self.Info or {}
 		local lines = {
+			"MAC: " .. tostring( info.MAC or "unassigned" ),
 			"IPv4: " .. tostring( info.IPv4 or "unassigned" ),
 			"IPv6: " .. tostring( info.IPv6 or "unassigned" ),
 			"Prefix: " .. tostring( info.Prefix or "none" ),

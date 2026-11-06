@@ -122,6 +122,24 @@ assertTrue( not ent:IsAddressedTo( "fd00:3:0:5::4" ), "other LAN IPv6 host rejec
 assertTrue( not ent:IsAddressedTo( "::1" ), "loopback is not this entity" )
 assertTrue( not ent:IsAddressedTo( nil ), "nil rejected" )
 
+-- Secondary addresses (multi-homed device): another router's lease.
+ent:AddExtraIP( 0, 9, 4, 6, 42 )
+assertEq( ent:ExtraIPs()[ 1 ].Sub, 0, "secondary subnet stored" )
+assertEq( ent:ExtraIPs()[ 1 ].Add, 9, "secondary host stored" )
+assertTrue( ent:IsAddressedTo( "192.168.0.9" ), "secondary IPv4 matches" )
+assertTrue( ent:IsAddressedTo( "fd00:4:0:6::9" ), "secondary IPv6 matches" )
+assertTrue( not ent:IsAddressedTo( "192.168.0.8" ), "other secondary host rejected" )
+-- Replies to a secondary address are sourced from that identity.
+assertEq( ent:GetSourceAddress( "192.168.0.9" ), "192.168.0.9", "reply sourced from secondary IPv4" )
+assertEq( ent:GetSourceAddress( "fd00:4:0:6::9" ), "fd00:4:0:6::9", "reply sourced from secondary IPv6" )
+-- A secondary renumbers with its owning router.
+ent:UpdateExtraIPRouter( 42, 5, 8 )
+assertTrue( ent:IsAddressedTo( "fd00:5:0:8::9" ), "secondary IPv6 renumbered" )
+assertTrue( not ent:IsAddressedTo( "fd00:4:0:6::9" ), "old secondary IPv6 gone" )
+assertEq( ent:GetExtraAddresses()[ 1 ].IPv4, "192.168.0.9", "secondary listed for the UI" )
+assertTrue( ent:ReleaseExtraIP( 0, 9 ), "secondary released" )
+assertTrue( not ent:IsAddressedTo( "192.168.0.9" ), "released secondary no longer matches" )
+
 -- Subnet membership (what a router uses for on-link decisions).
 assertTrue( ent:IsInIPv6Subnet( "fd00:3:0:5::99" ), "LAN prefix contains other host" )
 assertTrue( not ent:IsInIPv6Subnet( "fd00:3:0:6::3" ), "other LAN subnet rejected" )

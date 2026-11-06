@@ -35,7 +35,16 @@ function PROG:DoCommand( com, args )
 		end
 		self.DeviceData.St = "IPv4: " .. tostring( ipv4 )
 		self.DeviceData.IP = "IPv6: " .. tostring( os:GetIPv6() or "none" )
-		self.DeviceData.Tg = "Subnet: " .. tostring( os:GetIPv6Prefix() or "none" )
+		local subnet = "Subnet: " .. tostring( os:GetIPv6Prefix() or "none" )
+		// Secondary addresses: one per extra router this device is linked to.
+		local alts = {}
+		if (os.GetExtraAddresses) then
+			for _, a in ipairs( os:GetExtraAddresses() ) do
+				alts[ #alts + 1 ] = a.IPv4
+			end
+		end
+		if (#alts > 0) then subnet = subnet .. " | Alt: " .. table.concat( alts, ", " ) end
+		self.DeviceData.Tg = subnet
 		self:UpdateSS()
 		return
 	end
@@ -101,6 +110,7 @@ function PROG:Trace( target )
 	self.DeviceData.St = 21 -- Waiting for response...
 	self.DeviceData.IP = target
 	self.DeviceData.Tg = ""
+	self.DeviceData.Tr = {}
 	self:UpdateSS()
 	self.T_TimeOut = CurTime()+5
 	self.Tracing = true

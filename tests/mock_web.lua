@@ -37,6 +37,11 @@ local plain = PCMod.Web.Parse( "line one\nline two<br>line three" )
 assertEq( #plain, 3, "newline + br split lines" )
 assertEq( plain[ 2 ][ 1 ].t, "line two", "newline line kept" )
 
+-- <hr> renders its own separator line.
+local hrdoc = PCMod.Web.Parse( "before<hr>after" )
+assertEq( #hrdoc, 3, "hr splits lines" )
+assertEq( hrdoc[ 2 ][ 1 ].t, string.rep( "-", 28 ), "hr separator text" )
+
 -- Inline <input> text + submit flow in their paragraph as spans.
 local fdoc = PCMod.Web.Parse( '<p><b>Name:</b> <input type="text" name="x" value="7"><input type="submit" value="Save"></p>' )
 assertEq( #fdoc[ 1 ], 4, "label + space + input + submit spans" )

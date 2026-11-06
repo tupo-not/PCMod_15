@@ -57,6 +57,7 @@ function ent:GetIPv6Prefix() return self.LanPrefix end
 function ent:GetBIPv6Prefix() return self.BackPrefix end
 function ent:GetIPv6() return false end
 function ent:GetBIPv6() return false end
+function ent:GetMAC() return "AA:BB:CC:DD:EE:FF" end
 DRV.Entity = ent
 
 local function assertEq( a, b, msg )
@@ -118,13 +119,16 @@ assertTrue( not r.LAN, "other backbone is not LAN" )
 assertTrue( not r.Backbone, "other backbone is not ours" )
 
 -- Router web page (the HTTP server a future browser will fetch).
+local routData = { WirePass = "abc", IsWireless = true, IP = { UpBB = 3, LanID = 5 } }
 function ent:GetClass() return "pcmod_router" end
 function ent:GetFullIP() return "192.168.5.1" end
 function ent:GetIPv6() return "fd00:3:0:5::1" end
 function ent:GetIPv6Prefix() return "fd00:3:0:5::/64" end
 function ent:GetBSubnet() return 3 end
 function ent:GetSourceAddress() return "192.168.5.1" end
-local routData = { WirePass = "abc", IsWireless = true }
+// The real entity re-syncs its address text here; the mock just records it.
+function ent:SetSubnet( s ) routData.IP = routData.IP or {} routData.IP.Sub = s end
+function ent:SetIP( h ) routData.IP = routData.IP or {} routData.IP.Add = h end
 function ent:Data() return routData end
 PCMod.Cfg.DHCPStart = 2
 PCMod.Cfg.DHCPEnd = 250
@@ -144,6 +148,79 @@ assertTrue( string.find( wifipage, "Wireless", 1, true ) == nil, "wifi page uses
 local lanpage = DRV:GetWebPage( "/lan" )
 assertTrue( string.find( lanpage, "name=\"dhcpstart\"", 1, true ) ~= nil, "lan page has DHCP start field" )
 assertTrue( string.find( lanpage, "NAT:", 1, true ) ~= nil, "lan page shows NAT" )
+assertTrue( string.find( lanpage, "Netmask", 1, true ) ~= nil, "lan page shows the netmask row" )
+assertTrue( string.find( lanpage, "192.168.0.2", 1, true ) ~= nil, "lan page shows the dotted pool start" )
+assertTrue( string.find( lanpage, "192.168.0.0/24", 1, true ) ~= nil, "lan page shows the /24 network" )
+
+-- Netmask + third octet query settings, with the pool clamped to the mask.
+DRV:ApplyWebQuery( "?netmask=16&dhcpend=99999" )
+assertEq( routData.RouterCfg.LanNetmask, 16, "netmask query applied" )
+assertEq( routData.RouterCfg.DHCPEnd, 65534, "pool end clamped to /16 maximum" )
+local lan16 = DRV:GetWebPage( "/lan" )
+assertTrue( string.find( lan16, "192.168.0.0/16", 1, true ) ~= nil, "lan page shows the /16 network" )
+DRV:ApplyWebQuery( "?netmask=24&lannet=7" )
+assertEq( routData.RouterCfg.LanNetmask, 24, "netmask query back to /24" )
+assertEq( routData.RouterCfg.LanNet, 7, "third octet query applied" )
+assertEq( routData.RouterCfg.DHCPEnd, 254, "pool end clamped back to /24 maximum" )
+local lan7 = DRV:GetWebPage( "/lan" )
+assertTrue( string.find( lan7, "192.168.7.0/24", 1, true ) ~= nil, "lan page shows the custom /24 network" )
+local home7 = DRV:GetWebPage( "" )
+assertTrue( string.find( home7, "192.168.7.", 1, true ) ~= nil, "home page pool uses the third octet" )
+assertTrue( string.find( home7, "/24", 1, true ) ~= nil, "home page shows the LAN prefix" )
+DRV:ApplyWebQuery( "?lannet=0" )
+assertEq( routData.RouterCfg.LanNet, 0, "third octet reset" )
+
+-- In /24 mode a full dotted pool bound also selects the third octet.
+DRV:ApplyWebQuery( "?dhcpstart=192.168.9.20&dhcpend=192.168.9.40" )
+assertEq( routData.RouterCfg.LanNet, 9, "dotted pool bound selects the third octet" )
+assertEq( routData.RouterCfg.DHCPStart, 20, "dotted pool start keeps its host id" )
+assertEq( routData.RouterCfg.DHCPEnd, 40, "dotted pool end keeps its host id" )
+local lan9 = DRV:GetWebPage( "/lan" )
+assertTrue( string.find( lan9, "192.168.9.20", 1, true ) ~= nil, "lan page shows the dotted pool start" )
+assertTrue( string.find( lan9, "192.168.9.40", 1, true ) ~= nil, "lan page shows the dotted pool end" )
+
+-- Typing the gateway address (192.168.4.1) as a bound sets the octet to 4,
+-- while .1 stays reserved for the router and clients start at .2.
+DRV:ApplyWebQuery( "?dhcpstart=192.168.4.1&dhcpend=192.168.4.100" )
+assertEq( routData.RouterCfg.LanNet, 4, "gateway-style pool bound sets the third octet" )
+assertEq( routData.RouterCfg.DHCPStart, 2, "gateway address .1 is reserved for the router" )
+assertEq( routData.RouterCfg.DHCPEnd, 100, "dotted pool end keeps its host id" )
+DRV:ApplyWebQuery( "?lannet=0&dhcpstart=2&dhcpend=254" )
+assertEq( routData.RouterCfg.LanNet, 0, "network reset after dotted pool test" )
+
+-- Arbitrary netmask sizes via the web page (16-32).
+DRV:ApplyWebQuery( "?netmask=26" )
+assertEq( routData.RouterCfg.LanNetmask, 26, "/26 query applied" )
+assertEq( routData.RouterCfg.DHCPEnd, 62, "/26 pool clamps to the block" )
+assertEq( DRV:GetLanPrefix(), "192.168.0.0/26", "/26 prefix" )
+local lan26 = DRV:GetWebPage( "/lan" )
+assertTrue( string.find( lan26, "name=\"netmask\"", 1, true ) ~= nil, "lan page has the netmask field" )
+assertTrue( string.find( lan26, "192.168.0.0/26", 1, true ) ~= nil, "lan page shows the /26 network" )
+assertTrue( string.find( lan26, "192.168.0.2", 1, true ) ~= nil, "lan page shows the /26 pool start" )
+
+-- A dotted pool bound can pick a network inside the larger address space
+-- (192.168.4.x is valid inside 192.168.0.0/20).
+DRV:ApplyWebQuery( "?netmask=20&dhcpstart=192.168.4.2&dhcpend=192.168.4.200" )
+assertEq( routData.RouterCfg.LanNetmask, 20, "/20 query applied" )
+assertEq( DRV:GetLanPrefix(), "192.168.0.0/20", "/20 prefix" )
+assertEq( routData.RouterCfg.DHCPStart, 1026, "/20 dotted start is a host offset" )
+assertEq( routData.RouterCfg.DHCPEnd, 1224, "/20 dotted end is a host offset" )
+
+-- Quick /30 link (no pool fields) clamps the pool to one client.
+DRV:ApplyWebQuery( "?netmask=30" )
+assertEq( DRV:GetLanPrefix(), "192.168.0.0/30", "/30 prefix" )
+assertEq( routData.RouterCfg.DHCPEnd, 2, "/30 pool clamps to one client" )
+
+DRV:ApplyWebQuery( "?netmask=24&lannet=0&dhcpstart=2&dhcpend=254" )
+assertEq( routData.RouterCfg.LanNetmask, 24, "netmask reset to /24" )
+
+-- A dotted last bound alone also picks the network.
+DRV:ApplyWebQuery( "?dhcpstart=2&dhcpend=192.168.12.50" )
+assertEq( routData.RouterCfg.LanNet, 12, "dotted last bound sets the network" )
+assertEq( routData.RouterCfg.DHCPStart, 2, "bare first bound stays a host id" )
+assertEq( routData.RouterCfg.DHCPEnd, 50, "dotted last bound keeps its host id" )
+DRV:ApplyWebQuery( "?lannet=0&dhcpstart=2&dhcpend=254" )
+assertEq( routData.RouterCfg.LanNet, 0, "network reset after the last-bound test" )
 
 local fwpage = DRV:GetWebPage( "/firewall" )
 assertTrue( string.find( fwpage, "Firewall", 1, true ) ~= nil, "firewall page renders" )
@@ -221,6 +298,95 @@ local e2 = DRV:AllocEph()
 assertTrue( e1 ~= e2, "ephemeral ports differ" )
 assertTrue( e1 >= 40000 and e1 <= 65000, "ephemeral in PAT range" )
 
+-- A router answers a ping addressed to its own address, replying from the
+-- address that was pinged and preserving the source port (NAT-safe).
+PCMod.Msg = function() end
+local pingDrv = {}
+for k, v in pairs( DRV ) do pingDrv[ k ] = v end
+local pingEnt = {}
+function pingEnt:Memory() return {} end
+function pingEnt:UpdateMemory() end
+function pingEnt:Data() return {} end
+function pingEnt:IsAddressedTo( a ) return a == "10.0.1.4" end
+pingDrv.Entity = pingEnt
+local replied
+pingDrv.Process = function( self, data ) replied = data return true end
+PCMod.Network.Packets[ 200 ] = {
+	Source = "10.0.1.3", Dest = "10.0.1.4", Port = 0, SourcePort = 40001,
+	Body = { "netPing", "nettools" },
+}
+pingDrv:ProcessPacket( 200, nil, nil )
+assertTrue( replied and replied[ 1 ] == "sendpacket", "router replies to a ping" )
+assertEq( replied[ 2 ][ 1 ], "10.0.1.4", "ping reply comes from the pinged address" )
+assertEq( replied[ 2 ][ 2 ], "10.0.1.3", "ping reply goes back to the sender" )
+assertEq( replied[ 2 ][ 3 ], 40001, "ping reply preserves the source port for NAT" )
+assertEq( replied[ 2 ][ 4 ][ 1 ], "netPingResponse", "ping reply body" )
+
+-- TTL: routers decrement once per hop and expire at zero.
+PCMod.Cfg.DefaultTTL = 64
+local traceDrv = {}
+for k, v in pairs( DRV ) do traceDrv[ k ] = v end
+local traceEnt = {}
+function traceEnt:Memory() return {} end
+function traceEnt:UpdateMemory() end
+function traceEnt:Data() return {} end
+function traceEnt:GetClass() return "pcmod_router" end
+function traceEnt:GetSubnet() return 5 end
+function traceEnt:GetFullIP() return "192.168.5.1" end
+function traceEnt:GetBSubnet() return 3 end
+function traceEnt:GetFullBIP() return "10.0.1.5" end
+function traceEnt:IsAddressedTo( a ) return a == "10.0.1.4" end
+traceDrv.Entity = traceEnt
+local traceSent
+traceDrv.Process = function( self, data ) traceSent = data return true end
+
+-- A packet above one TTL continues and is decremented exactly once.
+local ttlPkt = { TTL = 4, Body = { "netTrace", "nettools", 1, 4 } }
+assertTrue( traceDrv:CheckTTL( ttlPkt, "lan" ), "ttl above one is forwarded" )
+assertEq( ttlPkt.TTL, 3, "ttl decremented once per hop" )
+
+-- A TTL of one dies at the router and reports the hop to the sender.
+local expired = { Source = "192.168.5.2", Port = 0, SourcePort = 0, TTL = 1, Body = { "netTrace", "nettools", 1, 1 } }
+assertTrue( not traceDrv:CheckTTL( expired, "lan" ), "ttl of one expires" )
+assertTrue( traceSent and traceSent[ 1 ] == "sendpacket", "expired trace probe reports a hop" )
+assertEq( traceSent[ 2 ][ 1 ], "192.168.5.1", "LAN probe reports from the LAN gateway" )
+assertEq( traceSent[ 2 ][ 3 ], 0, "hop reply preserves the probe source port" )
+assertEq( traceSent[ 2 ][ 4 ][ 1 ], "netTraceHop", "hop report body type" )
+assertEq( traceSent[ 2 ][ 4 ][ 4 ], "192.168.5.1", "hop report carries the reporting address" )
+assertEq( traceSent[ 2 ][ 4 ][ 5 ], "RTR", "hop report carries the router label" )
+assertEq( traceSent[ 2 ][ 4 ][ 6 ], 1, "hop report carries the probe number" )
+
+-- A probe arriving from the backbone reports from the WAN address and keeps
+-- the source port so it can pass back through the sender's NAT.
+traceSent = nil
+local expiredWan = { Source = "10.0.1.3", Port = 0, SourcePort = 40003, TTL = 1, Body = { "netTrace", "nettools", 1, 1 } }
+assertTrue( not traceDrv:CheckTTL( expiredWan, "wan" ), "WAN ttl of one expires" )
+assertEq( traceSent[ 2 ][ 1 ], "10.0.1.5", "WAN probe reports from the backbone address" )
+assertEq( traceSent[ 2 ][ 3 ], 40003, "WAN hop keeps the source port for NAT" )
+
+-- A probe addressed to the router itself is the final hop.
+traceSent = nil
+PCMod.Network.Packets[ 301 ] = {
+	Source = "10.0.1.3", Dest = "10.0.1.4", Port = 0, SourcePort = 40002,
+	Body = { "netTrace", "nettools", 2, 3 }, TTL = 1, Delivered = false,
+}
+traceDrv:ProcessPacket( 301, nil, "wan" )
+assertTrue( traceSent and traceSent[ 2 ][ 4 ][ 1 ] == "netTraceResponse", "router answers a trace probe to itself" )
+assertEq( traceSent[ 2 ][ 1 ], "10.0.1.4", "trace reply comes from the traced address" )
+assertEq( traceSent[ 2 ][ 2 ], "10.0.1.3", "trace reply goes to the probe source" )
+assertEq( traceSent[ 2 ][ 3 ], 40002, "trace reply preserves the source port" )
+
+-- A probe for a remote target with TTL 1 reports the first hop instead of
+-- forwarding, exactly like an ICMP time-exceeded.
+traceSent = nil
+PCMod.Network.Packets[ 302 ] = {
+	Source = "192.168.5.2", Dest = "10.0.1.9", Port = 0, SourcePort = 0,
+	Body = { "netTrace", "nettools", 3, 1 }, TTL = 1, Delivered = false,
+}
+traceDrv:ProcessPacket( 302, nil, "lan" )
+assertTrue( traceSent and traceSent[ 2 ][ 4 ][ 1 ] == "netTraceHop", "first hop reports at ttl 1" )
+assertEq( traceSent[ 2 ][ 4 ][ 6 ], 1, "first hop number" )
+
 local sent
 PCMod.Network.CreatePacket = function( src, dst, port, body ) sent = { src = src, dst = dst, port = port, body = body } end
 DRV.ProcessPacket = function() end
@@ -234,5 +400,47 @@ assertTrue( req.Delivered == true, "request marked delivered" )
 local req2 = { Source = "10.0.1.2", Body = { "http", "/wifi" } }
 DRV:HandleWebRequest( req2 )
 assertTrue( string.find( sent.body[2], 'name="wpass"', 1, true ) ~= nil, "wifi sub-page served for /wifi" )
+
+-- A LAN router behind a switch gets the same backbone /64 + WAN address as a
+-- directly cabled one; the switch passes a synthetic linked event with the
+-- far-side entity in data[3].
+table.ToString = function() return "" end
+PCMod.Msg = function() end
+PCMod.Data = PCMod.Data or {}
+local bdrv = {}
+for k, v in pairs( DRV ) do bdrv[ k ] = v end
+local bport = { Connected = true }
+local fakeSwitch = { IsSwitch = true }
+function fakeSwitch:GetBridgePeers() return {} end
+bport.ConEnt = fakeSwitch
+local bent = {}
+function bent:GetClass() return "pcmod_brouter" end
+function bent:Ports() return { [ 1 ] = bport } end
+function bent:GetBSubnet() return 7 end
+bdrv.Entity = bent
+bdrv.BLAN = {}
+bdrv.Children = {}
+bdrv.ChildLan = {}
+bdrv.Neighbors = {}
+bdrv.Leases = {}
+local childEnt = {}
+function childEnt:IsValid() return true end
+function childEnt:EntIndex() return 60 end
+function childEnt:GetClass() return "pcmod_router" end
+function childEnt:SetUpBB( v ) self.UpBB = v end
+function childEnt:SetLanID( v ) self.LanID = v end
+PCMod.Data[ 60 ] = { Drivers = { webgr_router = {
+	SetLinkToEntity = function() end,
+	ReconfigureClients = function() end,
+} } }
+local registered
+PCMod.Network.RegisterPC = function( ent, bb ) registered = { ent = ent, bb = bb } end
+
+bdrv:CallEvent( { Event = "linked", [ 1 ] = 1, [ 2 ] = fakeSwitch, [ 3 ] = childEnt } )
+assertTrue( bdrv.Children[ 60 ] == 1, "LAN router behind switch is tracked as a child" )
+assertEq( childEnt.UpBB, 7, "LAN router gets the backbone id" )
+assertEq( childEnt.LanID, 1, "LAN router gets a /64 id" )
+assertTrue( registered and registered.ent == childEnt and registered.bb == 7, "LAN router registered on the backbone" )
+assertTrue( bdrv.ChildLan[ 1 ] == bport, "child route uses the switch port for delivery" )
 
 print( "ALL ROUTER IPV6 TESTS PASSED" )

@@ -74,8 +74,9 @@ cfg.WirelessRange = 2048 -- How far away can a wireless router reach? (0 = Unlim
 cfg.WirelessInfo = true -- Should we draw wireless links when looking at a wireless router?
 cfg.WirelessInfoDrawCol = Color( 255, 0, 0, 255 )
 
-// LAN DHCP: private, isolated address pool handed out by routers. See
-// sh_baseconfig.lua. LanNetmask = 24 (192.168.0.0/24) or 16 (192.168.0.0/16).
+// LAN DHCP: private, isolated address pool handed out by routers. These are
+// the defaults for new routers; each router's web page can override its
+// netmask (16-32) and network/host pool. See sh_baseconfig.lua.
 cfg.LanNetmask = 24
 cfg.DHCPStart = 2
 cfg.DHCPEnd = 254
@@ -99,6 +100,8 @@ cfg.RemoverProtection = true -- Should PCMod devices reject the remover tool? (h
 
 cfg.MaxNetworkPass = 50 -- What's the maximum amount of routers a packet can pass through in one go?
 cfg.MaxNetworkPid = 500 -- Single source for this setting (AUDIT2 A-05, Round 19): slot capacity of PCMod.Network.Packets - packet ids are recycled within [1, this] (sv_network.lua)
+cfg.DefaultTTL = 64 -- Default IP TTL for new packets (routers decrement it once per hop)
+cfg.TraceMaxHops = 30 -- Maximum probe TTL a traceroute will send
 
 cfg.HighQuality = true -- Should the client use theme hooks? (3D form elements)
 

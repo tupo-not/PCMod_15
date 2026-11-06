@@ -75,12 +75,13 @@ cfg.WirelessRange = 2048 -- How far away can a wireless router reach? (0 = Unlim
 cfg.WirelessInfo = true -- Should we draw wireless links when looking at a wireless router?
 cfg.WirelessInfoDrawCol = Color( 255, 0, 0, 255 )
 
-// LAN DHCP. Every router owns a private, isolated LAN: 192.168.0.0/24 or /16,
+// LAN DHCP. Every router owns a private, isolated LAN inside 192.168.0.0/16,
 // overlapping with every other router (a LAN knows nothing about upstream).
-// LanNetmask picks the size (24 = 192.168.0.0/24, 16 = 192.168.0.0/16).
+// These are the DEFAULTS for new routers; each router can change its netmask
+// (16-32) and network/host pool from its web page.
 cfg.LanNetmask = 24
 cfg.DHCPStart = 2   -- first host id in the pool (id 1 is the gateway)
-cfg.DHCPEnd = 254   -- last host id (up to 65534 when LanNetmask is 16)
+cfg.DHCPEnd = 254   -- last host id (up to 2^(32-mask)-2 when the mask is shorter)
 
 cfg.QuickType = 3 -- 0 = Completely disabled, 1 = debug mode only, 2 = keyboard only OR debug mode, 3 = always on
 
