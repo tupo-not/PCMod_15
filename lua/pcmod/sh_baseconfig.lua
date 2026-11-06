@@ -257,7 +257,7 @@ cfg.StatusCodes = {
 	
 }
 
-cfg.InstallDiskModel	=		"models/weapons/w_c4.mdl"
+cfg.InstallDiskModel		=		"models/pcmod/pcmodinstall.mdl"
 
 cfg.DataFolderRoot = "pcmod/"
 

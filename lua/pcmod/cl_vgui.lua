@@ -101,21 +101,143 @@ end
 concommand.Add( "pc_testicon", PCMod.Gui.TestIcon )
 
 // ---------------------------------------------------------------------------------------------------------
-// FlashIcon - Flashes up an icon
+// NOTIFY - shared constants for the Dynamic Island notification
 // ---------------------------------------------------------------------------------------------------------
-function PCMod.Gui.FlashIcon( ico, dir )
-	local pn = vgui.Create( "FlashIcon" )
-	local w = ScrW()
-	local h = ScrH()
-	pn:SetPos( 0, 0 )
-	pn:SetSize( w, h )
-	if (dir == 1) then
-		pn:Setup( ico, w*0.9, h*0.5, w*0.5, h*0.5, w*0.1, h*0.1 )
-	else
-		pn:Setup( ico, w*0.5, h*0.5, w*0.9, h*0.5, w*0.1, h*0.1 )
-	end
-	pn:Start()
+local NOTIFY = {
+	Duration = 1.85, -- expand 0.15 s -> hold 1.5 s -> collapse 0.2 s
+	ExpandTime = 0.15,
+	HoldTime = 1.5,
+	OffsetY = 48, -- below the crosshair
+	Margin = 10, -- left/right padding inside the capsule
+	DotD = 7, -- status indicator diameter
+	Gap = 8, -- space between indicator and text
+	Font = "ScoreboardText",
+	Sound = "pcmod/install_ping.wav", -- original soft electronic ping, 0.42 s (addon's own sound/)
+	AccentOK = Color( 102, 216, 207 ), -- teal #66D8CF for success
+	AccentErr = Color( 255, 176, 80 ), -- muted amber for errors
+}
+
+// ---------------------------------------------------------------------------------------------------------
+// CalcNotifyLayout - computes the FINAL (unscaled) capsule layout for a
+// message: capsule width/height and text size.
+// Layout: [margin][indicator dot][gap][text][margin], all left-to-right.
+// Pure function (unit-tested by mock_notify).
+// ---------------------------------------------------------------------------------------------------------
+function PCMod.Gui.CalcNotifyLayout( msg, scrW )
+	surface.SetFont( NOTIFY.Font )
+	local tw, th = surface.GetTextSize( tostring( msg ) )
+	local w = NOTIFY.Margin + NOTIFY.DotD + NOTIFY.Gap + tw + NOTIFY.Margin // capsule width fits the text
+	w = math.max( w, 90 ) // minimum width for short messages
+	w = math.min( w, scrW * 0.6 ) // never wider than 60% of the screen
+	local h = math.max( 30, th + 12 ) // capsule height follows the font
+	return w, h, tw, th
 end
+
+// ---------------------------------------------------------------------------------------------------------
+// Notify - Shows a compact "Dynamic Island"-style notification capsule under
+// the crosshair. msg = text, isError = amber accent + no success sound.
+//
+// Rendered by a single HUDPaint hook (absolute screen coordinates, a proper 2D
+// rendering context per the wiki) - NOT by a Derma panel: inside PANEL:Paint
+// the surface/draw coordinates are already offset by the panel position, and
+// combining that with cam.PushModelMatrix made the text placement
+// context-dependent (that was the clipping bug). No panel means no panel
+// lifecycle/leaks, and repeated notifications just overwrite the state.
+// ---------------------------------------------------------------------------------------------------------
+PCMod.Gui.NotifyState = nil
+
+local function notifySmooth( t )
+	t = math.Clamp( t, 0, 1 )
+	return t * t * (3 - 2 * t)
+end
+
+function PCMod.Gui.Notify( msg, isError )
+	// Final layout is computed once per message; a repeated notification just
+	// overwrites the state (no stacking, no leftovers from the previous one).
+	local w, h, tw, th = PCMod.Gui.CalcNotifyLayout( msg, ScrW() )
+	PCMod.Gui.NotifyState = {
+		Active = true,
+		Message = tostring( msg ),
+		IsError = (isError == true),
+		StartTime = CurTime(),
+		Duration = NOTIFY.Duration,
+		W = w, H = h, TextW = tw, TextH = th,
+	}
+	// Success sound only on confirmed success, once per notification, client-side
+	// (no multiplayer duplicates). See https://wiki.facepunch.com/gmod/surface.PlaySound
+	if (!PCMod.Gui.NotifyState.IsError) then surface.PlaySound( NOTIFY.Sound ) end
+end
+
+// Kept for compatibility with older callers (pc_testicon, pcmod_hdcopier).
+function PCMod.Gui.FlashIcon( ico, dir )
+	PCMod.Gui.Notify( "Installed", false )
+end
+
+// ---------------------------------------------------------------------------------------------------------
+// NotifyGeometry - final (world/screen) edges of every element after the shared
+// scale p is applied around the capsule center. Pure function (mock-tested).
+// ---------------------------------------------------------------------------------------------------------
+function PCMod.Gui.NotifyGeometry( st, scrW, scrH, p )
+	local cx = scrW / 2
+	local cy = scrH / 2 + NOTIFY.OffsetY
+	local w = st.W * p
+	local h = st.H * p
+	local capL = cx - w / 2
+	local capR = cx + w / 2
+	local capT = cy - h / 2
+	local capB = cy + h / 2
+	local dotL = capL + NOTIFY.Margin * p
+	local dotR = dotL + NOTIFY.DotD * p
+	local textL = capL + (NOTIFY.Margin + NOTIFY.DotD + NOTIFY.Gap) * p
+	local textR = textL + st.TextW * p
+	local textT = cy - st.TextH * p / 2
+	local textB = textT + st.TextH * p
+	return capL, capR, capT, capB, dotL, dotR, textL, textR, textT, textB
+end
+
+local function DrawNotify()
+	local st = PCMod.Gui.NotifyState
+	if ((!st) || (!st.Active)) then return end
+	local t = math.Clamp( CurTime() - st.StartTime, 0, st.Duration )
+	if (t >= st.Duration) then
+		st.Active = false
+		return
+	end
+	// one shared time-based progress p (single smoothstep) drives everything
+	local p, al
+	if (t < NOTIFY.ExpandTime) then
+		p = notifySmooth( t / NOTIFY.ExpandTime )
+		al = p
+	elseif (t < NOTIFY.ExpandTime + NOTIFY.HoldTime) then
+		p = 1
+		al = 1
+	else
+		p = 1 - notifySmooth( (t - NOTIFY.ExpandTime - NOTIFY.HoldTime) / (st.Duration - NOTIFY.ExpandTime - NOTIFY.HoldTime) )
+		al = p
+	end
+	if (p <= 0.01) then return end
+	// absolute screen coordinates (HUDPaint is a plain 2D rendering context)
+	local capL, capR, capT, capB, dotL, dotR, textL, textR, textT, textB =
+		PCMod.Gui.NotifyGeometry( st, ScrW(), ScrH(), p )
+	// capsule
+	draw.RoundedBox( (capB - capT) / 2, capL, capT, capR - capL, capB - capT, Color( 18, 22, 26, 220 * al ) )
+	// status indicator (teal = success, amber = error)
+	local acc = st.IsError && NOTIFY.AccentErr || NOTIFY.AccentOK
+	draw.RoundedBox( (dotR - dotL) / 2, dotL, (capT + capB) / 2 - (dotR - dotL) / 2, dotR - dotL, dotR - dotL, Color( acc.r, acc.g, acc.b, 255 * al ) )
+	// text: ONE matrix (translate to the text top-left, scale by the same p),
+	// explicit LEFT/TOP alignment - no center-align inside a transform
+	local m = Matrix()
+	m:Translate( Vector( textL, textT, 0 ) )
+	m:Scale( Vector( p, p, 1 ) )
+	render.PushFilterMag( TEXFILTER.ANISOTROPIC )
+	render.PushFilterMin( TEXFILTER.ANISOTROPIC )
+	cam.PushModelMatrix( m, true )
+	draw.SimpleText( st.Message, NOTIFY.Font, 0, 0, Color( 240, 255, 255, 255 * al ), TEXT_ALIGN_LEFT, TEXT_ALIGN_TOP )
+	cam.PopModelMatrix()
+	render.PopFilterMin()
+	render.PopFilterMag()
+end
+hook.Add( "HUDPaint", "PCMod.Gui.Notify", DrawNotify )
 
 // ---------------------------------------------------------------------------------------------------------
 // VGUI: CreateWindow - Creates a DFrame and sets it all up
@@ -249,110 +371,6 @@ function vgui.AddSlider( plist, txt, min, max, convar, changefunc, id )
 	return pn
 end
 
-// ---------------------------------------------------------------------------------------------------------
-// DERMA: FlashyIcon - A flashy icon that appears and vanishes with effects
-// ---------------------------------------------------------------------------------------------------------
-local PANEL = {}
-PANEL.Frame = 0
--- States:
--- 0 = Dormant
--- 1 = Stretching from source
--- 2 = Flashing Background
--- 3 = Shrinking to target
-PANEL.FPS = 20 -- If the client's FPS is lower, this will render at whatever FPS it can
-PANEL.NextUpdate = 0
-PANEL.StateFrames = {
-	{0, 15},
-	{15, 45},
-	{45, 60}
-}
-PANEL.RemoveFrame = 60
-
-function PANEL:Setup( ico, sx, sy, tx, ty, w, h )
-	self.Icon = surface.GetTextureID( ico )
-	self.SX = sx
-	self.SY = sy
-	self.TX = tx
-	self.TY = ty
-	self.W = w
-	self.H = h
-end
-function PANEL:Start()
-	self.Frame = 1
-end
-function PANEL:Think()
-	if (self.Frame == 0) then return end
-	if (self.NextUpdate < CurTime()) then
-		self.NextUpdate = CurTime() + (1/self.FPS)
-		self.Frame = self.Frame + 1
-		if (self.Frame > (self.RemoveFrame-1)) then
-			self:Remove()
-			return
-		end
-	end
-end
-function PANEL:Paint()
-	if (self.Frame == 0) then return end
-	local f = self.Frame
-	local state = 0
-	local lower = 0
-	local upper = 0
-	for st, v in pairs( self.StateFrames ) do
-		local l = v[1]
-		local u = v[2]
-		if ((f > l) && (f < (u+1))) then
-			state = st
-			lower = l
-			upper = u
-		end
-	end
-	if (state == 0) then
-		self.Frame = 0
-		return
-	end
-	local dec = math.Clamp( (f-(lower+1))/(upper-(lower+1)), 0, 1 )
-	// Msg( "State: ", state, ", Frame: ", f, ", Dec: ", dec, "\n" )
-	if (state == 1) then
-		local cx = math.Mid( self.SX, ScrW()*0.5, dec )
-		local cy = math.Mid( self.SY, ScrH()*0.5, dec )
-		local cw = math.Mid( 0, self.W, dec )
-		local ch = math.Mid( 0, self.H, dec )
-		local x = cx - (cw/2)
-		local y = cy - (ch/2)
-		surface.SetTexture( self.Icon )
-		surface.SetDrawColor( 255, 255, 255, 255 )
-		surface.DrawTexturedRect( x, y, cw, ch )
-		return
-	end
-	if (state == 2) then
-		local x = (ScrW()*0.5)-(self.W*0.5)
-		local y = (ScrH()*0.5)-(self.H*0.5)
-		local al = math.Mid( 255, 0, dec )
-		local bw = self.W*(1+(dec*2))
-		local bh = self.H*(1+(dec*2))
-		local bx = (ScrW()*0.5)-(bw*0.5)
-		local by = (ScrH()*0.5)-(bh*0.5)
-		surface.SetTexture( self.Icon )
-		surface.SetDrawColor( 255, 255, 255, al )
-		surface.DrawTexturedRect( bx, by, bw, bh )
-		surface.SetDrawColor( 255, 255, 255, 255 )
-		surface.DrawTexturedRect( x, y, self.W, self.H )
-		return
-	end
-	if (state == 3) then
-		local cx = math.Mid( ScrW()*0.5, self.TX, dec )
-		local cy = math.Mid( ScrH()*0.5, self.TY, dec )
-		local cw = math.Mid( self.W, 0, dec )
-		local ch = math.Mid( self.H, 0, dec )
-		local x = cx - (cw/2)
-		local y = cy - (ch/2)
-		surface.SetTexture( self.Icon )
-		surface.SetDrawColor( 255, 255, 255, 255 )
-		surface.DrawTexturedRect( x, y, cw, ch )
-		return
-	end
-end
-vgui.Register( "FlashIcon", PANEL, "PANEL" )
 
 // ---------------------------------------------------------------------------------------------------------
 // DERMA: UnlockButton - Unlocks the player cam

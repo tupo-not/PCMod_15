@@ -62,6 +62,9 @@ TESTS=(
     mock_ui_scale
     mock_hackyclicky
     mock_elements
+    mock_install
+    mock_notify
+    mock_diskui
 )
 
 # Allow narrowing to a single suite: ./run_tests.sh mock_fs

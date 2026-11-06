@@ -1,3 +1,4 @@
+
 #!/usr/bin/env python3
 """Build the Lua 5.1 fixture copies used by the mock test suites.
 
@@ -49,6 +50,8 @@ FIXTURES = {
     "cl_vgui.lua": "pcmod/cl_vgui.lua",
     "sselements_base.lua": "pcmod/sselements/base.lua",
     "sselements_button.lua": "pcmod/sselements/button.lua",
+    "pcmod_os_base.lua": "pcmod/osystems/base.lua",
+    "pcmod_installdisk.lua": "weapons/pcmod_installdisk/shared.lua",
 }
 
 # Additional sources that only need a syntax check.
@@ -62,6 +65,7 @@ CHECK_ONLY = [
     "pcmod/drivers/drv_network.lua",
     "entities/pcmod_router/shared.lua",
     "pcmod/ssdevices/dev_win_browser.lua",
+    "weapons/pcmod_installdisk/shared.lua",
 ]
 
 
