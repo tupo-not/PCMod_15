@@ -85,6 +85,12 @@ if (SERVER) then
 
 			// Set up a slot for us in the PCMod Data table
 			self:CreateSlotData()
+
+			// Network hardware gets an identity MAC on spawn. It is persisted by
+			// BuildDupeInfo so a world save/load keeps the same address.
+			if (self.IsComputer || self.IsNetworkDevice || self.IsSwitch) then
+				self:EnsureMAC()
+			end
 			
 			// self:Setup()
 			
@@ -638,7 +644,7 @@ if (SERVER) then
 			return self:GetFullIP() or self:GetFullBIP()
 		end
 
-		function ENT:SendPacket( portid, dest, port, body )
+		function ENT:SendPacket( portid, dest, port, body, ttl, src )
 			// Called from this entity, sends a new packet
 			if (!portid) then
 				for k, v in pairs( self:Ports() ) do
@@ -655,7 +661,18 @@ if (SERVER) then
 			local portid2 = prt.RemotePort
 			local data = {}
 			data[1] = "sendpacket"
-			data[2] = { self:GetSourceAddress( dest ), dest, port, body }
+			// An explicit source (a reply to one of our secondary addresses)
+			// wins over the automatic interface pick.
+			data[2] = { src or self:GetSourceAddress( dest ), dest, port, body }
+			// Layer-2 frame metadata: the sender's MAC and, until a switch has
+			// learned the destination, a broadcast address.
+			data[4] = {
+				SourceMAC = self:EnsureMAC(),
+				DestMAC = PCMod.MAC.BROADCAST,
+			}
+			// IP TTL travels with the frame until a router turns it into a
+			// packet. data[3] is already used by switches for loop detection.
+			if (ttl) then data[5] = ttl end
 			if (!self.IsNetworkDevice) then
 				prt.ConEnt:DataRecieved( portid2, data )
 				// self:PushData
@@ -1243,6 +1260,112 @@ if (SERVER) then
 	-- Misc Functions --
 	-------------------------------------------------------------------------------------------------------------------------------------------------
 		
+		function ENT:EnsureMAC()
+			local dt = self:Data()
+			if (!PCMod.MAC.IsValid( dt.MAC )) then
+				dt.MAC = PCMod.MAC.Random()
+				self:UpdateData( dt )
+			end
+			return dt.MAC
+		end
+
+		function ENT:GetMAC()
+			return self:EnsureMAC()
+		end
+
+		// Give this entity a fresh hardware identity. Switches also regenerate
+		// their per-port MACs. Used on spawn and when a duplicator clones an
+		// entity, so two copies never share an address on the same segment.
+		function ENT:RandomizeIdentity()
+			if (!PCMod.MAC) then return end
+			local dt = self:Data()
+			if (self.IsSwitch && self.GenerateMACs) then
+				dt = self:GenerateMACs()
+			elseif (self.IsComputer || self.IsNetworkDevice) then
+				dt.MAC = PCMod.MAC.Random()
+			else
+				return
+			end
+			self:UpdateData( dt )
+			if (dt.MAC && self.SetNWString) then self:SetNWString( "MAC", dt.MAC ) end
+		end
+
+		function ENT:SetMAC( mac )
+			local norm = PCMod.MAC.Normalize( mac )
+			if (!norm) then return false end
+			local dt = self:Data()
+			dt.MAC = norm
+			self:UpdateData( dt )
+			self:SetNWString( "MAC", norm )
+			return true
+		end
+
+		// Plain map saves (save/load) use these hooks rather than the
+		// duplicator ones, so a switch keeps its address across a world save.
+		function ENT:OnSave()
+			local dt = self:Data()
+			local tmp = {}
+			if (PCMod.MAC.IsValid( dt.MAC )) then tmp.mac = dt.MAC end
+			if (self.IsSwitch) then tmp.portmacs = dt.PortMACs end
+			// Computer addressing (static IPv4, netmask, gateway) and login.
+			// Only the configured identity is saved; DHCP addresses are re-leased
+			// after a load so they cannot conflict with the restored network.
+			if (self.IsComputer && istable( dt.IP )) then
+				tmp.ip = {
+					Static = dt.IP.Static,
+					Mask = dt.IP.Mask,
+					MaskBits = dt.IP.MaskBits,
+					Gateway = dt.IP.Gateway,
+				}
+			end
+			if (self.IsComputer && (dt.Password != nil)) then tmp.password = dt.Password end
+			// Router configuration (LAN size, DHCP pool, NAT, forwards).
+			if (self.IsNetworkDevice && istable( dt.RouterCfg )) then tmp.routercfg = dt.RouterCfg end
+			return tmp
+		end
+
+		function ENT:OnRestore( data )
+			if (!istable( data )) then return end
+			local dt = self:Data()
+			if (data.mac && PCMod.MAC.IsValid( data.mac )) then
+				dt.MAC = PCMod.MAC.Normalize( data.mac )
+			end
+			if (self.IsSwitch && istable( data.portmacs )) then
+				dt.PortMACs = data.portmacs
+			end
+			if (self.IsComputer && istable( data.ip )) then
+				-- Restore the configured identity; a static address is re-applied,
+				-- otherwise the router hands out a fresh DHCP lease on relink.
+				dt.IP = dt.IP or {}
+				dt.IP.Static = data.ip.Static
+				dt.IP.Mask = data.ip.Mask
+				dt.IP.MaskBits = data.ip.MaskBits
+				dt.IP.Gateway = data.ip.Gateway
+				if (data.ip.Static && self.SetStaticIP) then
+					self:SetStaticIP( data.ip.Static )
+				end
+			end
+			if (self.IsComputer && (data.password != nil)) then
+				dt.Password = data.password
+			end
+			if (self.IsNetworkDevice && istable( data.routercfg )) then
+				dt.RouterCfg = data.routercfg
+			end
+			self:UpdateData( dt )
+			if (dt.MAC && self.SetNWString) then
+				self:SetNWString( "MAC", dt.MAC )
+			end
+			if (self.IsComputer && self.SetIPText) then
+				self:SetIPText()
+			end
+			// Re-apply the restored LAN addressing (gateway on the configured
+			// network) once the router driver exists.
+			if (self.IsNetworkDevice) then
+				local rdrv = dt.Drivers && dt.Drivers[ "webgr_router" ]
+				if (rdrv && rdrv.ApplyLanAddress) then rdrv:ApplyLanAddress() end
+			end
+		end
+
 		function ENT:SetGVar( key, val )
 			local id = self:EntIndex()
 			PCMod.Beam.SetEntData( id, key, val )
@@ -1266,6 +1389,12 @@ if (SERVER) then
 				tmp.routercfg = dt.RouterCfg
 				tmp.wirepass = dt.WirePass
 				tmp.iswireless = dt.IsWireless
+			end
+			if (PCMod.MAC.IsValid( dt.MAC )) then
+				tmp.mac = dt.MAC
+			end
+			if (self.IsSwitch) then
+				tmp.portmacs = dt.PortMACs
 			end
 			// Save the logical port links so they can be re-established on paste
 			// (the physical ropes are restored by the duplicator itself).

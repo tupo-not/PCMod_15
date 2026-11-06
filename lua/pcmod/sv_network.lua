@@ -52,7 +52,7 @@ PCMod.Msg( "Network Library Loaded (V" .. PCMod.Network.Version .. ")", true )
 // Previously Packets[] grew without limit and ids grew past MaxNetworkPid, after
 // which every router hard-rejected new packets ("Connection ERROR!") - the
 // in-game network died permanently after MaxNetworkPid packets in one session.
-function PCMod.Network.CreatePacket( source, dest, port, body, sourcePort )
+function PCMod.Network.CreatePacket( source, dest, port, body, sourcePort, sourceMAC, destMAC, ttl )
 	local maxpid = PCMod.Cfg.MaxNetworkPid or 500
 	local pk = {}
 	pk.Source = source
@@ -61,6 +61,14 @@ function PCMod.Network.CreatePacket( source, dest, port, body, sourcePort )
 	pk.SourcePort = sourcePort or port
 	pk.Body = body
 	pk.Delivered = false
+	// IP time-to-live. Routers decrement it once per forwarding hop; when it
+	// reaches zero the packet is dropped (and traceroute probes get a hop
+	// report from that router).
+	pk.TTL = tonumber( ttl ) or tonumber( PCMod.Cfg.DefaultTTL ) or 64
+	// Layer-2 metadata is carried alongside the routed packet so switches can
+	// learn which port a MAC lives on. Unknown destinations use broadcast.
+	pk.SourceMAC = PCMod.MAC && PCMod.MAC.Normalize( sourceMAC )
+	pk.DestMAC = (PCMod.MAC && PCMod.MAC.Normalize( destMAC )) or (PCMod.MAC && PCMod.MAC.BROADCAST)
 	// Dual-stack metadata: keep the address the program used and expose the
 	// emulated IPv6 form of each endpoint. Routing still uses the IPv4 core.
 	pk.SourceIPv4 = PCMod.IPv6.ToIPv4( source ) or source

@@ -41,10 +41,12 @@ FIXTURES = {
     "pcmod_notepad.lua": "pcmod/programs/pr_notepad.lua",
     "pcmod_notepad_ui.lua": "pcmod/ssdevices/dev_win_notepad.lua",
     "pcmod_drv_router.lua": "pcmod/drivers/drv_router.lua",
+    "pcmod_drv_network.lua": "pcmod/drivers/drv_network.lua",
     "pcmod_drv_bios.lua": "pcmod/drivers/drv_bios.lua",
     "pcmod_network.lua": "pcmod/sv_network.lua",
     "pcmod_wiring.lua": "pcmod/sv_wiring.lua",
     "pcmod_shared.lua": "entities/pcmod_base/shared.lua",
+    "pcmod_switch.lua": "entities/pcmod_switch/shared.lua",
     "pcmod_sh_common.lua": "pcmod/sh_common.lua",
     "cl2d3d.lua": "pcmod/cl_2d3d.lua",
     "cl_vgui.lua": "pcmod/cl_vgui.lua",
@@ -63,9 +65,12 @@ CHECK_ONLY = [
     "pcmod/sh_config.lua",
     "autorun/sh_pcmod_launch.lua",
     "pcmod/drivers/drv_network.lua",
+    "pcmod/osystems/os_personal.lua",
+    "pcmod/osystems/os_server.lua",
     "entities/pcmod_router/shared.lua",
     "pcmod/ssdevices/dev_win_browser.lua",
     "weapons/pcmod_installdisk/shared.lua",
+    "weapons/gmod_tool/stools/pcspawn_switch.lua",
 ]
 
 

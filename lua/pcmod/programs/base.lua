@@ -664,7 +664,9 @@ function PROG:SendNetworkPacket( destEntIndex, port, body )
 	if (!destEntIndex) then return false end
 	if (!port) then port = 0 end
 	if (!body) then body = {} end
-	local pid = PCMod.Network.CreatePacket( self.Entity:EntIndex(), destEntIndex, port, body )
+	local srcMAC = self.Entity.EnsureMAC && self.Entity:EnsureMAC() or nil
+	local dstMAC = PCMod.MAC && PCMod.MAC.BROADCAST or nil
+	local pid = PCMod.Network.CreatePacket( self.Entity:EntIndex(), destEntIndex, port, body, nil, srcMAC, dstMAC )
 	if (!pid) then return false end
 	PCMod.Msg( "Program sent network packet to entity " .. tostring( destEntIndex ), true )
 	return pid
