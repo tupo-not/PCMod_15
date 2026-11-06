@@ -1,5 +1,6 @@
 
 SWEP.PrintName = "Network Tester"
+SWEP.Category = "PCMod"
 SWEP.Slot = 3
 SWEP.SlotPos = 1
 SWEP.DrawAmmo = false
@@ -14,8 +15,8 @@ SWEP.Contact = ""
 SWEP.Purpose = ""
 SWEP.Instructions = "Left click to select source ent, left click again to select dest ent and send"
 
-SWEP.Spawnable = false
-SWEP.AdminSpawnable = false
+SWEP.Spawnable = true
+SWEP.AdminSpawnable = true
 
 SWEP.ViewModel = "models/weapons/v_hands.mdl"
 SWEP.WorldModel = "models/weapons/w_hands.mdl"

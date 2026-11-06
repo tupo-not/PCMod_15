@@ -3,7 +3,7 @@ SWEP.PrintName = "Install Disk"
 
 SWEP.Author = "[GU]thomasfn"
 SWEP.Contact = "Don't."
-SWEP.Category = "PCMod 2"
+SWEP.Category = "PCMod"
 SWEP.Purpose = "To install programs onto a PC."
 SWEP.Instructions = "Left click a PC to install program onto. Right click to change program."
 
@@ -42,11 +42,10 @@ if (SERVER) then
 
 end
 
-SWEP.Spawnable = false
-SWEP.AdminSpawnable = false
+SWEP.Spawnable = true
+SWEP.AdminSpawnable = true
 
-// The CD model itself is the viewmodel: no C4 mesh, no hands, and no need to
-// touch the shared viewmodel entity of other weapons.
+// The CD model itself is the viewmodel: no C4 mesh, no hands.
 SWEP.ViewModel = "models/pcmod/pcmodinstall.mdl"
 SWEP.WorldModel = "models/pcmod/pcmodinstall.mdl"
 

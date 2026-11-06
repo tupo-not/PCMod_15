@@ -3,7 +3,7 @@ SWEP.Author = "[GU]thomasfn"
 SWEP.Contact = ""
 SWEP.Purpose = ""
 SWEP.Instructions = ""
-SWEP.Category = "PCMod 2"
+SWEP.Category = "PCMod"
 
 if (CLIENT) then
 
@@ -28,8 +28,8 @@ if (SERVER) then
 
 end
 
-SWEP.Spawnable = false
-SWEP.AdminSpawnable = false
+SWEP.Spawnable = true
+SWEP.AdminSpawnable = true
 
 SWEP.ViewModel = "models/weapons/v_c4.mdl"
 SWEP.WorldModel = "models/weapons/w_c4.mdl"
