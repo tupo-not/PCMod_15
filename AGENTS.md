@@ -38,8 +38,13 @@ See `tests/README.md`. Never edit `tests/.build/` — it is generated.
 
 ## Commit policy
 
+- Do not commit straight after editing. Once a batch of N changes (all edits for
+  the current request) is complete, explicitly ask the user whether those
+  changes work as expected in-game/on their setup. If yes, run the full test
+  suite and commit. If no, fix the problems, re-test, and ask again — repeat
+  this fix → verify → ask cycle until the user confirms.
 - Keep generated files out of git (see `.gitignore`).
-- Run the full test suite before committing.
+- Run the full test suite before every commit.
 - Commit small, focused changes frequently: one logical fix per commit keeps the
   history reviewable and minimizes merge/rebase conflicts when several people
   (or agents) work on the addon at once.
