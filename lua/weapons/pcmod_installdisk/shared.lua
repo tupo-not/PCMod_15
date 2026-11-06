@@ -111,6 +111,25 @@ function SWEP:SetPackName( name )
 	self:SetNWString( "packname", name )
 end
 
+// Populate the disk with the default program list when it is spawned directly
+// from the spawnmenu (the old Swep tool did this manually after giving it).
+function SWEP:EnsureDefaultPrograms()
+	if (!SERVER) then return end
+	if ((self.ProgCnt) && (self.ProgCnt > 0)) then return end
+	self:Reset()
+	self:SetPackName( "Install Disk" )
+	local list = PCMod.Cfg && PCMod.Cfg.FullProgramList
+	if ((!list) || (list == "")) then return end
+	local progs = string.Explode( ",", list )
+	if (!progs) then return end
+	for _, v in pairs( progs ) do
+		local prog = PCMod.Progs && PCMod.Progs[ v ]
+		if (prog) then
+			self:AddProgram( v, prog.Title, prog.OS, prog.Icon )
+		end
+	end
+end
+
 // SyncClientState - reads the server-synced NW fields into the client display
 // state. Called from Think() only (the original, proven mechanism - GMod calls
 // WEAPON:Think clientside every tick while the weapon is active).
@@ -142,6 +161,11 @@ function SWEP:Think()
 		self.LabelPos = math.Mid( self.LabelPos, self.SelProg, self.ZipRat )
 		if ((self.LabelPos > (self.SelProg-0.1)) && (self.LabelPos < (self.SelProg+0.1))) then self.LabelPos = self.SelProg end
 	end
+end
+
+function SWEP:Deploy()
+	if (SERVER) then self:EnsureDefaultPrograms() end
+	return true
 end
 
 function SWEP:Holster()
