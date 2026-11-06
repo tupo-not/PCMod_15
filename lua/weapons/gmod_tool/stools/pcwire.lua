@@ -16,7 +16,7 @@ if (!ToolOnly) then cleanup.Register( "computers" ) end
 if (CLIENT) then
 	language.Add( "tool.pcwire.name", "Wire Tool" )
 	language.Add( "tool.pcwire.desc", "Connect two ports on PCMod devices with a cable" )
-	language.Add( "tool.pcwire.0", "Left-Click: Pick a port. Mouse wheel: Cycle ports. Right-Click: Reset." )
+	language.Add( "tool.pcwire.0", "Left-Click: Pick a port. Mouse wheel: Cycle ports. Right-Click: Disconnect a connected port." )
 	language.Add( "tool.pcwire.1", "Left-Click: Pick the port to connect to. Right-Click: Reset." )
 end
 
@@ -59,6 +59,19 @@ if (SERVER) then
 		local ent = net.ReadEntity()
 		if ((IsValid( ent )) && (ent.IsPCMod)) then
 			PC_BeamPorts( ent, ply )
+		end
+	end )
+
+	util.AddNetworkString( "pcwire_unlink" )
+	net.Receive( "pcwire_unlink", function( len, ply )
+		if ((!ply) || (!ply:IsPlayer())) then return end
+		local ent = net.ReadEntity()
+		local port = net.ReadUInt( 8 )
+		if ((!IsValid( ent )) || (!ent.IsPCMod)) then return end
+		local prt = ent:Ports()[ port ]
+		if ((!prt) || (!prt.Connected)) then return end
+		if (PCMod.Wiring.UnlinkPort( ent, port )) then
+			PCMod.Notice( "Port disconnected", ply )
 		end
 	end )
 
@@ -170,8 +183,23 @@ if (CLIENT) then
 	function TOOL:Holster() self:Reset() end
 
 	function TOOL:RightClick( trace )
+		// Right-click a connected port to unwire it; otherwise reset the tool.
+		if (self.Stage == 0) then
+			local ent = trace.Entity
+			local ports = (IsValid( ent )) && ent.IsPCMod && self:GetPorts( ent )
+			local prt = ports && ports[ self.SelIndex ]
+			if ((prt) && (prt.Connected)) then
+				net.Start( "pcwire_unlink" )
+					net.WriteEntity( ent )
+					net.WriteUInt( self.SelIndex, 8 )
+				net.SendToServer()
+				self:RequestPorts( ent )
+				self:Reset()
+				return true
+			end
+		end
 		self:Reset()
-		return false
+		return true
 	end
 
 	function TOOL:LeftClick( trace )
@@ -194,10 +222,9 @@ if (CLIENT) then
 			self.Stage = 1
 			self.SelIndex = 1
 			self.AutoSelectDone = false
-			self:GetOwner():EmitSound( "weapons/airboat/airboat_gun_lastshot1.wav" )
 			PCMod.Notice( "Port selected - aim at the second device and left-click" )
 			self:BeginPreview()
-			return
+			return true
 		end
 
 		// Stage 1: connect to the second entity.
@@ -234,9 +261,9 @@ if (CLIENT) then
 			net.WriteUInt( self:GetClientNumber( "g" ), 8 )
 			net.WriteUInt( self:GetClientNumber( "b" ), 8 )
 		net.SendToServer()
-		self:GetOwner():EmitSound( "weapons/airboat/airboat_gun_lastshot2.wav" )
 
 		self:Reset()
+		return true
 	end
 
 	function TOOL:Scroll( trace, dir )
@@ -407,10 +434,35 @@ if (CLIENT) then
 			local funcname = net.ReadString()
 			// Use the activated tool object (toolgun injects GetOwner/SWEP/etc),
 			// not the raw TOOL table - the latter has no GetOwner and errors.
-			local tool = GetPCWireTool( LocalPlayer() )
+			local ply = LocalPlayer()
+			local tool = GetPCWireTool( ply )
 			if (!tool) then return end
 			local fn = tool[ funcname ]
-			if (fn) then fn( tool, LocalPlayer():GetEyeTrace() ) end
+			if (!fn) then return end
+			local tr = ply:GetEyeTrace()
+			// The toolgun skips its normal client callback in singleplayer, so
+			// replicate DoShootEffect here when the tool reports success.
+			if (!fn( tool, tr )) then return end
+			local wep = ply:GetActiveWeapon()
+			if (IsValid( wep )) then
+				wep:SendWeaponAnim( ACT_VM_PRIMARYATTACK )
+				wep:EmitSound( "Toolgun.Single" )
+			end
+			if (GetConVarNumber( "gmod_drawtooleffects" ) == 0) then return end
+			local effectdata = EffectData()
+			effectdata:SetOrigin( tr.HitPos )
+			effectdata:SetNormal( tr.HitNormal )
+			effectdata:SetEntity( tr.Entity )
+			effectdata:SetAttachment( tr.PhysicsBone )
+			util.Effect( "selection_indicator", effectdata )
+			// Use an eye-relative muzzle position. The viewmodel's attachment is
+			// not reliable inside a net callback and can resolve behind the view,
+			// so approximate the toolgun muzzle in front/lower-right of the eye.
+			local startPos = ply:GetShootPos() + ply:GetForward() * 14 + ply:GetRight() * 5 - ply:GetUp() * 3
+			local effect_tr = EffectData()
+			effect_tr:SetOrigin( tr.HitPos )
+			effect_tr:SetStart( startPos )
+			util.Effect( "ToolTracer", effect_tr )
 		end )
 	end
 
