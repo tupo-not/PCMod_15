@@ -173,23 +173,15 @@ function SWEP:Holster()
 end
 
 function SWEP:CalcViewModelView( vm, oldPos, oldAng, pos, ang )
-	// pcmodinstall.mdl geometry (parsed from the MDL hull): the disc is thin
-	// along local X (0.47) and wide in Y/Z (7.77 x 8.77), so the disc lies in
-	// its local YZ plane and the face normal is local +X, diameter ~8.8 units.
-	//
-	// Orientation: adding pitch -90 to the view angles maps local +X to world
-	// +Z, i.e. the face points straight up; the current offset Angle(-100,-18,-10)
-	// tilts the face toward the player and adds slight yaw/roll. If the labelled
-	// side turns out to face down, mirror the pitch sign (+90/+100).
-	//
-	// Position/size: at the default 62 viewmodel FOV, ~18 units in front of the
-	// camera puts the ~8.8-unit disc at roughly 20-25% of screen width (16:9).
-	// Right*5 + Up*-4 moves it to the lower-right corner, keeping the crosshair
-	// free. No SetModelScale on the shared viewmodel entity is used.
-	// Note: this hook only works if GM:CalcViewModelView is not overridden.
-	// See https://wiki.facepunch.com/gmod/WEAPON:CalcViewModelView
-	return pos + ang:Forward() * 18 + ang:Right() * 5 + ang:Up() * -4,
-		ang + Angle( -100, -18, -10 )
+	// pcmodinstall.mdl geometry: the disc is thin along local X and wide in Y/Z,
+	// so its face normal is local +X. Rotate around the camera's own axes so the
+	// disc keeps a fixed screen-space orientation. Adding the offsets to the
+	// Euler angles directly made the disc roll when the camera pitched.
+	local viewAng = Angle( ang.p, ang.y, ang.r )
+	viewAng:RotateAroundAxis( ang:Right(), 100 )
+	viewAng:RotateAroundAxis( ang:Up(), -18 )
+	viewAng:RotateAroundAxis( ang:Forward(), -10 )
+	return pos + ang:Forward() * 18 + ang:Right() * 5 + ang:Up() * -4, viewAng
 end
 
 function SWEP:PrimaryAttack()
