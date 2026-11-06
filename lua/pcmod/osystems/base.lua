@@ -198,6 +198,43 @@ function OS:SetAllProgs( ps )
 	self.Entity:WriteFile( "system/data/allprogs.dat", PCMod.TableToString( ps ) )
 end
 
+// Rebuild the runtime program instances from the saved start-menu list. A
+// booted OS is a fresh copy of the prototype, so allprogs.dat holds the
+// desktop shortcuts but not the live programs: without this a duplicated PC
+// (or any PC recreated by a map load) shows shortcuts whose sys_openprog finds
+// nothing to start. OnInstall is intentionally not called again - it would add
+// duplicate shortcuts to the already-saved list.
+function OS:LoadPrograms()
+	self.Progs = self.Progs or {}
+	local ps = PCMod.StringToTable( self.Entity:ReadFile( "system/data/allprogs.dat" ) ) or {}
+	for _, entry in ipairs( ps ) do
+		local com = (type( entry ) == "table") && entry[ 3 ]
+		if (type( com ) == "string") then
+			local name = string.match( com, "^sys_openprog%s+(.+)$" ) or com
+			local pr = PCMod.Progs[ name ]
+			if ((type( pr ) == "table") && (pr.OS == self.IntName) && (!self.Progs[ name ])) then
+				local inst = table.Copy( pr )
+				inst.Entity = self.Entity
+				if (inst.CanUse && inst:CanUse()) then
+					self.Progs[ name ] = inst
+				end
+			end
+		end
+	end
+	// Programs flagged NoShortcut are not in allprogs.dat (they are launched
+	// from the Control Panel, e.g. Network Tools and Device Manager), but they
+	// still have to exist at run time. Reinstall the ones for this OS.
+	for name, pr in pairs( PCMod.Progs ) do
+		if ((type( pr ) == "table") && (pr.OS == self.IntName) && (pr.NoShortcut == true) && (!self.Progs[ name ])) then
+			local inst = table.Copy( pr )
+			inst.Entity = self.Entity
+			if (inst.CanUse && inst:CanUse()) then
+				self.Progs[ name ] = inst
+			end
+		end
+	end
+end
+
 function OS:AddProg( icon, dispname, com )
 	PCMod.Msg( "Adding prog: " .. icon ..", " .. dispname .. ", " .. com, true )
 	local ps = self:GetAllProgs()
@@ -263,7 +300,10 @@ function OS:NetDataRecieved( packet )
 	if (!pt) then return end
 	local dat = packet.Body
 	if (!dat) then return end
-	local hdl = { packet.Source, packet.SourcePort or packet.Port }
+	// handle[3] = the local address the packet was addressed to, so replies
+	// can be sourced from that identity (multi-homed devices). handle[4] =
+	// whether it arrived over Wi-Fi, so the reply leaves on the same link.
+	local hdl = { packet.Source, packet.SourcePort or packet.Port, packet.Dest, packet.ViaWireless == true }
 	if (!self:NetPortOpen( pt )) then
 		self:ReplyNetMessage( hdl, { "netPortClosed", dat } )
 		return
@@ -321,47 +361,72 @@ function OS:ProcessPacket( pt, dat, handle )
 				end
 			end
 		end
+		if (dat[1] == "netTraceHop") then
+			local hk = dat[2]
+			local thdl = dat[3]
+			local st = self.TraceRouteData[ thdl ]
+			if (st) then
+				local hop = tonumber( dat[6] ) or st.TTL
+				st.Hops[ hop ] = tostring( dat[4] or handle[1] ) .. " - " .. tostring( dat[5] or "HOP" )
+				st.TTL = hop + 1
+				self:SendTraceProbe( thdl )
+			end
+		end
 		if (dat[1] == "netTraceResponse") then
 			local hk = dat[2]
 			if (hk) then
-				local trace = self.TraceRouteData[ dat[3] ]
-				self.TraceRouteData[ dat[3] ] = nil
-				if (hk == "os") then
-					self:TraceSuccess( handle[1], trace )
-				else
-					if (self.Progs[ hk ]) then self.Progs[ hk ]:TraceSuccess( handle[1], trace ) end
+				local thdl = dat[3]
+				local st = self.TraceRouteData[ thdl ]
+				self.TraceRouteData[ thdl ] = nil
+				if (st) then
+					st.Hops[ st.TTL ] = tostring( handle[1] ) .. " - " .. tostring( dat[4] or "HOST" )
+					if (hk == "os") then
+						self:TraceSuccess( handle[1], st.Hops )
+					else
+						if (self.Progs[ hk ]) then self.Progs[ hk ]:TraceSuccess( handle[1], st.Hops ) end
+					end
 				end
 			end
-		end
-		if (dat[1] == "netTraceNode") then
-			if (!self.TraceRouteData[ dat[2] ]) then self.TraceRouteData[ dat[2] ] = {} end
-			table.insert( self.TraceRouteData[ dat[2] ], handle[1] .. " - " .. dat[3] )
 		end
 	end
 	self:DoPacket( pt, dat, handle )
 end
 
-function OS:SendNetMessage( dest, port, body )
+function OS:SendNetMessage( dest, port, body, ttl, src, viaWireless )
 	if ((!dest) || (!port) || (!body)) then
 		PCMod.Msg( "Os failed to send net message! (" .. tostring(dest != nil) .. "," .. tostring(port != nil) .. "," .. tostring(body != nil ) .. ")", true )
 		return
 	end
 	PCMod.Msg( "Os sending net message... (" .. dest .. ":" .. port .. ")", true )
 	//PrintTable( body )
-	return self:Network():SendPacket( dest, port, body )
+	return self:Network():SendPacket( dest, port, body, ttl, src, viaWireless )
 end
 
 function OS:ReplyNetMessage( handle, body )
-	return self:SendNetMessage( handle[1], handle[2], body )
+	// handle[3] is the local address the request was sent to; replying from
+	// that address keeps multi-homed devices answering on the right identity.
+	// handle[4] sends the reply back out the same interface.
+	return self:SendNetMessage( handle[1], handle[2], body, nil, handle[3], handle[4] )
 end
 
 function OS:GetIP()
 	return self:Network():GetIP()
 end
 
+// Hardware address of this machine's network interface.
+function OS:GetMAC()
+	return self:Network():GetMAC()
+end
+
 // Dotted-quad IPv4 address (GetIP returns only the host octet).
 function OS:GetFullIP()
 	return self:Network():GetFullIP()
+end
+
+// Secondary addresses from other routers this device is also linked to.
+function OS:GetExtraAddresses()
+	if (self:Network().GetExtraAddresses) then return self:Network():GetExtraAddresses() end
+	return {}
 end
 
 // Emulated IPv6 address of this machine (see PCMod.IPv6 in sh_common.lua).
@@ -429,8 +494,26 @@ function OS:NetTrace( dest, hk )
 		PCMod.Msg( "== OS FAILED TO FIND EMPTY TRACE HANDLE! ==" )
 		return
 	end
-	self.TraceRouteData[ thdl ] = {}
-	return self:SendNetMessage( dest, 0, { "netTrace", hk, thdl } )
+	// Traceroute works like the real thing: send a probe with TTL = 1, then
+	// increase the TTL by one for each hop report until the destination replies.
+	self.TraceRouteData[ thdl ] = {
+		Dest = dest,
+		HK = hk,
+		Hops = {},
+		TTL = 1,
+	}
+	return self:SendTraceProbe( thdl )
+end
+
+function OS:SendTraceProbe( thdl )
+	local st = self.TraceRouteData[ thdl ]
+	if (!st) then return end
+	local max = tonumber( PCMod.Cfg && PCMod.Cfg.TraceMaxHops ) or 30
+	if (st.TTL > max) then
+		self.TraceRouteData[ thdl ] = nil
+		return false
+	end
+	return self:SendNetMessage( st.Dest, 0, { "netTrace", st.HK, thdl, st.TTL }, st.TTL )
 end
 
 function OS:MessageFailed( hdl, code, data )

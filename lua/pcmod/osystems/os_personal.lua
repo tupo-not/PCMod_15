@@ -88,6 +88,7 @@ function OS:TriggerUpdate( st )
 		self:Display():FullFlush()
 		self:DelayUpdate( 1 )
 		self:LoadData()
+		self:LoadPrograms()
 	end
 	if (st == 10) then
 		self:BuildDesktop()

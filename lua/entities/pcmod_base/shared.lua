@@ -1521,6 +1521,15 @@ if (SERVER) then
 			PCMod.Beam.ClearEntData( self:EntIndex())
 		end
 		
+		// Garry's duplicator calls this on the freshly created copy, before its
+		// entity modifiers are applied. A cloned network device must not share
+		// the original's MAC (two laptops on one switch would fight over the
+		// same hardware address), so give the copy a fresh identity here.
+		function ENT:OnDuplicated()
+			self.IsPCModClone = true
+			self:RandomizeIdentity()
+		end
+
 		function ENT:BuildDupeInfo()
 			PCMod.Msg( "==> BUILDING DUPE INFO <==", true )
 			local dt = self:Data()
@@ -1528,7 +1537,16 @@ if (SERVER) then
 			tmp.harddrive = PCMod.TableToString( dt.HardDrive or {} )
 			tmp.ison = (dt.IsOn == true)
 			if (self.IsComputer) then
-				tmp.ip = dt.IP
+				// Only the configured identity travels with a dupe. A DHCP
+				// address is a lease owned by a live router, so copying it
+				// would make the duplicate reuse the original's address (and
+				// its lease ownership). The pasted PC re-leases on relink.
+				tmp.ip = {
+					Static = dt.IP && dt.IP.Static,
+					Mask = dt.IP && dt.IP.Mask,
+					MaskBits = dt.IP && dt.IP.MaskBits,
+					Gateway = dt.IP && dt.IP.Gateway,
+				}
 				tmp.password = dt.Password or ""
 			end
 			if (self.IsNetworkDevice) then
@@ -1562,7 +1580,36 @@ if (SERVER) then
 				dt.HardDrive = PCMod.StringToTable( info.harddrive ) or {}
 			end
 			if (self.IsComputer) then
-				if (info.ip) then dt.IP = info.ip end
+				if (istable( info.ip )) then
+					// Rebuild the address from the configured identity instead
+					// of adopting the copied lease table: a static address is
+					// re-applied, a DHCP client starts empty and re-leases on
+					// relink. Old dupes carry a baked IP table (Add/Sub) and are
+					// still honoured.
+					local src = info.ip
+					local ipdata = dt.IP or {}
+					dt.IP = ipdata
+					ipdata.Mask = src.Mask
+					ipdata.MaskBits = src.MaskBits
+					ipdata.Gateway = src.Gateway
+					if (src.Static) then
+						ipdata.Extra = {}
+						ipdata.Router = false
+						ipdata.Static = src.Static
+						if (self.SetStaticIP) then self:SetStaticIP( src.Static ) end
+					elseif (src.Add != nil) then
+						// Legacy dupe info with the address baked in.
+						dt.IP = (table.Copy && table.Copy( src )) or src
+					else
+						ipdata.Static = false
+						ipdata.Sub = false
+						ipdata.Add = false
+						ipdata.Full = false
+						ipdata.Router = false
+						ipdata.Extra = {}
+					end
+					self:UpdateData( dt )
+				end
 				if (info.password ~= nil) then dt.Password = info.password end
 			end
 			if (self.IsNetworkDevice) then
@@ -1570,7 +1617,16 @@ if (SERVER) then
 				if (info.wirepass ~= nil) then dt.WirePass = info.wirepass end
 				if (info.iswireless ~= nil) then dt.IsWireless = info.iswireless end
 			end
+			// A pasted entity is a clone, so it keeps the fresh identity that
+			// OnDuplicated assigned instead of adopting the source's MAC (and a
+			// switch does not adopt its source's per-port MACs either). Paste
+			// paths that skip OnDuplicated get a fresh identity here too. World
+			// saves still keep their MAC through OnSave/OnRestore.
+			if (!self.IsPCModClone) then self:RandomizeIdentity() end
 			self:UpdateData( dt )
+			if (dt.MAC && self.SetNWString) then
+				self:SetNWString( "MAC", dt.MAC )
+			end
 
 			// Re-sync the network address strings (and IPv6 meta) from the IP.
 			if (self.IsComputer) then

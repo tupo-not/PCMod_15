@@ -225,7 +225,7 @@ local dinfo = ent:BuildDupeInfo()
 assertTrue( dinfo.harddrive == dump, "dupe saves harddrive" )
 assertTrue( dinfo.ison == true, "dupe saves on state" )
 assertTrue( dinfo.password == "1234", "dupe saves password" )
-assertTrue( dinfo.ip.Add == 5, "dupe saves IP" )
+assertTrue( dinfo.ip.Add == nil, "dupe does not bake in a DHCP address" )
 
 -- Restore into a wiped slot.
 PCMod.Data[1].HardDrive = {}
@@ -235,8 +235,41 @@ PCMod.Data[1].IP = { Add = 1, Sub = 0, Back = { Add = false, Sub = false, Full =
 ent:ApplyDupeInfo( nil, ent, dinfo, nil )
 assertTrue( PCMod.Data[1].HardDrive == dump, "dupe restores harddrive" )
 assertTrue( PCMod.Data[1].Password == "1234", "dupe restores password" )
-assertTrue( PCMod.Data[1].IP.Add == 5, "dupe restores IP" )
+assertTrue( PCMod.Data[1].IP.Add == false, "dupe DHCP address is re-leased, not copied" )
 assertTrue( booted == true, "dupe reboots a computer that was on" )
+
+-- Duplicating a PC with a configured static address keeps that identity but
+-- never shares the live IP table with the source entity.
+PCMod.Data[1].IP = { Add = 5, Sub = 0, Full = "192.168.0.5", V6 = false, Back = { Add = false, Sub = false, Full = false, V6 = false } }
+assertTrue( ent:SetNetworkConfig( "192.168.5.20", "255.255.255.0", "192.168.5.1" ) )
+local sinfo0 = ent:BuildDupeInfo()
+assertEq( sinfo0.ip.Static, "192.168.5.20", "dupe saves static IP" )
+assertEq( sinfo0.ip.Mask, "255.255.255.0", "dupe saves netmask" )
+assertEq( sinfo0.ip.Gateway, "192.168.5.1", "dupe saves gateway" )
+PCMod.Data[1].IP = { Add = 1, Sub = 0, Back = { Add = false, Sub = false, Full = false, V6 = false } }
+ent:ApplyDupeInfo( nil, ent, sinfo0, nil )
+assertEq( ent:GetStaticIP(), "192.168.5.20", "dupe restores static IP" )
+assertEq( ent:GetFullIP(), "192.168.5.20", "dupe restores static address" )
+assertEq( ent:GetNetmask(), "255.255.255.0", "dupe restores netmask" )
+assertEq( ent:GetGateway(), "192.168.5.1", "dupe restores gateway" )
+assertTrue( PCMod.Data[1].IP ~= sinfo0.ip, "dupe gets its own IP table" )
+
+-- Old dupe data with a baked address is still honoured (save compatibility).
+ent:ApplyDupeInfo( nil, ent, { ip = { Add = 7, Sub = 0, Full = "192.168.0.7", Back = { Add = false, Sub = false, Full = false, V6 = false } } }, nil )
+assertEq( PCMod.Data[1].IP.Add, 7, "legacy dupe address restored" )
+
+-- Map-save round-trip keeps the configured identity (not a stale DHCP lease).
+ent:SetNetworkConfig( "192.168.5.20", "255.255.255.0", "192.168.5.1" )
+local sinfo = ent:OnSave()
+assertEq( sinfo.ip.Static, "192.168.5.20", "save stores static IP" )
+assertEq( sinfo.ip.Mask, "255.255.255.0", "save stores netmask" )
+assertEq( sinfo.ip.Gateway, "192.168.5.1", "save stores gateway" )
+PCMod.Data[1].IP = { Add = 1, Sub = 0, Back = { Add = false, Sub = false, Full = false, V6 = false } }
+ent:OnRestore( sinfo )
+assertEq( ent:GetStaticIP(), "192.168.5.20", "restore re-applies static IP" )
+assertEq( ent:GetFullIP(), "192.168.5.20", "restored address" )
+assertEq( ent:GetNetmask(), "255.255.255.0", "restored netmask" )
+assertEq( ent:GetGateway(), "192.168.5.1", "restored gateway" )
 
 -- Router config save/restore.
 ent.IsComputer = false

@@ -75,6 +75,7 @@ function OS:TriggerUpdate( st )
 		self:Display():FullFlush()
 		self:DelayUpdate( 1 )
 		self:LoadData()
+		self:LoadPrograms()
 	end
 	if (st == 10) then
 		self:BuildDesktop()
@@ -245,6 +246,7 @@ function OS:BuildDesktopData()
 	// System information shown on the server panel.
 	local v6 = self:GetIPv6()
 	local info = {}
+	info.MAC = self:GetMAC() or "unassigned"
 	info.IPv4 = self:GetFullIP() or "unassigned"
 	info.IPv6 = v6 or "unassigned"
 	info.Prefix = self:GetIPv6Prefix() or "none"

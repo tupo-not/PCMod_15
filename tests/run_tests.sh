@@ -45,9 +45,13 @@ TESTS=(
     mock_ipv6
     mock_entity_ipv6
     mock_entity_sounds
+    mock_switch
     mock_router
+    mock_trace
     mock_bios
+    mock_os_programs
     mock_network
+    mock_selfping
     mock_leases
     mock_routing
     mock_wiring
