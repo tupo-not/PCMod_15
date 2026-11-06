@@ -654,20 +654,20 @@ if (SERVER) then
 			
 			//PCMod.Msg( "(TOOLGUN) Selecting port " .. args[2] .. " on entity " .. args[1], true )
 			
-			if (obj) then
+			if (obj && obj.SelectPort) then
 				obj:SelectPort( tonumber( args[1] ), tonumber( args[2] ) )
 			end
 			
 			return
 		end
 		
-		if ((tool:GetClass() == "pcmod_wireswep") || (tool:GetClass() == "pcmod_unwireswep")) then
+		if (tool:GetClass() == "pcmod_wireswep") then
 		
 			local obj = tool:GetTable().ToolMode
 			
 			//PCMod.Msg( "(SWEP) Selecting port " .. args[2] .. " on entity " .. args[1], true )
 			
-			if (obj) then
+			if (obj && obj.SelectPort) then
 				obj:SelectPort( tonumber( args[1] ), tonumber( args[2] ) )
 			end
 			
