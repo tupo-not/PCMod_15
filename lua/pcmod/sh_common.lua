@@ -834,6 +834,39 @@ function PCMod.CanQuickType( kb )
 end
 
 // ---------------------------------------------------------------------------------------------------------
+// AddPropImpactSounds - Gives a scripted entity the engine's prop impact sounds
+// ---------------------------------------------------------------------------------------------------------
+// Scripted entities do not get the engine's surface impact sounds automatically,
+// so look up the surface's impact sound data (cached per material) and emit it
+// on hard collisions.
+if (SERVER) then
+
+	local ImpactSounds = {}
+
+	function PCMod.AddPropImpactSounds( ent )
+		function ent:PhysicsCollide( data, physobj )
+			local speed = data.Speed or 0
+			if (speed < 100) then return end
+			if (self.NextImpactSound && (self.NextImpactSound > CurTime())) then return end
+			if (!IsValid( physobj )) then return end
+
+			local mat = physobj:GetMaterial()
+			local snd = ImpactSounds[ mat ]
+			if (snd == nil) then
+				local surf = util.GetSurfaceData( util.GetSurfaceIndex( mat ) )
+				snd = (surf && surf.impactHardSound) or (surf && surf.impactSoftSound) or ""
+				ImpactSounds[ mat ] = snd
+			end
+			if (snd == "") then return end
+
+			self.NextImpactSound = CurTime() + 0.12
+			self:EmitSound( snd, 75, math.random( 95, 105 ), math.Clamp( speed / 400, 0.25, 1 ) )
+		end
+	end
+
+end
+
+// ---------------------------------------------------------------------------------------------------------
 // SplitString - Splits a string into equal sized chunks, with a different sized firstchunk
 // ---------------------------------------------------------------------------------------------------------
 function PCMod.SplitString( str, chunksize, firstchunk )

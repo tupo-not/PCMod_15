@@ -39,6 +39,9 @@ end
 
 if (SERVER) then
 
+	// Scripted entities do not get the engine's prop impact sounds.
+	if (PCMod.AddPropImpactSounds) then PCMod.AddPropImpactSounds( ENT ) end
+
 	function ENT:Initialize()
 	
 		// Setup all our physics stuff
