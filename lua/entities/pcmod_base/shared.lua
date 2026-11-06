@@ -527,6 +527,59 @@ if (SERVER) then
 			return self:Data().IP.Static
 		end
 
+		// Dotted netmask and IPv4 gateway configured on the Network page.
+		function ENT:GetNetmask()
+			return self:Data().IP.Mask
+		end
+
+		function ENT:GetGateway()
+			return self:Data().IP.Gateway
+		end
+
+		function ENT:SetNetmask( mask )
+			local bits = PCMod.IPv4.MaskToBits( mask )
+			if (!bits) then return false end
+			local ip = self:Data().IP
+			ip.Mask = PCMod.IPv4.BitsToMask( bits )
+			ip.MaskBits = bits
+			return true
+		end
+
+		function ENT:SetGateway( gw )
+			local ip = self:Data().IP
+			if ((gw == nil) || (gw == "")) then
+				ip.Gateway = false
+				return true
+			end
+			local lan = PCMod.IPv4.ParseLan( tostring( gw ) )
+			if (!lan) then return false end
+			ip.Gateway = lan.full
+			return true
+		end
+
+		// Apply a static IPv4 setup (address, netmask, gateway) in one go.
+		// An empty address clears the static IP (DHCP), an empty netmask keeps
+		// the current one, and an empty gateway clears it. Returns true, or
+		// false plus a reason.
+		function ENT:SetNetworkConfig( addr, mask, gw )
+			local ip = self:Data().IP
+			local maskBits = nil
+			if ((mask != nil) && (string.Trim( tostring( mask ) ) != "")) then
+				maskBits = PCMod.IPv4.MaskToBits( mask )
+				if (!maskBits) then return false, "Invalid netmask" end
+			end
+			local g = ""
+			if (gw != nil) then g = string.Trim( tostring( gw ) ) end
+			if ((g != "") && (!PCMod.IPv4.ParseLan( g ))) then return false, "Invalid gateway" end
+			if (!self:SetStaticIP( addr )) then return false, "Invalid IP address" end
+			if (maskBits != nil) then
+				ip.Mask = PCMod.IPv4.BitsToMask( maskBits )
+				ip.MaskBits = maskBits
+			end
+			if (gw != nil) then ip.Gateway = (g != "") and g or false end
+			return true
+		end
+
 		function ENT:SetBSubnet( subnet )
 			PCMod.Data[ self:EntIndex() ].IP.Back.Sub = subnet
 			self:SetBIPText()

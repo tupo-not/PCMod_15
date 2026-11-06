@@ -173,6 +173,41 @@ assertEq( ent:GetIPv6LinkLocal(), false, "cleared link-local" )
 assertEq( nw[ "IPv6" ], "", "cleared IPv6 NW string" )
 assertEq( nw[ "IPv6.Prefix" ], "", "cleared prefix NW string" )
 
+-- Manual network config from the Network page: IPv4 + netmask + gateway.
+assertTrue( ent:SetNetworkConfig( "192.168.5.20", "255.255.255.0", "192.168.5.1" ), "network config accepted" )
+assertEq( ent:GetFullIP(), "192.168.5.20", "static address applied" )
+assertEq( ent:GetStaticIP(), "192.168.5.20", "static address stored" )
+assertEq( ent:GetNetmask(), "255.255.255.0", "netmask stored" )
+assertEq( PCMod.Data[ 1 ].IP.MaskBits, 24, "netmask bits stored" )
+assertEq( ent:GetGateway(), "192.168.5.1", "gateway stored" )
+assertTrue( not ent:SetNetworkConfig( "192.168.5.20", "255.0.255.0", "192.168.5.1" ), "non-contiguous mask rejected" )
+assertTrue( not ent:SetNetworkConfig( "192.168.5.20", "24", "banana" ), "bad gateway rejected" )
+assertTrue( not ent:SetNetworkConfig( "10.0.0.1", "24", "" ), "backbone IP rejected for LAN" )
+assertTrue( ent:SetNetworkConfig( "", "24", "" ), "DHCP reset accepted" )
+assertEq( ent:GetStaticIP(), false, "static cleared" )
+assertEq( ent:GetGateway(), false, "gateway cleared" )
+
+-- MAC addresses can be entered manually and are normalised.
+assertTrue( ent:SetMAC( "aa:bb:cc:dd:ee:ff" ), "MAC accepted" )
+assertEq( ent:GetMAC(), "AA:BB:CC:DD:EE:FF", "MAC normalised" )
+assertTrue( not ent:SetMAC( "nope" ), "bad MAC rejected" )
+
+-- Duplicator clones get a fresh hardware identity. The source and its copy
+-- must not share a MAC (two laptops on one switch would collide).
+ent.IsComputer = true
+local sourceMAC = ent:GetMAC()
+ent:OnDuplicated()
+local cloneMAC = ent:GetMAC()
+assertTrue( cloneMAC != sourceMAC, "clone gets a fresh MAC" )
+assertTrue( PCMod.MAC.IsValid( cloneMAC ), "clone MAC is valid" )
+-- Applying the source's dupe info must not overwrite that fresh identity.
+ent:ApplyDupeInfo( nil, ent, { mac = sourceMAC, ip = { Static = "192.168.5.20" } }, nil )
+assertEq( ent:GetMAC(), cloneMAC, "clone keeps its fresh MAC after paste" )
+-- A plain world save keeps the clone's (new) MAC.
+local savedMAC = ent:GetMAC()
+local winfo = ent:OnSave()
+assertEq( winfo.mac, savedMAC, "world save keeps the clone MAC" )
+
 -- Duplicator save/restore round-trip (BuildDupeInfo / ApplyDupeInfo).
 PCMod.TableToString = function( t ) return t end
 PCMod.StringToTable = function( s ) return s end

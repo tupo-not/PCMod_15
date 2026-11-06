@@ -27,13 +27,19 @@ function PROG:RefreshNetwork()
 	local ipdata = (selfEnt && selfEnt.Data && selfEnt:Data() && selfEnt:Data().IP) or nil
 	if (ipdata && ipdata.Static) then static = ipdata.Static end
 	self.DeviceData.Net = {
+		MAC = os:GetMAC(),
 		IPv4 = ipv4,
 		Static = static,
+		Mask = ipdata && ipdata.Mask or nil,
+		MaskBits = ipdata && ipdata.MaskBits or nil,
+		Gateway4 = ipdata && ipdata.Gateway or nil,
 		IPv6 = os:GetIPv6(),
 		Prefix = os:GetIPv6Prefix(),
 		Gateway = os:GetIPv6Gateway(),
-		LinkLocal = os:GetIPv6LinkLocal()
+		LinkLocal = os:GetIPv6LinkLocal(),
+		Extras = (os.GetExtraAddresses && os:GetExtraAddresses()) or {}
 	}
+	self.DeviceData.IPNote = ""
 	self:RefreshWireless()
 end
 
@@ -76,6 +82,63 @@ function PROG:GetNetworkDriver()
 	local data = PCMod.Data[ self.Entity:EntIndex() ]
 	if (!data || !data.Drivers) then return nil end
 	return data.Drivers[ "gen_network" ]
+end
+
+// Router drivers this computer is attached to: every reachable router behind
+// its cable ports (following switches) plus the Wi-Fi router it joined.
+function PROG:GetConnectedRouterDrivers()
+	local out = {}
+	local seen = {}
+	local function addRouter( ent )
+		if ((!ent) || (!ent:IsValid())) then return end
+		local d = PCMod.Data && PCMod.Data[ ent:EntIndex() ]
+		local drv = d && d.Drivers && d.Drivers[ "webgr_router" ]
+		if (drv && (!seen[ ent:EntIndex() ])) then
+			seen[ ent:EntIndex() ] = true
+			out[ #out + 1 ] = drv
+		end
+	end
+	local function walk( ent, depth )
+		if ((!ent) || (!ent:IsValid()) || (depth > 8)) then return end
+		if (seen[ "e" .. ent:EntIndex() ]) then return end
+		seen[ "e" .. ent:EntIndex() ] = true
+		if (ent.IsSwitch) then
+			local ports = (ent.Ports && ent:Ports()) or {}
+			for _, port in pairs( ports ) do
+				if (port && port.Connected && port.ConEnt) then walk( port.ConEnt, depth + 1 ) end
+			end
+		else
+			addRouter( ent )
+		end
+	end
+	local selfEnt = self.Entity
+	if (selfEnt && selfEnt.Ports) then
+		for _, port in pairs( selfEnt:Ports() ) do
+			if (port && port.Connected && port.ConEnt) then walk( port.ConEnt, 0 ) end
+		end
+	end
+	local net = self:GetNetworkDriver()
+	if (net && net.WirelessEnt && net.WirelessEnt:IsValid()) then addRouter( net.WirelessEnt ) end
+	return out
+end
+
+// Force a fresh DHCP lease on every router this PC is attached to, so the
+// current pool/netmask is picked up without relinking the cable.
+function PROG:RenewNetwork()
+	local renewed = 0
+	for _, drv in ipairs( self:GetConnectedRouterDrivers() ) do
+		if (drv.RenewLease && drv:RenewLease( self.Entity )) then renewed = renewed + 1 end
+	end
+	// Keep the Wi-Fi status in step with whether we still have a lease.
+	local net = self:GetNetworkDriver()
+	if (net && net.WirelessEnt && net.WirelessEnt:IsValid()) then
+		local rdata = PCMod.Data[ net.WirelessEnt:EntIndex() ]
+		local rdrv = rdata && rdata.Drivers && rdata.Drivers[ "webgr_router" ]
+		net.WirelessIPv4 = (rdrv && rdrv.HasLease && rdrv:HasLease( self.Entity )) and true or false
+	end
+	self:RefreshNetwork()
+	self.DeviceData.IPNote = (renewed > 0) and "Address renewed." or "No DHCP lease to renew."
+	self:UpdateSS()
 end
 
 function PROG:RefreshWifiStatus()
@@ -196,6 +259,15 @@ function PROG:DoCommand( com, args )
 		self:UpdateSS()
 		return
 	end
+	if (com == "renew_network") then
+		self:RenewNetwork()
+		return
+	end
+	if (com == "refresh_wifi") then
+		self:RefreshWireless()
+		self:UpdateSS()
+		return
+	end
 	if (com == "set_static_ip") then
 		local addr = args[1]
 		local applied = false
@@ -205,8 +277,31 @@ function PROG:DoCommand( com, args )
 		if (!applied) then
 			self.DeviceData.IPError = "Invalid static IP - use 192.168.x.y"
 		else
-			self.DeviceData.IPError = nil
+			self.DeviceData.IPError = ""
 		end
+		self:RefreshNetwork()
+		self:UpdateSS()
+		return
+	end
+	if (com == "set_network") then
+		local ip = args[1] or ""
+		local mask = args[2] or ""
+		local gw = args[3] or ""
+		local mac = args[4] or ""
+		local ok, err = false, "Network configuration unavailable"
+		if ((mac == "") || (PCMod.MAC && PCMod.MAC.IsValid( mac ))) then
+			if (self.Entity && self.Entity.SetNetworkConfig) then
+				ok, err = self.Entity:SetNetworkConfig( ip, mask, gw )
+			end
+			if (ok && (mac != "")) then
+				if (!(self.Entity && self.Entity.SetMAC && self.Entity:SetMAC( mac ))) then
+					ok, err = false, "Invalid MAC address"
+				end
+			end
+		else
+			err = "Invalid MAC address"
+		end
+		self.DeviceData.IPError = ok and "" or (err or "Invalid network settings")
 		self:RefreshNetwork()
 		self:UpdateSS()
 		return

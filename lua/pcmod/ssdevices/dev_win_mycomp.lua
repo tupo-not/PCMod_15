@@ -62,17 +62,22 @@ function DEV:ReinitializeSelf()
 end
 
 function DEV:SwitchSection( section )
-	if ((section != "os") && (section != "network") && (section != "io")) then return end
+	if ((section != "os") && (section != "network") && (section != "wifi") && (section != "io")) then return end
 	if (section == self.Section) then return end
 	// Textboxes belonging to a hidden page are destroyed by the layout rebuild.
-	// Keep password drafts so browsing the other categories cannot discard them.
+	// Keep drafts so browsing the other categories cannot discard them.
 	if (self.Section == "os") then
 		self.OldPassDraft = self:GetTextboxText( "txtOldPass" )
 		self.NewPassDraft = self:GetTextboxText( "txtNewPass" )
 	end
 	if (self.Section == "network") then
-		self.WifiPassDraft = self:GetTextboxText( "txtWifiPass" )
 		self.StaticIPDraft = self:GetTextboxText( "txtStaticIP" )
+		self.NetmaskDraft = self:GetTextboxText( "txtNetmask" )
+		self.GatewayDraft = self:GetTextboxText( "txtGateway" )
+		self.MacDraft = self:GetTextboxText( "txtMac" )
+	end
+	if (self.Section == "wifi") then
+		self.WifiPassDraft = self:GetTextboxText( "txtWifiPass" )
 	end
 	if (self.Section == "io") then
 		self.KeyRepeatDraft = self:GetTextboxText( "txtKeyRepeat" )
@@ -134,18 +139,44 @@ end
 
 function DEV:InitializeNetwork( x, y, w, h )
 	local R = UI.Rect( x, y, w, h )
+	local net = (type( self.Net ) == "table") and self.Net or {}
 
-	MyCompList( self, self.Th, "lstNetInfo", UI.Box( R, 0.325, 0.21, 0.28, 0.42 ), true )
-	MyCompList( self, self.Th, "lstWireless", UI.Box( R, 0.63, 0.21, 0.335, 0.38 ), true )
-	MyCompTextbox( self, self.Th, "txtWifiPass", UI.Box( R, 0.7975, 0.62, 0.335, 0.055 ), "Password:" )
-	MyCompButton( self, self.Th, "btnWifiConnect", UI.Box( R, 0.63, 0.69, 0.16, 0.07 ), "Connect" )
-	MyCompButton( self, self.Th, "btnWifiDisconnect", UI.Box( R, 0.805, 0.69, 0.16, 0.07 ), "Disconnect" )
-	MyCompButton( self, self.Th, "btnRefreshNetwork", UI.Box( R, 0.325, 0.88, 0.28, 0.07 ), "Refresh" )
-	MyCompButton( self, self.Th, "btnNetTools", UI.Box( R, 0.63, 0.88, 0.335, 0.07 ), "Network Tools" )
-	MyCompTextbox( self, self.Th, "txtStaticIP", UI.Box( R, 0.450, 0.69, 0.28, 0.05 ), "Static IP:" )
-	MyCompButton( self, self.Th, "btnSetIP", UI.Box( R, 0.325, 0.77, 0.28, 0.055 ), "Set Static IP" )
+	MyCompList( self, self.Th, "lstNetInfo", UI.Box( R, 0.325, 0.21, 0.30, 0.62 ), true )
+
+	// Right half: manual address settings (IPv4, netmask, gateway, MAC).
+	MyCompTextbox( self, self.Th, "txtStaticIP", UI.Box( R, 0.80, 0.22, 0.26, 0.055 ), "IP:" )
+	MyCompTextbox( self, self.Th, "txtNetmask", UI.Box( R, 0.80, 0.31, 0.26, 0.055 ), "Mask:" )
+	MyCompTextbox( self, self.Th, "txtGateway", UI.Box( R, 0.80, 0.40, 0.26, 0.055 ), "Gateway:" )
+	MyCompTextbox( self, self.Th, "txtMac", UI.Box( R, 0.80, 0.49, 0.26, 0.055 ), "MAC:" )
+	MyCompButton( self, self.Th, "btnApplyNetwork", UI.Box( R, 0.63, 0.58, 0.335, 0.07 ), "Apply Network" )
+
+	MyCompButton( self, self.Th, "btnRefreshNetwork", UI.Box( R, 0.325, 0.86, 0.145, 0.07 ), "Refresh" )
+	MyCompButton( self, self.Th, "btnRenewNetwork", UI.Box( R, 0.48, 0.86, 0.145, 0.07 ), "Renew DHCP" )
+	MyCompButton( self, self.Th, "btnNetTools", UI.Box( R, 0.63, 0.86, 0.335, 0.07 ), "Network Tools" )
+
+	local ipVal = self.StaticIPDraft
+	if (ipVal == nil) then ipVal = net.Static or net.IPv4 or "" end
+	local maskVal = self.NetmaskDraft
+	if (maskVal == nil) then maskVal = net.Mask or "" end
+	local gwVal = self.GatewayDraft
+	if (gwVal == nil) then gwVal = net.Gateway4 or "" end
+	local macVal = self.MacDraft
+	if (macVal == nil) then macVal = net.MAC or "" end
+	self:SetTextboxText( "txtStaticIP", tostring( ipVal or "" ) )
+	self:SetTextboxText( "txtNetmask", tostring( maskVal or "" ) )
+	self:SetTextboxText( "txtGateway", tostring( gwVal or "" ) )
+	self:SetTextboxText( "txtMac", tostring( macVal or "" ) )
+end
+
+function DEV:InitializeWifi( x, y, w, h )
+	local R = UI.Rect( x, y, w, h )
+
+	MyCompList( self, self.Th, "lstWireless", UI.Box( R, 0.325, 0.21, 0.35, 0.40 ), true )
+	MyCompTextbox( self, self.Th, "txtWifiPass", UI.Box( R, 0.485, 0.66, 0.35, 0.055 ), "Password:" )
+	MyCompButton( self, self.Th, "btnWifiConnect", UI.Box( R, 0.325, 0.73, 0.17, 0.07 ), "Connect" )
+	MyCompButton( self, self.Th, "btnWifiDisconnect", UI.Box( R, 0.505, 0.73, 0.17, 0.07 ), "Disconnect" )
+	MyCompButton( self, self.Th, "btnRefreshWifi", UI.Box( R, 0.325, 0.81, 0.35, 0.07 ), "Scan / Refresh" )
 	if (self.WifiPassDraft) then self:SetTextboxText( "txtWifiPass", self.WifiPassDraft ) end
-	if (self.StaticIPDraft) then self:SetTextboxText( "txtStaticIP", self.StaticIPDraft ) end
 end
 
 function DEV:InitializeIO( x, y, w, h )
@@ -178,12 +209,15 @@ function DEV:Initialize( x, y, w, h )
 	MyCompList( self, self.Th, "lstSections", UI.Box( R, 0.025, 0.16, 0.25, 0.76 ), true )
 	self:AddListboxItem( "lstSections", "os", "Operating System" )
 	self:AddListboxItem( "lstSections", "network", "Network" )
+	self:AddListboxItem( "lstSections", "wifi", "Wi-Fi" )
 	self:AddListboxItem( "lstSections", "io", "Input / Output" )
-	if ((self.Section != "os") && (self.Section != "network") && (self.Section != "io")) then self.Section = "os" end
+	if ((self.Section != "os") && (self.Section != "network") && (self.Section != "wifi") && (self.Section != "io")) then self.Section = "os" end
 	self:SetListboxSelRow( "lstSections", self.Section )
 
 	if (self.Section == "network") then
 		self:InitializeNetwork( x, y, w, h )
+	elseif (self.Section == "wifi") then
+		self:InitializeWifi( x, y, w, h )
 	elseif (self.Section == "io") then
 		self:InitializeIO( x, y, w, h )
 	else
@@ -202,12 +236,19 @@ function DEV:BuildNetworkInfo()
 	self:ClearListbox( "lstNetInfo" )
 	local net = self.Net
 	if (type( net ) != "table") then net = {} end
+	self:AddListboxItem( "lstNetInfo", "mac", "MAC Address: " .. NetValue( net.MAC ) )
 	self:AddListboxItem( "lstNetInfo", "ipv4", "IPv4 Address: " .. NetValue( net.IPv4 ) )
 	self:AddListboxItem( "lstNetInfo", "static", "Static IP: " .. tostring( net.Static or "DHCP (auto)" ) )
+	self:AddListboxItem( "lstNetInfo", "netmask", "Netmask: " .. NetValue( net.Mask ) )
+	self:AddListboxItem( "lstNetInfo", "gateway4", "IPv4 Gateway: " .. NetValue( net.Gateway4 ) )
 	self:AddListboxItem( "lstNetInfo", "ipv6", "IPv6 Address: " .. NetValue( net.IPv6 ) )
 	self:AddListboxItem( "lstNetInfo", "prefix", "IPv6 Subnet: " .. NetValue( net.Prefix ) )
 	self:AddListboxItem( "lstNetInfo", "gateway", "IPv6 Gateway: " .. NetValue( net.Gateway ) )
 	self:AddListboxItem( "lstNetInfo", "linklocal", "Link-Local: " .. NetValue( net.LinkLocal ) )
+	// Secondary addresses from other routers (multi-homed devices).
+	for i, a in ipairs( net.Extras or {} ) do
+		self:AddListboxItem( "lstNetInfo", "alt" .. i, "Alt IPv4: " .. NetValue( a.IPv4 ) .. "  (" .. NetValue( a.IPv6 ) .. ")" )
+	end
 end
 
 function DEV:BuildDevices()
@@ -251,9 +292,17 @@ function DEV:Paint( x, y, w, h )
 	self:RenderWindow( self.Th, x, y, w, h, "Control Panel", h*0.06 )
 	self:RenderText( x+(w*0.15), y+(h*0.105), { "Categories" }, Color( 0, 0, 0, 255 ), 1 )
 	if (self.Section == "network") then
-		self:RenderText( x+(w*0.6425), y+(h*0.105), { "Network Settings & Status" }, Color( 0, 0, 0, 255 ), 1 )
+		self:RenderText( x+(w*0.465), y+(h*0.105), { "Network Settings & Status" }, Color( 0, 0, 0, 255 ), 1 )
 		self:RenderText( x+(w*0.465), y+(h*0.16), { "Status" }, Color( 0, 0, 0, 255 ), 1 )
-		self:RenderText( x+(w*0.7975), y+(h*0.16), { "Wireless Networks" }, Color( 0, 0, 0, 255 ), 1 )
+		self:RenderText( x+(w*0.63), y+(h*0.16), { "Address Settings" }, Color( 0, 0, 0, 255 ), 1 )
+		if (self.IPError && (self.IPError != "")) then
+			self:RenderError( self.Th, x+(w*0.63), y+(h*0.68), self.IPError )
+		elseif (self.IPNote && (self.IPNote != "")) then
+			self:RenderText( x+(w*0.63), y+(h*0.68), { self.IPNote }, Color( 0, 0, 0, 255 ), 1 )
+		end
+	elseif (self.Section == "wifi") then
+		self:RenderText( x+(w*0.465), y+(h*0.105), { "Wi-Fi" }, Color( 0, 0, 0, 255 ), 1 )
+		self:RenderText( x+(w*0.465), y+(h*0.16), { "Wireless Networks" }, Color( 0, 0, 0, 255 ), 1 )
 		local wf = self.Wifi
 		local wstat = "Not connected."
 		if (wf && wf.Connected) then
@@ -264,10 +313,7 @@ function DEV:Paint( x, y, w, h )
 		elseif (wf && wf.Error) then
 			wstat = tostring( wf.Error )
 		end
-		self:RenderText( x+(w*0.7975), y+(h*0.79), { wstat }, Color( 0, 0, 0, 255 ), 1 )
-		if (self.IPError) then
-			self:RenderError( self.Th, x+(w*0.465), y+(h*0.835), self.IPError )
-		end
+		self:RenderText( x+(w*0.465), y+(h*0.90), { wstat }, Color( 0, 0, 0, 255 ), 1 )
 	elseif (self.Section == "io") then
 		self:RenderText( x+(w*0.6425), y+(h*0.105), { "Input / Output Devices" }, Color( 0, 0, 0, 255 ), 1 )
 		self:RenderText( x+(w*0.475), y+(h*0.16), { "USB Devices" }, Color( 0, 0, 0, 255 ), 1 )
@@ -333,12 +379,36 @@ function DEV:ButtonClick( btn )
 		return
 	end
 	if (btn == "btnRefreshNetwork") then
+		self.IPNote = nil
 		self:RunProgCommand( "mycomputer", "refresh_network" )
 		return
 	end
-	if (btn == "btnSetIP") then
+	if (btn == "btnRenewNetwork") then
+		self.IPNote = nil
+		self.IPError = nil
+		self:RunProgCommand( "mycomputer", "renew_network" )
+		return
+	end
+	if (btn == "btnApplyNetwork") then
+		self.IPNote = nil
+		self.IPError = nil
 		self.StaticIPDraft = self:GetTextboxText( "txtStaticIP" )
-		self:RunProgCommand( "mycomputer", "set_static_ip", self.StaticIPDraft or "" )
+		self.NetmaskDraft = self:GetTextboxText( "txtNetmask" )
+		self.GatewayDraft = self:GetTextboxText( "txtGateway" )
+		self.MacDraft = self:GetTextboxText( "txtMac" )
+		// A DHCP client whose box still shows the leased address stays on DHCP
+		// unless the user actually typed a different (static) address.
+		local ipSend = self.StaticIPDraft
+		if ((type( self.Net ) == "table") && (!self.Net.Static) && (ipSend == self.Net.IPv4)) then
+			ipSend = ""
+		end
+		self:RunProgCommand( "mycomputer", "set_network",
+			ipSend or "", self.NetmaskDraft or "",
+			self.GatewayDraft or "", self.MacDraft or "" )
+		return
+	end
+	if (btn == "btnRefreshWifi") then
+		self:RunProgCommand( "mycomputer", "refresh_wifi" )
 		return
 	end
 	if (btn == "btnWifiConnect") then

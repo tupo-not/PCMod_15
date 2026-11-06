@@ -25,6 +25,7 @@ function table.Copy( t )
 end
 
 PCMod = { Data = { [1] = { Password = "old", HardDrive = {} } }, Msg = function() end, Cfg = { WirelessRange = 1024 } }
+PCMod.MAC = { IsValid = function( m ) return ((type( m ) == "string") && (m != "") && (m != "bad")) end }
 util = { Compress = function( s ) return s end }
 local ent = {}
 function ent:EntIndex() return 1 end
@@ -37,6 +38,17 @@ function ent:SetStaticIP( addr )
 	else
 		self:Data().IP.Static = false
 	end
+	return true
+end
+function ent:SetNetworkConfig( addr, mask, gw )
+	if ((mask != "") && (mask != "24") && (mask != "255.255.255.0")) then return false, "Invalid netmask" end
+	if ((gw != "") && (gw != "192.168.5.1")) then return false, "Invalid gateway" end
+	self.NetCfg = { addr = addr, mask = mask, gw = gw }
+	return true
+end
+function ent:SetMAC( mac )
+	if (mac == "bad") then return false end
+	self.MACSet = mac
 	return true
 end
 
@@ -75,6 +87,8 @@ local routerDrv = {}
 local regResult = "assigned"
 function routerDrv:AddWirelessClient( pc ) self.Added = pc return regResult end
 function routerDrv:RemoveWirelessClient( pc ) self.Added = nil end
+function routerDrv:HasLease( pc ) return self.Added == pc end
+function routerDrv:RenewLease( pc ) self.Renewed = pc return 2 end
 PCMod.Data[ 1 ].Drivers = { gen_network = netDrv }
 PCMod.Data[ 50 ] = { Drivers = { webgr_router = routerDrv } }
 local wifi = { IsPCMod = true }
@@ -86,6 +100,7 @@ ents.GetByIndex = function( idx ) if (idx == 50) then return wifi end return nil
 
 local os = {}
 function os:GetIP() return 2 end
+function os:GetMAC() return "AA:BB:CC:DD:EE:FF" end
 function os:GetFullIP() return "192.168.1.2" end
 function os:GetIPv6() return "fd00:c0:a8:1::2" end
 function os:GetIPv6Prefix() return "fd00:c0:a8:1::/64" end
@@ -123,6 +138,7 @@ end
 assertEq( PROG.Name, "mycomputer", "internal program name remains compatible" )
 assertEq( PROG.Title, "Control Panel", "new menu title" )
 prog:OnStart()
+assertEq( prog.DeviceData.Net.MAC, "AA:BB:CC:DD:EE:FF", "MAC address data" )
 assertEq( prog.DeviceData.Net.IPv4, "192.168.1.2", "IPv4 full address data (not host octet)" )
 assertEq( prog.DeviceData.Net.Prefix, "fd00:c0:a8:1::/64", "IPv6 prefix data" )
 assertEq( prog.DeviceData.Net.Gateway, "fd00:c0:a8:1::1", "gateway data" )
@@ -142,6 +158,33 @@ assertTrue( prog.DeviceData.Wifi.Connected, "Wi-Fi connected" )
 assertEq( prog.DeviceData.Wifi.EntIndex, 50, "Wi-Fi router index" )
 assertTrue( netDrv.WirelessEnt == wifi, "network driver holds the link" )
 assertTrue( routerDrv.Added == ent, "router recorded the wireless client" )
+
+-- Manual DHCP renew reaches the router without relinking, and the Wi-Fi status
+-- reflects whether a lease is still held.
+local wiredDrv = {}
+function wiredDrv:RenewLease( pc ) self.Renewed = pc return 3 end
+function wiredDrv:HasLease( pc ) return true end
+local wiredRouter = { IsPCMod = true }
+function wiredRouter:IsValid() return true end
+function wiredRouter:EntIndex() return 60 end
+function wiredRouter:GetClass() return "pcmod_router" end
+PCMod.Data[ 60 ] = { Drivers = { webgr_router = wiredDrv } }
+local sw = { IsSwitch = true }
+function sw:IsValid() return true end
+function sw:EntIndex() return 70 end
+function sw:Ports() return { { Connected = true, ConEnt = wiredRouter }, { Connected = true, ConEnt = ent } } end
+function ent:Ports() return { { Connected = true, ConEnt = sw } } end
+
+prog:DoCommand( "renew_network", {} )
+assertTrue( routerDrv.Renewed == ent, "renew reaches the wireless router" )
+assertTrue( wiredDrv.Renewed == ent, "renew walks through a switch to the wired router" )
+assertEq( prog.DeviceData.IPNote, "Address renewed.", "renew status note" )
+assertTrue( prog.DeviceData.Wifi.Connected, "renew keeps the Wi-Fi link" )
+
+-- Rescanning Wi-Fi keeps the in-range list current.
+prog:DoCommand( "refresh_wifi", {} )
+assertEq( #prog.DeviceData.Wireless, 2, "wifi rescan returns the in-range routers" )
+
 prog:DoCommand( "disconnect_wifi", {} )
 assertTrue( !prog.DeviceData.Wifi.Connected, "Wi-Fi disconnected" )
 assertTrue( netDrv.WirelessEnt == nil, "network driver cleared the link" )
@@ -171,5 +214,17 @@ assertEq( prog.DeviceData.Net.Static, "192.168.5.7", "static IP surfaced in netw
 assertEq( PCMod.Data[ 1 ].IP.Static, "192.168.5.7", "static IP stored on entity" )
 prog:DoCommand( "set_static_ip", { "" } )
 assertEq( prog.DeviceData.Net.Static, nil, "cleared static IP shows DHCP" )
+
+-- Full network config (IP/netmask/gateway + MAC) applies atomically.
+prog:DoCommand( "set_network", { "192.168.5.20", "255.255.255.0", "192.168.5.1", "11:22:33:44:55:66" } )
+assertEq( prog.DeviceData.IPError, "", "valid network config accepted" )
+assertEq( ent.NetCfg.addr, "192.168.5.20", "IP applied" )
+assertEq( ent.NetCfg.mask, "255.255.255.0", "netmask applied" )
+assertEq( ent.NetCfg.gw, "192.168.5.1", "gateway applied" )
+assertEq( ent.MACSet, "11:22:33:44:55:66", "MAC applied" )
+prog:DoCommand( "set_network", { "192.168.5.20", "255.255.255.0", "192.168.5.1", "bad" } )
+assertEq( prog.DeviceData.IPError, "Invalid MAC address", "invalid MAC rejected" )
+prog:DoCommand( "set_network", { "192.168.5.20", "255.255.255.128", "192.168.5.1", "" } )
+assertEq( prog.DeviceData.IPError, "Invalid netmask", "invalid netmask rejected" )
 
 print( "CONTROL PANEL PROGRAM TESTS PASSED" )

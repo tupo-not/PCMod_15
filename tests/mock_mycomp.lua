@@ -32,25 +32,56 @@ local ranlist={}
 RunConsoleCommand=function(cmd,val) ran={cmd=cmd,val=val}; table.insert(ranlist,{cmd=cmd,val=val}) end
 d:ButtonClick('btnApplyScale')
 assertTrue(ran and ran.cmd=='pc_guiscale' and ran.val=='1.25', 'apply scale command')
-assertEq(#d.Listboxes.lstSections.Order, 3, 'three control panel categories')
-d.Net={IPv4='192.168.1.2',Static='192.168.5.7',IPv6='fd00:c0:a8:1::2',Prefix='fd00:c0:a8:1::/64',Gateway='fd00:c0:a8:1::1',LinkLocal='fe80::2'}
+assertEq(#d.Listboxes.lstSections.Order, 4, 'four control panel categories')
+d.Net={MAC='AA:BB:CC:DD:EE:FF',IPv4='192.168.1.2',Static='192.168.5.7',Mask='255.255.255.0',Gateway4='192.168.5.1',IPv6='fd00:c0:a8:1::2',Prefix='fd00:c0:a8:1::/64',Gateway='fd00:c0:a8:1::1',LinkLocal='fe80::2'}
 d.Wireless={{EntIndex=12,Class='pcmod_router',Distance=342,Signal=80}}
 d:ListboxSelect('lstSections','network')
 assertTrue(d.Listboxes.lstNetInfo ~= nil, 'network page exists')
-assertTrue(d.Listboxes.lstWireless ~= nil, 'wireless networks list exists')
+assertTrue(d.Listboxes.lstWireless == nil, 'wireless controls live on their own page')
 assertTrue(d.Listboxes.lstGuiScale == nil, 'OS controls hidden on network page')
-assertEq(#d.Listboxes.lstNetInfo.Order, 6, 'network information rows')
-assertTrue(string.find(d.Listboxes.lstNetInfo.List.gateway, 'fd00:c0:a8:1::1', 1, true) ~= nil, 'gateway shown')
+assertEq(#d.Listboxes.lstNetInfo.Order, 9, 'network information rows')
+assertTrue(string.find(d.Listboxes.lstNetInfo.List.mac, 'AA:BB:CC:DD:EE:FF', 1, true) ~= nil, 'MAC address shown')
+assertTrue(string.find(d.Listboxes.lstNetInfo.List.gateway, 'fd00:c0:a8:1::1', 1, true) ~= nil, 'IPv6 gateway shown')
+assertTrue(string.find(d.Listboxes.lstNetInfo.List.gateway4, '192.168.5.1', 1, true) ~= nil, 'IPv4 gateway shown')
+assertTrue(string.find(d.Listboxes.lstNetInfo.List.netmask, '255.255.255.0', 1, true) ~= nil, 'netmask shown')
 assertTrue(string.find(d.Listboxes.lstNetInfo.List.static, '192.168.5.7', 1, true) ~= nil, 'static IP shown')
+assertTrue(d.Textboxes.txtStaticIP ~= nil, 'static IP box exists')
+assertTrue(d.Textboxes.txtNetmask ~= nil, 'netmask box exists')
+assertTrue(d.Textboxes.txtGateway ~= nil, 'gateway box exists')
+assertTrue(d.Textboxes.txtMac ~= nil, 'MAC box exists')
+assertEq(d:GetTextboxText('txtStaticIP'), '192.168.5.7', 'static IP prefilled')
+assertEq(d:GetTextboxText('txtNetmask'), '255.255.255.0', 'netmask prefilled')
+assertEq(d:GetTextboxText('txtGateway'), '192.168.5.1', 'gateway prefilled')
+assertEq(d:GetTextboxText('txtMac'), 'AA:BB:CC:DD:EE:FF', 'MAC prefilled')
+assertTrue(d.Textboxes.txtWifiPass == nil, 'wifi password box moved off network page')
+d:ListboxSelect('lstSections','wifi')
+assertTrue(d.Listboxes.lstWireless ~= nil, 'wireless networks list exists')
+assertTrue(d.Listboxes.lstNetInfo == nil, 'network status hidden on wifi page')
 assertEq(#d.Listboxes.lstWireless.Order, 1, 'wireless network listed')
 assertTrue(string.find(d.Listboxes.lstWireless.List['12'], 'Signal 80%', 1, true) ~= nil, 'wireless signal shown')
 assertTrue(d.Textboxes.txtWifiPass ~= nil, 'wifi password box exists')
 d:SetListboxSelRow('lstWireless','12')
 d:SetTextboxText('txtWifiPass','123')
 local wsent
-function d:RunProgCommand(prog,cmd,a,b) wsent={prog=prog,cmd=cmd,a=a,b=b} end
+function d:RunProgCommand(prog,cmd,a,b,c,e) wsent={prog=prog,cmd=cmd,a=a,b=b,c=c,e=e} end
 d:ButtonClick('btnWifiConnect')
 assertTrue(wsent and wsent.cmd=='connect_wifi' and wsent.a=='12' and wsent.b=='123', 'wifi connect command')
+d:ButtonClick('btnRefreshWifi')
+assertTrue(wsent and wsent.cmd=='refresh_wifi', 'wifi scan command')
+d:ListboxSelect('lstSections','network')
+d:ButtonClick('btnRenewNetwork')
+assertTrue(wsent and wsent.cmd=='renew_network', 'renew DHCP command')
+d:SetTextboxText('txtStaticIP','192.168.5.20')
+d:SetTextboxText('txtNetmask','255.255.255.0')
+d:SetTextboxText('txtGateway','192.168.5.1')
+d:SetTextboxText('txtMac','11:22:33:44:55:66')
+d:ButtonClick('btnApplyNetwork')
+assertTrue(wsent and wsent.cmd=='set_network' and wsent.a=='192.168.5.20' and wsent.b=='255.255.255.0' and wsent.c=='192.168.5.1' and wsent.e=='11:22:33:44:55:66', 'apply network command')
+d.Net.Static = nil
+d.Net.IPv4 = '192.168.1.2'
+d:SetTextboxText('txtStaticIP','192.168.1.2')
+d:ButtonClick('btnApplyNetwork')
+assertTrue(wsent and wsent.cmd=='set_network' and wsent.a=='', 'unchanged DHCP address stays DHCP')
 d.Dvs={{1,'Printer'},{4,'Keyboard'}}
 local sent
 function d:RunProgCommand(prog,cmd) sent={prog=prog,cmd=cmd} end
