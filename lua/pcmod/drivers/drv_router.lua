@@ -57,6 +57,9 @@ function DRV:Initialize()
 	// differ. LAN routers occupy hosts 2..11, so this pool starts at 12.
 	self.BLeases = {}
 	self.BLeasePort = {}
+	// Stateful IPv6 flows allow replies back into the LAN without opening it to
+	// unsolicited WAN traffic.
+	self.V6Flows = {}
 
 	timer.Simple(1, function() if (!IsValid( self.Entity )) then return end self.BSubnet = self.Entity:GetBSubnet() end)
 	timer.Simple(1, function() if (!IsValid( self.Entity )) then return end self.Subnet = self.Entity:GetSubnet() end)
@@ -258,6 +261,20 @@ function DRV:ProcessPacket( pid, pass, side )
 		PCMod.Msg( "[webgr]Firewall dropped packet on port " .. tostring( packet.Port ), true )
 		return
 	end
+	// WAN -> LAN boundary. Without NAT, an outside host could otherwise address
+	// the router's LAN /64 (including its LAN gateway) or reach the LAN
+	// identities by their private IPv4/mapped form. Only replies to flows this
+	// LAN started, or explicit inbound firewall rules, may enter.
+	if (side == "wan") then
+		local lanTarget = self:IsLanSelfAddress( packet.Dest )
+		if ((!lanTarget) && PCMod.IPv6.IsIPv6( packet.Dest )) then
+			lanTarget = self:IsLanIPv6( packet.Dest )
+		end
+		if (lanTarget && (!self:WanToLanAllowed( packet ))) then
+			PCMod.Msg( "[webgr]WAN -> LAN ingress blocked for " .. tostring( packet.Dest ), true )
+			return
+		end
+	end
 	// Port forwarding + PAT. An inbound packet to a forwarded port is destination
 	// NAT'ed to the internal host (each peer given a stable ephemeral source port
 	// so the host can tell clients apart); replies are translated back at both
@@ -425,6 +442,9 @@ function DRV:ProcessPacket( pid, pass, side )
 
 	// LAN router: everything not on my LAN goes upstream.
 	if (self.Uplink) then
+		// Remember LAN-initiated traffic so the matching reply is allowed back
+		// through the IPv6 WAN -> LAN boundary above.
+		if (side == "lan") then self:RememberV6Flow( packet ) end
 		self.Entity:PushData( self.Uplink, { "deliver", pid, pass } )
 		return
 	end
@@ -1068,6 +1088,80 @@ function DRV:FirewallBlocks( packet, side )
 	return true
 end
 
+// IPv6 has no NAT, so the LAN edge needs its own stateful boundary. A packet
+// arriving from the WAN may only reach an address inside this router's LAN
+// /64 when it belongs to a flow the LAN started, or when an inbound firewall
+// rule explicitly opens it. This mirrors IPv4's "LAN is private" behaviour and
+// keeps freshly spawned routers closed by default.
+function DRV:IsLanIPv6( addr )
+	local lp = self:GetIPv6Prefix()
+	if (!lp) then return false end
+	return PCMod.IPv6.InSubnet( addr, lp )
+end
+
+// Is addr one of this router's private LAN identities (its gateway IPv4/IPv6)?
+// On the WAN side these must not be treated as local addresses; otherwise a
+// shared L2 segment could reach the LAN admin interface by its private IP.
+function DRV:IsLanSelfAddress( addr )
+	local v4 = self.Entity.GetLanIPv4 && self.Entity:GetLanIPv4()
+	local v6 = self.Entity.GetIPv6 && self.Entity:GetIPv6()
+	return PCMod.IPv6.Matches( addr, v4, v6 )
+end
+
+function DRV:RememberV6Flow( packet )
+	if ((!packet) || (!packet.Source) || (!packet.Dest)) then return end
+	self.V6Flows = self.V6Flows or {}
+	local key = tostring( packet.Source ) .. "|" .. tostring( packet.Dest ) .. "|" .. tostring( packet.Port or 0 )
+	self.V6Flows[ key ] = {
+		localAddr = packet.Source,
+		remote = packet.Dest,
+		port = packet.Port or 0,
+		time = CurTime(),
+	}
+end
+
+// Is this WAN packet a reply to a flow the LAN started? Traceroute hop reports
+// come from routers along the path rather than the final destination, so a
+// port-0 trace flow also accepts netTraceHop replies.
+function DRV:V6ReplyAllowed( packet )
+	self.V6Flows = self.V6Flows or {}
+	local now = CurTime()
+	local port = packet.Port or 0
+	for key, flow in pairs( self.V6Flows ) do
+		if ((now - (flow.time or now)) > 3600) then
+			self.V6Flows[ key ] = nil
+		elseif ((flow.localAddr == packet.Dest) && (flow.port == port)) then
+			if (flow.remote == packet.Source) then
+				// Keep an active conversation alive while it is in use.
+				flow.time = now
+				return true
+			end
+			if ((port == 0) && (packet.Body) && (packet.Body[1] == "netTraceHop")) then return true end
+		end
+	end
+	return false
+end
+
+// Explicit inbound allow rule. IPv6 has no port-forward/NAT fallback, so these
+// rules are honoured for LAN ingress even when the general firewall is off.
+function DRV:V6RuleAllowed( packet )
+	local c = self:GetCfg()
+	for _, r in ipairs( c.FirewallRules or {} ) do
+		if ((r.dir == "in") || (r.dir == "any")) then
+			local m = true
+			if ((r.src != "") && (r.src != packet.Source)) then m = false end
+			if ((r.dst != "") && (r.dst != packet.Dest)) then m = false end
+			if ((r.port != 0) && (r.port != (packet.Port or 0))) then m = false end
+			if (m) then return true end
+		end
+	end
+	return false
+end
+
+function DRV:WanToLanAllowed( packet )
+	return self:V6ReplyAllowed( packet ) || self:V6RuleAllowed( packet )
+end
+
 function DRV:AddFirewallRule( dir, src, dst, port )
 	if ((dir != "in") && (dir != "out") && (dir != "any")) then return false end
 	src = tostring( src or "" )
@@ -1539,6 +1633,7 @@ function DRV:OnRemove()
 	self.Leases = {}
 	self.BLeases = {}
 	self.BLeasePort = {}
+	self.V6Flows = {}
 	self.Children = {}
 	self.ChildLan = {}
 	self.Neighbors = {}

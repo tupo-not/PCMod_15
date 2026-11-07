@@ -588,4 +588,123 @@ DRV:CallEvent( { Event = "linked", [ 1 ] = 1 } )
 assertEq( lanCalls, 1, "LAN-side computer still gets a DHCP lease" )
 assertTrue( DRV.LAN[ 1 ] ~= nil, "LAN-side computer is added to the LAN table" )
 
+-- Earlier tests replace a few driver methods inline; reload the driver so the
+-- ingress tests run against the real implementation.
+dofile( "pcmod_drv_router.lua" )
+
+-- IPv6 WAN -> LAN ingress: IPv6 has no NAT, so the LAN edge must keep the
+-- same "private network" boundary IPv4 gets for free. A fresh router must not
+-- let a backbone host address its LAN /64.
+PCMod.Cfg.DefaultTTL = 64
+local ingressData = {
+	IP = { UpBB = 3, LanID = 5 },
+	RouterCfg = { Firewall = false, FirewallRules = {} },
+}
+local ingressEnt = {}
+local ingressMem = {}
+function ingressEnt:Memory() return ingressMem end
+function ingressEnt:UpdateMemory() end
+function ingressEnt:Data() return ingressData end
+function ingressEnt:GetClass() return "pcmod_router" end
+function ingressEnt:GetIPv6Prefix() return "fd00:3:0:5::/64" end
+function ingressEnt:GetIPv6() return "fd00:3:0:5::1" end
+function ingressEnt:GetBIPv6Prefix() return "fd00:3::/32" end
+function ingressEnt:GetBIPv6() return "fd00:3::6" end
+function ingressEnt:GetFullIP() return "192.168.5.1" end
+function ingressEnt:GetLanIPv4() return "192.168.5.1" end
+function ingressEnt:GetFullBIP() return "10.0.3.5" end
+function ingressEnt:GetSubnet() return 5 end
+function ingressEnt:GetBSubnet() return 3 end
+function ingressEnt:GetSourceAddress() return "192.168.5.1" end
+function ingressEnt:IsAddressedTo( a )
+	return (a == "fd00:3:0:5::1") || (a == "fd00:3::6") || (a == "192.168.5.1") || (a == "10.0.3.5")
+end
+local pushed = {}
+function ingressEnt:PushData( port, data )
+	pushed[ #pushed + 1 ] = { port = port, data = data }
+end
+
+local ingress = {}
+for k, v in pairs( DRV ) do ingress[ k ] = v end
+ingress.Entity = ingressEnt
+ingress.Uplink = 5
+ingress.V6Flows = {}
+ingress.LAN = {}
+function ingress:HasPC( a ) if (a == "fd00:3:0:5::2") then return 1 end return false end
+function ingress:DeliverToWirelessClient() return false end
+
+local function runPacket( id, src, dst, port, side, body )
+	pushed = {}
+	PCMod.Network.Packets[ id ] = {
+		Source = src, Dest = dst, Port = port,
+		Body = body or { "payload" }, TTL = 64, Delivered = false,
+	}
+	ingress:ProcessPacket( id, nil, side )
+	return pushed
+end
+
+local got = runPacket( 410, "fd00:4::9", "fd00:3:0:5::2", 72, "wan" )
+assertEq( #got, 0, "fresh router blocks WAN -> LAN by default" )
+
+got = runPacket( 411, "fd00:3:0:5::2", "fd00:4::9", 72, "lan" )
+assertEq( #got, 1, "LAN -> WAN traffic is forwarded" )
+assertEq( got[ 1 ].port, 5, "forwarded through the uplink" )
+
+got = runPacket( 412, "fd00:4::9", "fd00:3:0:5::2", 72, "wan" )
+assertEq( #got, 1, "reply to a LAN-initiated flow is allowed back in" )
+assertEq( got[ 1 ].port, 1, "reply delivered to the LAN port" )
+
+got = runPacket( 413, "fd00:4::66", "fd00:3:0:5::2", 72, "wan" )
+assertEq( #got, 0, "another WAN host cannot reuse that flow" )
+
+local webCalled = false
+ingress.HandleWebRequest = function() webCalled = true end
+got = runPacket( 414, "fd00:4::9", "fd00:3:0:5::1", 80, "wan", { "http", "/" } )
+assertEq( #got, 0, "router LAN gateway is not exposed to the WAN" )
+assertTrue( not webCalled, "LAN-side web UI is not served over WAN IPv6" )
+
+-- Private IPv4 and mapped IPv4 forms of the LAN gateway are not a bypass.
+webCalled = false
+got = runPacket( 421, "10.0.4.9", "192.168.5.1", 80, "wan", { "http", "/" } )
+assertEq( #got, 0, "LAN IPv4 gateway is not exposed to the WAN" )
+assertTrue( not webCalled, "private IPv4 admin page is not served over the WAN" )
+webCalled = false
+got = runPacket( 422, "fd00:4::9", "::ffff:192.168.5.1", 80, "wan", { "http", "/" } )
+assertEq( #got, 0, "mapped IPv4 LAN gateway is not exposed to the WAN" )
+assertTrue( not webCalled, "mapped LAN admin page is not served over the WAN" )
+
+-- The router's WAN identity stays reachable (it is not inside the LAN /64).
+local pingReplies = {}
+ingress.Process = function( self, data ) pingReplies[ #pingReplies + 1 ] = data end
+pushed = {}
+PCMod.Network.Packets[ 416 ] = {
+	Source = "fd00:4::9", Dest = "fd00:3::6", Port = 0,
+	Body = { "netPing", "hk" }, TTL = 64, Delivered = false,
+}
+ingress:ProcessPacket( 416, nil, "wan" )
+assertEq( #pingReplies, 1, "router WAN address still answers pings" )
+
+pushed = {}
+PCMod.Network.Packets[ 423 ] = {
+	Source = "fd00:4::9", Dest = "10.0.3.5", Port = 0,
+	Body = { "netPing", "hk" }, TTL = 64, Delivered = false,
+}
+ingress:ProcessPacket( 423, nil, "wan" )
+assertEq( #pingReplies, 2, "router WAN IPv4 still answers pings" )
+
+-- An explicit inbound firewall rule opens a LAN hole without NAT.
+ingressData.RouterCfg.FirewallRules = { { dir = "in", src = "", dst = "fd00:3:0:5::2", port = 72 } }
+got = runPacket( 417, "fd00:4::66", "fd00:3:0:5::2", 72, "wan" )
+assertEq( #got, 1, "inbound rule opens IPv6 LAN ingress" )
+ingressData.RouterCfg.FirewallRules = {}
+
+-- Traceroute hop replies from routers along the path are still allowed when
+-- the LAN itself started the trace, but probes cannot enter the LAN.
+got = runPacket( 418, "fd00:3:0:5::2", "fd00:4::9", 0, "lan", { "netTrace", "hk", 1, 1 } )
+assertEq( #got, 1, "LAN trace probe is forwarded" )
+got = runPacket( 419, "fd00:3::1", "fd00:3:0:5::2", 0, "wan", { "netTraceHop", "hk", 1, "fd00:3::1", "BRTR", 1 } )
+assertEq( #got, 1, "path hop reply reaches the tracing LAN host" )
+got = runPacket( 420, "fd00:4::66", "fd00:3:0:5::2", 0, "wan", { "netTrace", "hk", 2, 1 } )
+assertEq( #got, 0, "WAN traceroute probes cannot enter the LAN" )
+
 print( "ALL ROUTER IPV6 TESTS PASSED" )

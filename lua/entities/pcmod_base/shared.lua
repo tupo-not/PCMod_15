@@ -422,6 +422,11 @@ if (SERVER) then
 			return ip.LAN or ip.WAN
 		end
 
+		// Only the private LAN IPv4 (false on a device with no LAN side).
+		function ENT:GetLanIPv4()
+			return self:Data().IP.LAN
+		end
+
 		function ENT:GetIPv4()
 			local ip = self:Data().IP
 			return ip.LAN or ip.WAN
