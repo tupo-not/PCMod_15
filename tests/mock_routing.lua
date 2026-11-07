@@ -8,6 +8,7 @@ PCMod = {
     Cfg = { MaxNetworkPid = 500, DHCPStart = 2, DHCPEnd = 254, LanNetmask = 24 },
 }
 dofile( "pcmod_network.lua" )
+dofile( "pcmod_sh_dhcp.lua" )
 dofile( "pcmod_drv_router.lua" )
 
 local function assertTrue( v, m )

@@ -8,6 +8,7 @@ PCMod = {
 math.Clamp = function( v, a, b ) if (v < a) then return a end if (v > b) then return b end return v end
 
 dofile( "pcmod_sh_common.lua" )
+dofile( "pcmod_sh_dhcp.lua" )
 dofile( "pcmod_drv_router.lua" )
 
 local function assertEq( a, b, m )
@@ -34,21 +35,29 @@ local function mkPC( idx )
     function o:IsValid() return true end
     function o:EntIndex() return self.idx end
     function o:Data() return { IP = self.ipdata } end
-    function o:SetSubnet( s ) self.sub = s self.ipdata.Sub = s end
-    function o:SetIP( h ) self.ip = h self.ipdata.Add = h end
+    function o:SetSubnet( s )
+        self.sub = s
+        if (s == false) then self.ipdata.LAN = false
+        else self.ipdata.LAN = "192.168." .. tostring( s ) .. "." .. tostring( self.ip or 1 ) end
+    end
+    function o:SetIP( h )
+        self.ip = h
+        if (h == false) then self.ipdata.LAN = false
+        else self.ipdata.LAN = "192.168." .. tostring( self.sub or 0 ) .. "." .. tostring( h ) end
+    end
     function o:SetUpBB( b ) self.upbb = b end
     function o:SetLanID( n ) self.lanid = n end
-    function o:AddExtraIP( s, a, ub, lid, r )
+    function o:AddExtraIP( addr, ub, lid, r )
         for _, ex in ipairs( self.extras ) do
-            if (ex.Sub == s && ex.Add == a) then return ex end
+            if (ex.IPv4 == addr) then return ex end
         end
-        local ex = { Sub = s, Add = a, UpBB = ub or 0, LanID = lid or 0, Router = r }
+        local ex = { IPv4 = addr, UpBB = ub or 0, LanID = lid or 0, Router = r }
         self.extras[ #self.extras + 1 ] = ex
         return ex
     end
-    function o:ReleaseExtraIP( s, a )
+    function o:ReleaseExtraIP( addr )
         for i, ex in ipairs( self.extras ) do
-            if (ex.Sub == s && ex.Add == a) then table.remove( self.extras, i ) return true end
+            if (ex.IPv4 == addr) then table.remove( self.extras, i ) return true end
         end
         return false
     end
@@ -76,6 +85,13 @@ assertEq( DRV:AssignLease( mkPC( 10 ) ), nil, "pool exhausted" )
 -- Releasing a lease returns the host to the pool.
 DRV:ReleaseLease( pcs[ 2 ] )
 assertEq( DRV:AssignLease( mkPC( 20 ) ), 3, "released lease reused" )
+
+-- The unified API drives the same LAN table.
+DRV.Leases = {}
+local direct = mkPC( 21 )
+assertEq( DRV:AssignDHCP( "lan", direct ), 2, "unified LAN assignment" )
+assertTrue( DRV:HasDHCPLease( "lan", direct ), "unified LAN lookup" )
+assertEq( DRV:ReleaseDHCP( "lan", direct ), 2, "unified LAN release" )
 
 -- /16: the host spans the third and fourth octets.
 PCMod.Cfg.LanNetmask = 16
@@ -146,7 +162,7 @@ roam.ipdata.Router = 777
 assertEq( DRV:AddWirelessClient( roam ), "assigned", "roaming client joins" )
 assertEq( roam.ip, 9, "roaming client keeps its primary address" )
 assertEq( #roam.extras, 1, "roaming client gains a secondary address" )
-assertEq( roam.extras[ 1 ].Add, 3, "secondary lease host" )
+assertEq( roam.extras[ 1 ].IPv4, "192.168.0.3", "secondary lease address" )
 assertEq( roam.extras[ 1 ].Router, 1, "secondary lease owner recorded" )
 DRV:RemoveWirelessClient( roam )
 assertTrue( DRV.Leases[ 3 ] == nil, "roaming lease bookkeeping dropped" )

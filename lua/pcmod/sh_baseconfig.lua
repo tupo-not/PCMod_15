@@ -34,7 +34,9 @@ cfg.RPCost = { -- Do not edit
 	pcmod_tower 	=	250, -- Cost for a tower
 	pcmod_monitor 	= 	100, -- Cost for a monitor
 	pcmod_keyboard 	= 	25, -- Cost for a keyboard
-	pcmod_router 	=	80, -- Cost for a router
+	pcmod_router 	=	80, -- Cost for a LAN modem
+	pcmod_erouter 	=	80, -- Cost for a router with an Ethernet WAN
+	pcmod_modem 	=	40, -- Cost for a fibre-to-Ethernet modem
 	pcmod_brouter 	= 	120, -- Cost for a backbone router
 	pcmod_speaker 	= 	50, -- Cost for a speaker
 	pcmod_printer	=	100, -- Cost for a printer
@@ -166,9 +168,11 @@ cfg.RPItems = {
 	{ "pcmod_keyboard", "Keyboard", "models/props/cs_office/computer_keyboard.mdl" },
     { "pcmod_speaker", 	"Speaker", 	"models/Chipstiks_PCMod_Models/Speakers/StandardSpeakerMetal.mdl" },
 	{ "pcmod_splitter",	"Audio Amplifier",	"models/props_lab/tpplug.mdl" },
-	{ "pcmod_switch",	"Switch",	"models/props_lab/reciever01c.mdl" },
+	{ "pcmod_switch",	"Switch",	"models/props_lab/reciever01a.mdl" },
 	{ "pcmod_printer",	"Printer",	"models/props_lab/plotter.mdl" },
-	{ "pcmod_router",	"Router",	"models/props_lab/reciever01a.mdl" },
+	{ "pcmod_router",	"LAN Modem",	"models/props_lab/reciever01a.mdl" },
+	{ "pcmod_erouter",	"Router",	"models/props_lab/reciever01a.mdl" },
+	{ "pcmod_modem",	"Modem",	"models/props_lab/reciever01b.mdl" },
 	{ "#WLSS_R",		"Wireless Router", "models/PCMod/wrt54g.mdl" },
 	{ "pcmod_brouter",	"Backbone Router", "models/props_lab/reciever01a.mdl" },
 	{ "pcmod_laptop",	"Laptop",	"models/pcmod/eeepc.mdl" }

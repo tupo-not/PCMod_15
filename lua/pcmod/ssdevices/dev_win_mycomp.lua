@@ -12,6 +12,11 @@ DEV.Section = "os"
 DEV.Net = {}
 DEV.Dvs = {}
 
+// Keep the active category when the client device is destroyed while the
+// player walks away from the screen. A program restart has a new OpenID, so
+// reopening the Control Panel still starts on the first page.
+DEV.PersistKeys = { "Section" }
+
 // Presets offered by the Control Panel. The active value lives in
 // PCMod.Cfg.GuiScale (and can also be changed with pc_guiscale <n>).
 local GUI_SCALES = { 0.25, 0.5, 0.75, 1, 1.25, 1.5, 2 }
@@ -84,6 +89,7 @@ function DEV:SwitchSection( section )
 		self.KeyHoldDraft = self:GetTextboxText( "txtKeyHold" )
 	end
 	self.Section = section
+	self:SaveLocalState()
 	self:ReinitializeSelf()
 end
 
@@ -274,8 +280,9 @@ function DEV:BuildWireless()
 			count = count + 1
 			local key = tostring( w.EntIndex )
 			// Simplify the router class name into a friendly label.
-			local name = "Router"
-			if (w.Class == "pcmod_brouter") then name = "Backbone Router" end
+			local name = "LAN Modem"
+			if (w.Class == "pcmod_erouter") then name = "Router"
+			elseif (w.Class == "pcmod_brouter") then name = "Backbone Router" end
 			self:AddListboxItem( "lstWireless", key, name .. " #" .. key .. "  |  " .. tostring( w.Distance or 0 ) .. "m  |  Signal " .. tostring( w.Signal or 0 ) .. "%" )
 		end
 	end
@@ -306,7 +313,10 @@ function DEV:Paint( x, y, w, h )
 		local wf = self.Wifi
 		local wstat = "Not connected."
 		if (wf && wf.Connected) then
-			wstat = "Connected to " .. tostring( wf.Class or "Router" ) .. " #" .. tostring( wf.EntIndex )
+			local wname = "LAN Modem"
+			if (wf.Class == "pcmod_erouter") then wname = "Router"
+			elseif (wf.Class == "pcmod_brouter") then wname = "Backbone Router" end
+			wstat = "Connected to " .. wname .. " #" .. tostring( wf.EntIndex )
 			if (wf.NoIPv4) then wstat = wstat .. " (IPv6 only)" end
 		elseif (wf && wf.BadPass) then
 			wstat = "Incorrect password."

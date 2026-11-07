@@ -6,10 +6,13 @@
 
 ENT.Type = "anim"
 ENT.Base = "pcmod_base"
-ENT.PrintName = "Networking Router"
+ENT.PrintName = "LAN Modem"
 ENT.Class = "pcmod_router"
 
 ENT.ItemModel = "models/props_lab/reciever01a.mdl"
+
+// WAN side medium. The LAN Modem uses fibre; the Router variant uses Ethernet.
+ENT.WanType = "optic"
 
 ENT.IsNetworkDevice = true
 
@@ -30,7 +33,12 @@ function ENT:Setup( setupdata )
 	table.insert( pts, self:CreatePort( "network" ) )
 	table.insert( pts, self:CreatePort( "network" ) )
 	table.insert( pts, self:CreatePort( "network" ) )
-	table.insert( pts, self:CreatePort( "optic" ) )
+	local wan = self:CreatePort( self.WanType or "optic" )
+	// An Ethernet WAN still looks like a normal network cable to the driver,
+	// so flag it; the driver splits LAN and WAN by this flag rather than by
+	// the physical cable type.
+	if ((self.WanType == "network") && (wan.Type == "network")) then wan.WAN = true end
+	table.insert( pts, wan )
 	dt.Ports = pts
 	
 	// Install the main driver

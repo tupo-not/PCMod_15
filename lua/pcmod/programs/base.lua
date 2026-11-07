@@ -120,7 +120,10 @@ function PROG:TriggerState( st )
 			self:GetOS():BuildDesktop()
 		end
 		// Fresh payload on every start; OnStart re-populates what it needs.
-		self.DeviceData = {}
+		// OpenID lets a device keep local UI state (e.g. the selected page)
+		// across screen garbage collection, while a close/reopen starts clean.
+		PCMod.NextOpenID = (PCMod.NextOpenID or 0) + 1
+		self.DeviceData = { OpenID = PCMod.NextOpenID }
 		if (self:GetOS()) then self.DeviceData.Th = self:GetOS():GetTheme() end
 		self:OnStart()
 		self:UpdateSS()

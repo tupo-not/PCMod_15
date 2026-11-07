@@ -22,6 +22,19 @@
 
 PCMod.GM = GM or GAMEMODE
 
+// ---------------------------------------------------------------------------------------------------------
+// Router class helpers. There are two LAN routers (fibre WAN and Ethernet WAN)
+// and one backbone router; shared code asks these instead of hard-coding the
+// pcmod_router class everywhere.
+// ---------------------------------------------------------------------------------------------------------
+function PCMod.IsLanRouterClass( cls )
+	return (cls == "pcmod_router") || (cls == "pcmod_erouter")
+end
+
+function PCMod.IsRouterClass( cls )
+	return (cls == "pcmod_brouter") || PCMod.IsLanRouterClass( cls )
+end
+
 PCMod.MsgDebugBuffer = {}
 PCMod.MsgBuffer = {}
 PCMod.WarningBuffer = {}

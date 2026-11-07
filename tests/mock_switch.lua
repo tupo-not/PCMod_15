@@ -234,4 +234,15 @@ seg:NotifyBridgeUnlinked( lr )
 assertTrue( findEvent( 80, "unlinked", lr ) != nil, "backbone router is told the LAN router left" )
 assertTrue( findEvent( 81, "unlinked", br ) != nil, "removed router is told about the remaining peer" )
 
+-- A computer on the backbone segment is also announced to the backbone router,
+-- so it can be given a 10.x host address.
+local pc = makeRouter( 82, "pcmod_tower" )
+pc.IsComputer = true
+pc:Ports()[ 1 ].ConEnt = seg
+segPorts[ 3 ].Connected = true
+segPorts[ 3 ].ConEnt = pc
+events = {}
+seg:NotifyBridgeLinked()
+assertTrue( findEvent( 80, "linked", pc ) != nil, "backbone router sees a computer behind the switch/modem" )
+
 print( "mock_switch PASSED" )

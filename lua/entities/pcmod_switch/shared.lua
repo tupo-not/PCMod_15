@@ -8,7 +8,7 @@ ENT.Base = "pcmod_base"
 ENT.PrintName = "Switch"
 ENT.Class = "pcmod_switch"
 
-ENT.ItemModel = "models/props_lab/reciever01c.mdl"
+ENT.ItemModel = "models/props_lab/reciever01a.mdl"
 
 ENT.IsSwitch = true
 
@@ -105,7 +105,7 @@ end
 local function IsRouterClass( ent )
 	if (!ent) then return false end
 	local cls = ent.GetClass && ent:GetClass()
-	return (cls == "pcmod_router") || (cls == "pcmod_brouter")
+	return PCMod.IsRouterClass && PCMod.IsRouterClass( cls )
 end
 
 // Does a router of class `cls` care about a peer on the same segment?
@@ -114,9 +114,9 @@ local function RouterWantsPeer( ent, peer )
 	local cls = ent.GetClass && ent:GetClass()
 	local pc = peer.GetClass && peer:GetClass()
 	if (cls == "pcmod_brouter") then
-		return (pc == "pcmod_router") || (pc == "pcmod_brouter")
-	elseif (cls == "pcmod_router") then
-		return (pc == "pcmod_router") || (pc == "pcmod_brouter") || (peer.IsComputer == true)
+		return (PCMod.IsLanRouterClass && PCMod.IsLanRouterClass( pc )) || (pc == "pcmod_brouter") || (peer.IsComputer == true)
+	elseif (PCMod.IsLanRouterClass && PCMod.IsLanRouterClass( cls )) then
+		return (PCMod.IsRouterClass && PCMod.IsRouterClass( pc )) || (peer.IsComputer == true)
 	end
 	return false
 end

@@ -112,4 +112,38 @@ assertTrue(sent and sent.prog=='mycomputer' and sent.cmd=='refresh_devices', 'de
 d:ListboxSelect('lstSections','os')
 assertTrue(d.Listboxes.lstThemes ~= nil, 'OS page restored')
 assertEq(d:GetListboxSelRow('lstSections'), 'os', 'OS category selected')
+-- Multi-line text entries must go through the same widget registry as normal
+-- textboxes; otherwise the Notepad editor is created but never drawn.
+d:CreateTextEntry('basic','txtDraftTest', 100, 200, 400, 300)
+assertTrue(d.Textboxes.txtDraftTest ~= nil, 'text entry created')
+local entryDrawn = false
+for _, c in ipairs(d.Controls.textbox) do
+	if (c == d.Textboxes.txtDraftTest) then entryDrawn = true end
+end
+assertTrue(entryDrawn, 'text entry registered as a drawable textbox')
+d:RemoveTextbox('txtDraftTest')
+assertTrue(d.Textboxes.txtDraftTest == nil, 'text entry removed from store')
+for _, c in ipairs(d.Controls.textbox) do
+	assertTrue(c.Name != 'txtDraftTest', 'removed textbox leaves the draw list')
+end
+
+-- The selected category survives the client device being garbage-collected
+-- while the player is away, but a new program opening starts clean.
+PCMod.SDraw.DevState = {}
+d.DevID = '999:window_mycomp'
+d.OpenID = 101
+d.Section = 'network'
+d:SaveLocalState()
+local d2 = table.Copy(DEV)
+d2:OnCreate()
+d2.DevID = '999:window_mycomp'
+d2.OpenID = 101
+d2.Section = 'os'
+d2:RestoreLocalState()
+assertEq(d2.Section, 'network', 'selected page restored after walking away')
+d2.OpenID = 102
+d2.Section = 'os'
+d2:RestoreLocalState()
+assertEq(d2.Section, 'os', 'new program opening ignores stale page state')
+
 print('MYCOMP TESTS PASSED')

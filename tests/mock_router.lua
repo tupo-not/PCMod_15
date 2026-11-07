@@ -42,6 +42,7 @@ end
 PCMod = {}
 PCMod.Msg = function() end
 PCMod.Warning = function() end
+timer = { Simple = function() end }
 PCMod.Cfg = { MaxNetworkPid = 500, MaxNetworkPass = 10, WirelessRange = 0 }
 PCMod.Network = { Packets = {} }
 PCMod.DeriveDriver = function() return {} end
@@ -50,6 +51,7 @@ CurTime = function() return 0 end
 function table.Count( t ) local n = 0 for _ in pairs( t ) do n = n + 1 end return n end
 
 dofile( "pcmod_sh_common.lua" )
+dofile( "pcmod_sh_dhcp.lua" )
 dofile( "pcmod_drv_router.lua" )
 
 local ent = { LanPrefix = false, BackPrefix = false }
@@ -417,12 +419,16 @@ local bent = {}
 function bent:GetClass() return "pcmod_brouter" end
 function bent:Ports() return { [ 1 ] = bport } end
 function bent:GetBSubnet() return 7 end
+local bdata = { RouterCfg = {} }
+function bent:Data() return bdata end
 bdrv.Entity = bent
 bdrv.BLAN = {}
 bdrv.Children = {}
 bdrv.ChildLan = {}
 bdrv.Neighbors = {}
 bdrv.Leases = {}
+bdrv.BLeases = {}
+bdrv.BLeasePort = {}
 local childEnt = {}
 function childEnt:IsValid() return true end
 function childEnt:EntIndex() return 60 end
@@ -442,5 +448,144 @@ assertEq( childEnt.UpBB, 7, "LAN router gets the backbone id" )
 assertEq( childEnt.LanID, 1, "LAN router gets a /64 id" )
 assertTrue( registered and registered.ent == childEnt and registered.bb == 7, "LAN router registered on the backbone" )
 assertTrue( bdrv.ChildLan[ 1 ] == bport, "child route uses the switch port for delivery" )
+
+-- A computer on the backbone side (through a modem) gets a 10.x host address
+-- instead of keeping a private LAN lease.
+local station = { IsComputer = true, lan = "192.168.0.50" }
+function station:IsValid() return true end
+function station:EntIndex() return 61 end
+function station:GetClass() return "pcmod_tower" end
+function station:SetLanAddress( v ) self.lan = v end
+function station:SetBSubnet( v ) self.bb = v end
+function station:SetBIP( v ) self.host = v end
+function station:GetBSubnet() return self.bb end
+bdrv:CallEvent( { Event = "linked", [ 1 ] = 1, [ 2 ] = fakeSwitch, [ 3 ] = station } )
+assertTrue( bdrv.BLeases[ 12 ] == station, "backbone lease uses the same lease table" )
+assertTrue( bdrv.BLeasePort[ 61 ] == 1, "backbone lease records its port" )
+assertEq( station.lan, false, "backbone station loses its private LAN address" )
+assertEq( station.bb, 7, "backbone station gets the backbone id" )
+assertEq( station.host, 11, "first station host id is 12" )
+bdrv:CallEvent( { Event = "unlinked", [ 2 ] = station } )
+assertTrue( bdrv.BLeases[ 12 ] == nil, "leaving the backbone releases the lease" )
+assertEq( station.bb, false, "station backbone id cleared on leave" )
+assertEq( station.host, false, "station backbone host cleared on leave" )
+
+-- Unplugging the modem itself releases every station that was behind it.
+local station2 = { IsComputer = true }
+function station2:IsValid() return true end
+function station2:EntIndex() return 62 end
+function station2:GetClass() return "pcmod_tower" end
+function station2:SetLanAddress() end
+function station2:SetBSubnet( v ) self.bb = v end
+function station2:SetBIP( v ) self.host = v end
+function station2:GetBSubnet() return self.bb end
+bdrv:CallEvent( { Event = "linked", [ 1 ] = 1, [ 2 ] = fakeSwitch, [ 3 ] = station2 } )
+assertTrue( bdrv.BLeases[ 12 ] == station2, "second backbone lease reuses the first free host" )
+local modemPeer = { IsSwitch = true }
+function modemPeer:GetClass() return "pcmod_modem" end
+bdrv:CallEvent( { Event = "unlinked", [ 1 ] = 1, [ 2 ] = modemPeer } )
+assertTrue( bdrv.BLeases[ 12 ] == nil, "unplugging the modem releases its leases" )
+assertEq( station2.bb, false, "station behind the modem loses its backbone id" )
+
+-- Static backbone DHCP reservations (IP <-> MAC).
+assertTrue( bdrv:AddStaticLease( "10.0.7.12", "AA:BB:CC:DD:EE:12" ), "static lease accepted" )
+assertEq( #bdrv:StaticLeases(), 1, "static lease stored" )
+assertTrue( not bdrv:AddStaticLease( "10.0.8.20", "AA:BB:CC:DD:EE:20" ), "lease outside the /24 rejected" )
+assertTrue( not bdrv:AddStaticLease( "10.0.7.5", "AA:BB:CC:DD:EE:05" ), "host reserved for a LAN router rejected" )
+assertTrue( not bdrv:AddStaticLease( "10.0.7.20", "nope" ), "bad MAC rejected" )
+
+-- The dynamic pool skips the reserved host.
+local dyn = { IsComputer = true }
+function dyn:IsValid() return true end
+function dyn:EntIndex() return 63 end
+function dyn:GetClass() return "pcmod_tower" end
+function dyn:GetMAC() return "AA:BB:CC:DD:EE:99" end
+function dyn:SetLanAddress() end
+function dyn:SetBSubnet( v ) self.bb = v end
+function dyn:SetBIP( v ) self.host = v end
+function dyn:GetBSubnet() return self.bb end
+bdrv:CallEvent( { Event = "linked", [ 1 ] = 1, [ 2 ] = fakeSwitch, [ 3 ] = dyn } )
+assertEq( dyn.host, 12, "dynamic lease skips the pinned host 12" )
+
+-- A matching MAC is pinned to its reservation instead.
+local pinned = { IsComputer = true }
+function pinned:IsValid() return true end
+function pinned:EntIndex() return 64 end
+function pinned:GetClass() return "pcmod_tower" end
+function pinned:GetMAC() return "AA:BB:CC:DD:EE:12" end
+function pinned:SetLanAddress() end
+function pinned:SetBSubnet( v ) self.bb = v end
+function pinned:SetBIP( v ) self.host = v end
+function pinned:GetBSubnet() return self.bb end
+bdrv:CallEvent( { Event = "linked", [ 1 ] = 1, [ 2 ] = fakeSwitch, [ 3 ] = pinned } )
+assertTrue( bdrv.BLeases[ 12 ] == pinned, "pinned MAC takes its reserved host" )
+assertEq( pinned.host, 11, "pinned address is backbone host 12" )
+assertTrue( bdrv:HasDHCPLease( "wan", pinned ), "unified lookup finds the WAN lease" )
+assertTrue( not bdrv:HasDHCPLease( "lan", pinned ), "WAN and LAN lease tables stay separate" )
+assertEq( select( 1, bdrv:DHCPPool( "wan" ) ), 12, "unified WAN pool start" )
+assertTrue( bdrv:DeleteStaticLease( 1 ), "static lease deleted" )
+assertEq( #bdrv:StaticLeases(), 0, "static lease list is empty" )
+
+-- The backbone admin page exposes IP/MAC fields and applies the query.
+local html = bdrv:PageStaticLeases()
+assertTrue( string.find( html, 'name="sip"', 1, true ) ~= nil, "static lease page has an IP field" )
+assertTrue( string.find( html, 'name="smac"', 1, true ) ~= nil, "static lease page has a MAC field" )
+bdrv:ApplyWebQuery( "?sip=10.0.7.30&smac=AA:BB:CC:DD:EE:30" )
+assertEq( #bdrv:StaticLeases(), 1, "web query adds a static lease" )
+assertEq( bdrv:StaticLeases()[ 1 ].ip, "10.0.7.30", "web query stores the pinned IP" )
+bdrv:ApplyWebQuery( "?dellease=1" )
+assertEq( #bdrv:StaticLeases(), 0, "web query deletes a static lease" )
+
+-- Ethernet WAN: a flagged network port is a WAN port, not a LAN port.
+local eports = {
+	[ 1 ] = { Type = "network" },
+	[ 2 ] = { Type = "network" },
+	[ 3 ] = { Type = "network" },
+	[ 4 ] = { Type = "network" },
+	[ 5 ] = { Type = "network", WAN = true },
+}
+local eent = {}
+function eent:GetClass() return "pcmod_erouter" end
+function eent:Ports() return eports end
+function eent:GetBSubnet() return 0 end
+function eent:GetSubnet() return 0 end
+function eent:AddEHook() end
+DRV.Entity = eent
+DRV:Initialize()
+assertEq( #DRV.NPorts, 4, "Ethernet WAN router keeps four LAN ports" )
+assertEq( #DRV.OPorts, 1, "Ethernet WAN router has one WAN port" )
+assertTrue( table.HasValue( DRV.NPorts, 4 ), "LAN ports are network ports without WAN" )
+assertTrue( table.HasValue( DRV.OPorts, 5 ), "flagged WAN port is treated as WAN" )
+
+-- A computer behind a modem on a WAN port is not a LAN client.
+local wanCalls, lanCalls = 0, 0
+local wports = {
+	[ 1 ] = { Type = "network", Connected = true },
+	[ 2 ] = { Type = "network", Connected = true },
+	[ 3 ] = { Type = "network", Connected = true },
+	[ 4 ] = { Type = "network", Connected = true },
+	[ 5 ] = { Type = "network", WAN = true, Connected = true },
+}
+local wpc = { IsComputer = true }
+function wpc:IsValid() return true end
+function wpc:EntIndex() return 70 end
+function wpc:GetClass() return "pcmod_tower" end
+wports[ 5 ].ConEnt = wpc
+local went = {}
+function went:GetClass() return "pcmod_erouter" end
+function went:Ports() return wports end
+DRV.Entity = went
+DRV.NPorts = { 1, 2, 3, 4 }
+DRV.LAN = {}
+DRV.AssignLease = function() wanCalls = wanCalls + 1 end
+DRV.HasLease = function() return false end
+DRV:CallEvent( { Event = "linked", [ 1 ] = 5 } )
+assertEq( wanCalls, 0, "WAN-side computer gets no LAN lease" )
+assertTrue( DRV.LAN[ 5 ] == nil, "WAN-side computer is not added to the LAN table" )
+wports[ 1 ].ConEnt = wpc
+DRV.AssignLease = function() lanCalls = lanCalls + 1 end
+DRV:CallEvent( { Event = "linked", [ 1 ] = 1 } )
+assertEq( lanCalls, 1, "LAN-side computer still gets a DHCP lease" )
+assertTrue( DRV.LAN[ 1 ] ~= nil, "LAN-side computer is added to the LAN table" )
 
 print( "ALL ROUTER IPV6 TESTS PASSED" )

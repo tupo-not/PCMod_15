@@ -18,6 +18,8 @@ DRV.Wireless = false
 DRV.WirelessClients = {}
 // Active DHCP leases (host id -> entity), shared by cable and Wi-Fi clients.
 DRV.Leases = {}
+// DHCP/IP mechanics (including per-scope settings) live in pcmod/sh_dhcp.lua.
+DRV.DHCPSettings = PCMod.DHCP.Settings
 
 function DRV:Initialize()
 	if (!self.Entity) then return end
@@ -28,12 +30,14 @@ function DRV:Initialize()
 	self.Entity:AddEHook( "driver", self.Name, "linked" ) -- Something has been linked up
 	self.Entity:AddEHook( "driver", self.Name, "unlinked" ) -- Something has been unlinked
 	
-	// Get a list of valid ports
+	// Get a list of valid ports. The WAN side is fibre on the LAN modem and a
+	// flagged Ethernet port on the Router variant, so split by role instead
+	// of assuming every network port is LAN.
 	local ports = self.Entity:Ports()
 	local tmp = {}
 	self.LAN = {}
 	for k, v in pairs( ports ) do
-		if (v.Type == "network") then
+		if ((v.Type == "network") && (!v.WAN)) then
 			table.insert( tmp, k )
 			table.insert( self.LAN, k, v )
 		end
@@ -42,12 +46,17 @@ function DRV:Initialize()
 	local tmp = {}
 	self.BLAN = {}
 	for k, v in pairs( ports ) do
-		if (v.Type == "optic") then
+		if ((v.Type == "optic") || ((v.Type == "network") && v.WAN)) then
 			table.insert( tmp, k )
 			table.insert( self.BLAN, k, v )
 		end
 	end
 	self.OPorts = table.Copy( tmp )
+	// Backbone-side leases. Computers attached through a modem/switch use the
+	// same DHCP allocator as LAN clients, only the pool and address space
+	// differ. LAN routers occupy hosts 2..11, so this pool starts at 12.
+	self.BLeases = {}
+	self.BLeasePort = {}
 
 	timer.Simple(1, function() if (!IsValid( self.Entity )) then return end self.BSubnet = self.Entity:GetBSubnet() end)
 	timer.Simple(1, function() if (!IsValid( self.Entity )) then return end self.Subnet = self.Entity:GetSubnet() end)
@@ -396,6 +405,13 @@ function DRV:ProcessPacket( pid, pass, side )
 				self.Entity:PushData( childPort, { "deliver", pid, pass } )
 				return
 			end
+			// A backbone-attached station (through a modem/switch) has no /64
+			// of its own; find it by its host address instead.
+			local hostPort = self:HasRouter( packet.Dest )
+			if (hostPort) then
+				self.Entity:PushData( hostPort, { "deliver", pid, pass } )
+				return
+			end
 		elseif (hier) then
 			local nPort = self:RouteForBB( hier.bb )
 			if (nPort) then
@@ -429,7 +445,7 @@ function DRV:CallEvent( data )
 		if (!peerEnt) then return end
 		local peer = peerEnt:GetClass()
 
-		if ((cls == "pcmod_brouter") && (peer == "pcmod_router")) then
+		if ((cls == "pcmod_brouter") && PCMod.IsLanRouterClass( peer )) then
 			// LAN router attaches to my backbone: give it a /64 of my /32 and a
 			// WAN backbone address, then renumber its LAN.
 			self:AttachLANRouter( data[ 1 ], port, peerEnt )
@@ -440,14 +456,23 @@ function DRV:CallEvent( data )
 			self.Neighbors[ peerEnt:GetBSubnet() ] = port
 			self:RecalcRoutes()
 			PCMod.Network.Reconverge()
-		elseif ((cls == "pcmod_router") && ((peer == "pcmod_brouter") || (peer == "pcmod_router"))) then
-			// My WAN uplink (directly or through a switch).
+		elseif ((cls == "pcmod_brouter") && (peerEnt.IsComputer == true)) then
+			// A computer on the backbone side (typically through a modem) gets
+			// a 10.x host address from this backbone's /24, not a private LAN
+			// lease from some other router.
+			self:AssignBackboneLease( peerEnt, data[ 1 ] )
+		elseif (PCMod.IsLanRouterClass( cls ) && PCMod.IsRouterClass( peer )) then
+			// My WAN uplink (directly or through a switch/modem).
 			self.Uplink = port
-		elseif ((cls == "pcmod_router") && (peer != "pcmod_switch")) then
-			// A computer plugs into a LAN port. Switches themselves never take a
-			// DHCP lease; the devices behind them do.
-			self.LAN[ data[ 1 ] ] = port
-			if (!self:HasLease( peerEnt )) then self:AssignLease( peerEnt ) end
+		elseif (PCMod.IsLanRouterClass( cls ) && (peer != "pcmod_switch") && (peer != "pcmod_modem")) then
+			// A computer plugs into a LAN port. Switches/modems themselves never
+			// take a DHCP lease; the devices behind them do. A PC behind a modem
+			// on the WAN side is not on this router's LAN, so it must not get a
+			// 192.168 lease (that was why WAN-side laptops showed a LAN address).
+			if (table.HasValue( self.NPorts, data[ 1 ] )) then
+				self.LAN[ data[ 1 ] ] = port
+				if (!self:HasLease( peerEnt )) then self:AssignLease( peerEnt ) end
+			end
 		end
 	end
 	if (e == "unlinked") then
@@ -456,7 +481,7 @@ function DRV:CallEvent( data )
 		local cls = self.Entity:GetClass()
 		local peer = peerEnt.GetClass && peerEnt:GetClass() or ""
 
-		if ((cls == "pcmod_brouter") && (peer == "pcmod_router")) then
+		if ((cls == "pcmod_brouter") && PCMod.IsLanRouterClass( peer )) then
 			local lanid = self.Children && self.Children[ peerEnt:EntIndex() ]
 			PCMod.Network.UnRegisterPC( peerEnt, self.Entity:GetBSubnet() )
 			if (lanid && self.ChildLan) then self.ChildLan[ lanid ] = nil end
@@ -471,13 +496,19 @@ function DRV:CallEvent( data )
 			if (self.Neighbors) then self.Neighbors[ peerEnt:GetBSubnet() ] = nil end
 			self:RecalcRoutes()
 			PCMod.Network.Reconverge()
-		elseif ((cls == "pcmod_router") && ((peer == "pcmod_brouter") || (peer == "pcmod_router"))) then
+		elseif ((cls == "pcmod_brouter") && (peerEnt.IsComputer == true)) then
+			self:ReleaseBackboneLease( peerEnt )
+		elseif ((cls == "pcmod_brouter") && (peerEnt.IsSwitch == true)) then
+			// The modem/switch itself left this backbone port: its leases go
+			// with it, even if no per-host event arrives.
+			self:ReleaseBackboneLeasesOnPort( data[ 1 ] )
+		elseif (PCMod.IsLanRouterClass( cls ) && PCMod.IsRouterClass( peer )) then
 			self.Uplink = nil
 			// Lost our uplink: fall back to standalone addressing.
 			self.Entity:SetUpBB( 0 )
 			self.Entity:SetLanID( 0 )
 			self:ReconfigureClients()
-		elseif ((cls == "pcmod_router") && (peer == "pcmod_switch")) then
+		elseif (PCMod.IsLanRouterClass( cls ) && ((peer == "pcmod_switch") || (peer == "pcmod_modem"))) then
 			// The cable to the switch itself was removed: drop a switch-derived
 			// uplink if that was the port we were using.
 			if (self.Uplink && (self.Uplink.ConEnt == peerEnt)) then
@@ -486,7 +517,7 @@ function DRV:CallEvent( data )
 				self.Entity:SetLanID( 0 )
 				self:ReconfigureClients()
 			end
-		elseif ((cls == "pcmod_router") && (peer != "pcmod_switch")) then
+		elseif (PCMod.IsLanRouterClass( cls ) && (peer != "pcmod_switch") && (peer != "pcmod_modem")) then
 			// Pulling the cable only takes the lease away when the client is
 			// not still joined over Wi-Fi.
 			if (!self:HasWirelessClient( peerEnt )) then self:ReleaseLease( peerEnt ) end
@@ -522,6 +553,41 @@ function DRV:AttachLANRouter( idx, port, childEnt )
 	end
 end
 
+// ---------------------------------------------------------------------------
+// DHCP/IP mechanics live in pcmod/sh_dhcp.lua (PCMod.DHCP). These thin
+// wrappers keep the driver's historical method names.
+// ---------------------------------------------------------------------------
+
+function DRV:DHCPTable( scope ) return PCMod.DHCP.Table( self, scope ) end
+function DRV:DHCPPool( scope ) return PCMod.DHCP.Pool( self, scope ) end
+function DRV:DHCPLeaseHost( scope, pc ) return PCMod.DHCP.LeaseHost( self, scope, pc ) end
+function DRV:DHCPAllocHost( scope, pc ) return PCMod.DHCP.AllocLease( self, scope, pc ) end
+function DRV:DHCPDropHost( scope, pc ) return PCMod.DHCP.DropLease( self, scope, pc ) end
+
+function DRV:StaticLeases() return PCMod.DHCP.StaticLeases( self ) end
+function DRV:StaticLeaseForMAC( mac ) return PCMod.DHCP.StaticLeaseForMAC( self, mac ) end
+function DRV:StaticLeaseHosts() return PCMod.DHCP.StaticHosts( self ) end
+function DRV:AddStaticLease( ip, mac ) return PCMod.DHCP.AddStaticLease( self, ip, mac ) end
+function DRV:DeleteStaticLease( idx ) return PCMod.DHCP.DeleteStaticLease( self, idx ) end
+
+function DRV:ApplyDHCP( scope, pc, host, port ) return PCMod.DHCP.Apply( self, scope, pc, host, port ) end
+function DRV:AssignDHCP( scope, pc, port ) return PCMod.DHCP.Assign( self, scope, pc, port ) end
+function DRV:ReleaseDHCP( scope, pc, mask, net, low ) return PCMod.DHCP.Release( self, scope, pc, mask, net, low ) end
+function DRV:RenewDHCP( scope, pc ) return PCMod.DHCP.Renew( self, scope, pc ) end
+
+function DRV:AssignBackboneLease( pc, port )
+	return (self:AssignDHCP( "wan", pc, port ) != nil)
+end
+
+function DRV:ReleaseBackboneLease( pc )
+	return self:ReleaseDHCP( "wan", pc )
+end
+
+// Drop every backbone lease on a port (its modem/switch was unplugged).
+function DRV:ReleaseBackboneLeasesOnPort( port )
+	return PCMod.DHCP.ReleaseOnPort( self, "wan", port )
+end
+
 // Find this router's own port that leads to `other` (usually a switch).
 function DRV:FindLinkPort( other )
 	for k, v in pairs( self.Entity:Ports() or {} ) do
@@ -536,11 +602,12 @@ function DRV:SetLinkToEntity( other )
 	return (port != nil)
 end
 
+function DRV:HasDHCPLease( scope, pc )
+	return PCMod.DHCP.Has( self, scope, pc )
+end
+
 function DRV:HasLease( pc )
-	for _, ent in pairs( self.Leases or {} ) do
-		if (ent == pc) then return true end
-	end
-	return false
+	return self:HasDHCPLease( "lan", pc )
 end
 
 // True when the device on this port (or anything behind a switch on it) owns
@@ -626,10 +693,7 @@ end
 // without physically relinking the device. A client with no recorded lease is
 // treated like a fresh link, so a stale lease table self-heals.
 function DRV:RenewLease( pc )
-	if ((!pc) || (!pc:IsValid())) then return nil end
-	if (!self:HasLease( pc )) then return self:AssignLease( pc ) end
-	self:ReleaseLease( pc )
-	return self:AssignLease( pc )
+	return self:RenewDHCP( "lan", pc )
 end
 
 // Netmask prefix for this router's private LAN, anywhere in 16-32.
@@ -773,110 +837,19 @@ function DRV:SetLanBase( base )
 	end
 end
 
-// Hand out an IPv4 lease from this router's private LAN pool. A client holds
-// one address per router it is linked to: the first lease becomes its primary
-// address, later routers add secondaries (so a laptop cabled to one router and
-// joined to another over Wi-Fi stays reachable on both). Returns the host id,
-// or nil when the pool is exhausted (the client is still admitted as
-// IPv6-only by the caller).
+// ---------------------------------------------------------------------------
+// Shared DHCP lease table. LAN clients and backbone-side hosts use the same
+// allocator; only the pool bounds and the address applier differ.
+// ---------------------------------------------------------------------------
+
+// Compatibility wrappers around the unified DHCP engine. Callers keep the
+// familiar LAN/backbone names while sharing one implementation.
 function DRV:AssignLease( pc )
-	if ((!pc) || (!pc:IsValid())) then return nil end
-	if (!self.Leases) then self.Leases = {} end
-	// Already leased by us (reconnect, or Wi-Fi sharing a wired lease): keep
-	// the address it has.
-	for h, ent in pairs( self.Leases ) do
-		if (ent == pc) then return h end
-	end
-	local c = self:GetCfg()
-	local maxHost = self:LanBlockSize() - 2
-	if (maxHost < 2) then return nil end
-	local start = c.DHCPStart
-	local finish = c.DHCPEnd
-	if (finish > maxHost) then finish = maxHost end
-	local host = nil
-	for h = start, finish do
-		if (!self.Leases[ h ]) then host = h break end
-	end
-	if (!host) then return nil end
-	self.Leases[ host ] = pc
-	// Host ids are offsets inside the subnet block; the block base supplies
-	// the third/fourth octets (192.168.<sub>.<add>).
-	local addr = self:GetLanBase() + host
-	local sub = math.floor( addr / 256 )
-	local add = addr % 256
-	local ipdata = pc.Data && pc:Data() && pc:Data().IP
-	local rip = self.Entity:Data().IP
-	// A PC with a configured static IP keeps it; only assign a DHCP address
-	// when it has none (the lease slot is still reserved for it). The
-	// backbone/LAN ids still follow this router so its IPv6 stays in-subnet.
-	if (ipdata && ipdata.Static) then
-		if (pc.SetUpBB) then pc:SetUpBB( rip.UpBB or 0 ) end
-		if (pc.SetLanID) then pc:SetLanID( rip.LanID or 0 ) end
-		return host
-	end
-	local hasPrimary = ipdata && (ipdata.Sub != nil) && (ipdata.Sub != false) && (ipdata.Add != nil) && (ipdata.Add != false)
-	if (hasPrimary) then
-		// The primary belongs to another network: take a secondary address.
-		if (pc.AddExtraIP) then
-			pc:AddExtraIP( sub, add, rip.UpBB or 0, rip.LanID or 0, self.Entity:EntIndex() )
-		else
-			// Legacy client without secondary support: reuse the primary slot.
-			pc:SetSubnet( sub )
-			pc:SetIP( add )
-		end
-	else
-		// First lease this client holds: it becomes the primary address.
-		pc:SetSubnet( sub )
-		pc:SetIP( add )
-		if (ipdata) then ipdata.Router = self.Entity:EntIndex() end
-		if (pc.SetUpBB) then pc:SetUpBB( rip.UpBB or 0 ) end
-		if (pc.SetLanID) then pc:SetLanID( rip.LanID or 0 ) end
-	end
-	return host
+	return self:AssignDHCP( "lan", pc )
 end
 
 function DRV:ReleaseLease( pc, mask, net, low )
-	if (!pc) then return end
-	if (!self.Leases) then self.Leases = {} end
-	// The decomposition used to issue the lease. Callers that just changed
-	// the addressing pass the OLD values so this still finds the address.
-	local base = self:ComputeLanBase( mask, net, low )
-	for host, ent in pairs( self.Leases ) do
-		if (ent == pc) then
-			self.Leases[ host ] = nil
-			local addr = base + host
-			local sub = math.floor( addr / 256 )
-			local add = addr % 256
-			// Whose address was this lease? When we assigned the client's
-			// primary, take it away; otherwise drop only the secondary we
-			// handed out (the primary belongs to another router).
-			local ipdata = pc.Data && pc:Data() && pc:Data().IP
-			local mine = false
-			if (ipdata) then
-				if (ipdata.Static) then
-					// Never take away a manually configured address.
-					mine = false
-				elseif (ipdata.Router == self.Entity:EntIndex()) then
-					mine = true
-				elseif ((ipdata.Router == nil) || (ipdata.Router == false)) then
-					// Legacy client (no lease owner recorded): fall back to an
-					// address match so the old release behaviour is kept.
-					mine = ((ipdata.Sub == sub) && (ipdata.Add == add))
-				end
-			end
-			if (mine) then
-				pc:SetSubnet( false )
-				pc:SetIP( false )
-				if (ipdata) then ipdata.Router = false end
-			elseif (pc.ReleaseExtraIP) then
-				pc:ReleaseExtraIP( sub, add )
-			else
-				pc:SetSubnet( false )
-				pc:SetIP( false )
-			end
-			return host
-		end
-	end
+	return self:ReleaseDHCP( "lan", pc, mask, net, low )
 end
 
 // A new /64 id within this backbone's /32 (one per attached LAN router).
@@ -1040,6 +1013,11 @@ function DRV:GetCfg()
 	if (c.WirePass == nil) then c.WirePass = d.WirePass or "123" end
 	if (c.DHCPStart == nil) then c.DHCPStart = tonumber( PCMod.Cfg.DHCPStart ) or 2 end
 	if (c.DHCPEnd == nil) then c.DHCPEnd = tonumber( PCMod.Cfg.DHCPEnd ) or 254 end
+	// Backbone-side pool (hosts 2..11 are reserved for attached LAN routers).
+	if (c.WanDHCPStart == nil) then c.WanDHCPStart = 12 end
+	if (c.WanDHCPEnd == nil) then c.WanDHCPEnd = 254 end
+	// Static backbone reservations, each { ip = "10.x.x.y", mac = "AA:..." }.
+	if (c.StaticLeases == nil) then c.StaticLeases = {} end
 	// Per-router LAN size (16-32) and network octets, seeded from the global
 	// defaults so existing routers keep their behaviour. LanLow selects the
 	// fourth octet for masks longer than /24.
@@ -1128,6 +1106,10 @@ function DRV:ApplyWebQuery( path )
 	if (parsed.delfw) then self:DeleteFirewallRule( tonumber( parsed.delfw ) ) end
 	if (parsed.fwdir) then
 		self:AddFirewallRule( parsed.fwdir, parsed.fwsrc or "", parsed.fwdst or "", parsed.fwport or "" )
+	end
+	if (parsed.dellease) then self:DeleteStaticLease( parsed.dellease ) end
+	if (parsed.sip && parsed.smac) then
+		self:AddStaticLease( parsed.sip, parsed.smac )
 	end
 	// Apply single-key settings in a fixed order: the addressing (netmask,
 	// third octet) first, then the pool that is clamped against it. pairs()
@@ -1315,6 +1297,9 @@ end
 // Shared navigation bar linking the pages.
 function DRV:WebNav( current )
 	local items = { { "", "Home" }, { "wifi", "Wi-Fi" }, { "lan", "LAN" }, { "firewall", "Firewall" } }
+	if (self:IsBackbone()) then
+		table.insert( items, { "static", "Static DHCP" } )
+	end
 	local parts = {}
 	for _, it in ipairs( items ) do
 		table.insert( parts, '<a href="/' .. it[ 1 ] .. '">' .. it[ 2 ] .. '</a>' )
@@ -1322,20 +1307,14 @@ function DRV:WebNav( current )
 	return "<p>Navigation: " .. table.concat( parts, " | " ) .. "</p>"
 end
 
-// Main page: status overview + network links.
-// First and last DHCP address of the pool, in dotted-quad form.
+// First and last address of a DHCP pool in dotted-quad form. The scope picks
+// the network (LAN 192.168.x.y or backbone 10.x.x.y).
+function DRV:DHCPPoolRange( scope )
+	return PCMod.DHCP.PoolRange( self, scope )
+end
+
 function DRV:PoolRange()
-	local c = self:GetCfg()
-	local base = self:GetLanBase()
-	local last = base + self:LanBlockSize() - 1
-	local s = base + (tonumber( c.DHCPStart ) or 2)
-	local e = base + (tonumber( c.DHCPEnd ) or 254)
-	if (s > last) then s = last end
-	if (e > last) then e = last end
-	local function addr( off )
-		return "192.168." .. tostring( math.floor( off / 256 ) ) .. "." .. tostring( off % 256 )
-	end
-	return addr( s ), addr( e )
+	return self:DHCPPoolRange( "lan" )
 end
 
 function DRV:PageHome()
@@ -1348,17 +1327,28 @@ function DRV:PageHome()
 	table.insert( lines, "<hr>" )
 	table.insert( lines, "<h2>Status</h2>" )
 	table.insert( lines, "<p><b>Model:</b> " .. tostring( e:GetClass() ) .. "</p>" )
-	table.insert( lines, "<p><b>IPv4 LAN:</b> " .. tostring( e:GetFullIP() or "unassigned" ) .. " on " .. self:GetLanPrefix() .. "</p>" )
-	local wan = (e.GetFullBIP && e:GetFullBIP())
-	if (wan) then table.insert( lines, "<p><b>IPv4 WAN /32 (NAT):</b> " .. tostring( wan ) .. " in " .. tostring( PCMod.IPv4.BackbonePrefix( bb ) ) .. "</p>" ) end
+	if (self:IsBackbone()) then
+		table.insert( lines, "<p><b>IPv4 WAN:</b> " .. tostring( e:GetFullBIP() or "unassigned" ) .. " in " .. tostring( PCMod.IPv4.BackbonePrefix( bb ) ) .. "</p>" )
+	else
+		table.insert( lines, "<p><b>IPv4 LAN:</b> " .. tostring( e:GetFullIP() or "unassigned" ) .. " on " .. self:GetLanPrefix() .. "</p>" )
+		local wan = (e.GetFullBIP && e:GetFullBIP())
+		if (wan) then table.insert( lines, "<p><b>IPv4 WAN /32 (NAT):</b> " .. tostring( wan ) .. " in " .. tostring( PCMod.IPv4.BackbonePrefix( bb ) ) .. "</p>" ) end
+	end
 	table.insert( lines, "<p><b>IPv6:</b> " .. tostring( e:GetIPv6() or "unassigned" ) .. "</p>" )
 	if (e.GetIPv6Prefix && e:GetIPv6Prefix()) then table.insert( lines, "<p><b>Prefix:</b> " .. tostring( e:GetIPv6Prefix() ) .. "</p>" ) end
 	if (bb) then table.insert( lines, "<p><b>Backbone:</b> " .. tostring( PCMod.IPv6.BackbonePrefix( bb ) ) .. "</p>" ) else table.insert( lines, "<p><b>Backbone:</b> none (standalone)</p>" ) end
 	table.insert( lines, "<p><b>Wi-Fi:</b> " .. (c.Wireless and "enabled" or "disabled") .. "</p>" )
 	table.insert( lines, "<p><b>Firewall:</b> " .. (c.Firewall and "on" or "off") .. "</p>" )
 	table.insert( lines, "<p><b>NAT:</b> " .. (c.NAT and "on" or "off") .. "</p>" )
-	local first, last = self:PoolRange()
-	table.insert( lines, "<p><b>DHCP pool:</b> " .. first .. " - " .. last .. " (" .. tostring( (tonumber( c.DHCPEnd ) or 254) - (tonumber( c.DHCPStart ) or 2) + 1 ) .. " hosts)</p>" )
+	local scope = self:IsBackbone() and "wan" or "lan"
+	local first, last = self:DHCPPoolRange( scope )
+	local startHost, finishHost = self:DHCPPool( scope )
+	if (first) then
+		table.insert( lines, "<p><b>DHCP pool:</b> " .. first .. " - " .. last .. " (" .. tostring( finishHost - startHost + 1 ) .. " hosts)</p>" )
+	end
+	if (self:IsBackbone()) then
+		table.insert( lines, '<p><b>Static DHCP:</b> ' .. tostring( #self:StaticLeases() ) .. ' reservation(s) <a href="/static">[Manage]</a></p>' )
+	end
 
 	local wc = 0
 	for _, v in pairs( self.WirelessClients or {} ) do if (v) then wc = wc + 1 end end
@@ -1420,8 +1410,9 @@ function DRV:PageLAN()
 	// (e.g. 192.168.4.1) also moves the LAN's subnet.
 	table.insert( lines, '<p><b>First address:</b> <input type="text" name="dhcpstart" value="' .. first .. '"></p>' )
 	table.insert( lines, '<p><b>Last address:</b> <input type="text" name="dhcpend" value="' .. last .. '"></p>' )
-	local hosts = (tonumber( c.DHCPEnd ) or 254) - (tonumber( c.DHCPStart ) or 2) + 1
-	if (hosts < 0) then hosts = 0 end
+	local startHost, finishHost = self:DHCPPool( "lan" )
+	local hosts = 0
+	if (startHost) then hosts = math.max( 0, finishHost - startHost + 1 ) end
 	table.insert( lines, "<p><b>Range:</b> " .. first .. " - " .. last .. " (" .. tostring( hosts ) .. " hosts)</p>" )
 	table.insert( lines, "<p><b>Note:</b> host ids run 2-" .. tostring( self:PoolMax() ) .. " (.1 is the router). Type a full 192.168.x.y address to choose the network.</p>" )
 	if (c.NAT) then
@@ -1430,6 +1421,36 @@ function DRV:PageLAN()
 		table.insert( lines, '<p><b>NAT:</b> off <a href="?nat=1">[Enable]</a></p>' )
 	end
 	table.insert( lines, '<p><input type="submit" value="Apply"></p>' )
+	return table.concat( lines, "\n" )
+end
+
+// Backbone admin: static DHCP reservations, IP <-> MAC.
+function DRV:PageStaticLeases()
+	local bb = self.Entity:GetBSubnet()
+	local lines = {}
+	table.insert( lines, "<h1>Backbone static DHCP</h1>" )
+	table.insert( lines, self:WebNav( "static" ) )
+	table.insert( lines, "<hr>" )
+	table.insert( lines, "<p>Reserve a backbone IPv4 for a MAC address. The reservation is handed out when that device links to the backbone.</p>" )
+	table.insert( lines, "<p><b>Backbone:</b> " .. PCMod.IPv4.BackbonePrefix( bb ) .. " (hosts 12-254)</p>" )
+
+	local list = self:StaticLeases()
+	if (#list == 0) then
+		table.insert( lines, "<p>No static leases.</p>" )
+	else
+		table.insert( lines, "<h2>Reservations</h2>" )
+		for i, l in ipairs( list ) do
+			table.insert( lines, '<p>' .. tostring( l.ip ) .. ' -> ' .. tostring( l.mac )
+				.. ' <a href="?dellease=' .. i .. '">[Delete]</a></p>' )
+		end
+	end
+
+	table.insert( lines, "<h2>Add / replace</h2>" )
+	table.insert( lines, "<form>" )
+	table.insert( lines, '<p>IPv4 <input type="text" name="sip" value=""></p>' )
+	table.insert( lines, '<p>MAC <input type="text" name="smac" value=""></p>' )
+	table.insert( lines, '<p><input type="submit" value="Save Lease"></p>' )
+	table.insert( lines, "</form>" )
 	return table.concat( lines, "\n" )
 end
 
@@ -1490,6 +1511,7 @@ function DRV:GetWebPage( path )
 	if (page == "wifi") then return self:PageWifi() end
 	if (page == "lan") then return self:PageLAN() end
 	if (page == "firewall") then return self:PageFirewall() end
+	if ((page == "static") && self:IsBackbone()) then return self:PageStaticLeases() end
 	return self:PageHome()
 end
 
@@ -1515,6 +1537,8 @@ function DRV:OnRemove()
 	self.OPorts = {}
 	self.WirelessClients = {}
 	self.Leases = {}
+	self.BLeases = {}
+	self.BLeasePort = {}
 	self.Children = {}
 	self.ChildLan = {}
 	self.Neighbors = {}

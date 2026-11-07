@@ -104,9 +104,11 @@ function DRV:GetWirelessSource( dest )
 	end
 	for _, ex in ipairs( ipdata.Extra or {} ) do
 		if (ex.Router == want) then
-			local full = "192.168." .. tostring( ex.Sub ) .. "." .. tostring( ex.Add )
+			local full = ex.IPv4
 			if (v6) then
-				return PCMod.IPv6.Format( { 0xfd00, ex.UpBB or 0, 0, ex.LanID or 0, 0, 0, 0, (ex.Sub or 0) * 256 + (ex.Add or 0) } ) or full
+				local p = PCMod.IPv4.ParseLan( full )
+				local host = (p and ((p.sub or 0) * 256 + p.add)) or 0
+				return PCMod.IPv6.Format( { 0xfd00, ex.UpBB or 0, 0, ex.LanID or 0, 0, 0, 0, host } ) or full
 			end
 			return full
 		end

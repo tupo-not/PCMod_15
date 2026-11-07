@@ -122,7 +122,9 @@ if (CLIENT) then
 		vgui.AddSlider( tb_server, "Max Keyboards:", 0, 50, "sbox_maxpcmod_keyboards", cl, "keyboards" )
 		vgui.AddSlider( tb_server, "Max Printers:", 0, 50, "sbox_maxpcmod_printers", cl, "printers" )
 		vgui.AddSlider( tb_server, "Max Speakers:", 0, 50, "sbox_maxpcmod_speakers", cl, "speakers" )
-		vgui.AddSlider( tb_server, "Max Routers:", 0, 50, "sbox_maxpcmod_routers", cl, "routers" )
+		vgui.AddSlider( tb_server, "Max LAN Modems:", 0, 50, "sbox_maxpcmod_routers", cl, "routers" )
+		vgui.AddSlider( tb_server, "Max Routers:", 0, 50, "sbox_maxpcmod_erouters", cl, "erouters" )
+		vgui.AddSlider( tb_server, "Max Modems:", 0, 50, "sbox_maxpcmod_modems", cl, "modems" )
 		vgui.AddSlider( tb_server, "Max BRouters:", 0, 50, "sbox_maxpcmod_brouters", cl, "brouters" )
 	end
 	usermessage.Hook( "pcmod_opensettings", PCMod.Settings.Open )

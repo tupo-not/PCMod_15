@@ -81,7 +81,7 @@ if (SERVER) then
 			PCMod.Msg( "Creating entity derived from pcmod_base...", true )
 
 			self:SetNWString( "IP", "" )
-			self:SetNWString( "IP.Back", "" )
+			self:SetNWString( "IP.WAN", "" )
 
 			// Set up a slot for us in the PCMod Data table
 			self:CreateSlotData()
@@ -157,21 +157,25 @@ if (SERVER) then
 			tmp.ItemModel = self.ItemModel
 			tmp.Ent = self
 			tmp.IP = {}
-			tmp.IP.Add = false
-			tmp.IP.Sub = false
-			tmp.IP.Full = false
+			// Every interface address is one plain dotted-quad IPv4 string.
+			// LAN is the private 192.168.x.y address; WAN is the 10.x backbone
+			// address of a router. PCs normally only have LAN.
+			tmp.IP.LAN = false
+			tmp.IP.WAN = false
+			// Decomposition of WAN used internally for routing/IPv6.
+			tmp.IP.WanBB = false
+			tmp.IP.WanHost = false
 			tmp.IP.V6 = false
+			tmp.IP.V6Prefix = false
+			tmp.IP.V6Link = false
+			tmp.IP.WanV6 = false
+			tmp.IP.WanV6Prefix = false
+			tmp.IP.WanV6Link = false
 			// EntIndex of the router that handed out the primary DHCP lease.
 			tmp.IP.Router = false
-			// Secondary addresses: leases from other routers this device is
-			// also linked to (a laptop that is cabled to one router and joined
-			// to another over Wi-Fi holds one address per network).
+			// Secondary LAN addresses: leases from other routers this device is
+			// also linked to. Each entry is { IPv4 = "192.168.c.d", Router = ... }.
 			tmp.IP.Extra = {}
-			tmp.IP.Back = {}
-			tmp.IP.Back.Add = false
-			tmp.IP.Back.Sub = false
-			tmp.IP.Back.Full = false
-			tmp.IP.Back.V6 = false
 			tmp.Memory = {}
 			tmp.Ports = {}
 			tmp.HardDrive = {}
@@ -388,36 +392,63 @@ if (SERVER) then
 	-------------------------------------------------------------------------------------------------------------------------------------------------
 
 	
+		// -----------------------------------------------------------------------------------------------------
+		// IPv4 addressing. Every interface is stored as one plain dotted quad:
+		//   IP.LAN  - private LAN address (192.168.x.y)
+		//   IP.WAN  - routed WAN/backbone address (10.x.x.x)
+		// Subnet/host numbers are derived from the string; there are no separate
+		// LAN vs backbone address types.
+		// -----------------------------------------------------------------------------------------------------
+
+		local function ParseLanAddress( addr )
+			if ((!addr) || (type( addr ) != "string")) then return nil end
+			return PCMod.IPv4.ParseLan( addr )
+		end
+
 		function ENT:GetSubnet()
-			return PCMod.Data[ self:EntIndex() ].IP.Sub
+			local p = ParseLanAddress( self:Data().IP.LAN )
+			return p and p.sub or false
 		end
 
 		function ENT:GetIP()
-			return PCMod.Data[ self:EntIndex() ].IP.Add
+			local p = ParseLanAddress( self:Data().IP.LAN )
+			return p and p.add or false
 		end
 
+		// The device's primary IPv4. A PC on a backbone (for example behind a
+		// modem) has only IP.WAN, so the primary address falls back to it.
 		function ENT:GetFullIP()
-			return PCMod.Data[ self:EntIndex() ].IP.Full
+			local ip = self:Data().IP
+			return ip.LAN or ip.WAN
 		end
 
+		function ENT:GetIPv4()
+			local ip = self:Data().IP
+			return ip.LAN or ip.WAN
+		end
+
+		// WAN/backbone IPv4 (plain dotted quad, same type as the LAN address).
+		function ENT:GetFullBIP()
+			return self:Data().IP.WAN
+		end
+
+		function ENT:GetWANIPv4()
+			return self:Data().IP.WAN
+		end
+
+		// Backbone id / zero-based host slot behind the WAN address. Kept for
+		// routing and IPv6 derivation; the user-facing address is IP.WAN.
 		function ENT:GetBSubnet()
-			return PCMod.Data[ self:EntIndex() ].IP.Back.Sub
+			return self:Data().IP.WanBB
 		end
 
 		function ENT:GetBIP()
-			return PCMod.Data[ self:EntIndex() ].IP.Back.Add
-		end
-
-		function ENT:GetFullBIP()
-			return PCMod.Data[ self:EntIndex() ].IP.Back.Full
+			return self:Data().IP.WanHost
 		end
 
 		// -----------------------------------------------------------------------------------------------------
-		// Secondary addresses. A device can hold one lease per router it is
-		// linked to: the primary (IP.Sub/IP.Add, set by the first router that
-		// leased it) plus any number of secondaries handed out by other
-		// routers. Secondaries carry their own backbone / LAN ids so their
-		// emulated IPv6 form is derived independently of the primary.
+		// Secondary LAN addresses (one per additional router this device is
+		// linked to). Stored as plain IPv4 strings as well.
 		// -----------------------------------------------------------------------------------------------------
 
 		function ENT:ExtraIPs()
@@ -428,15 +459,16 @@ if (SERVER) then
 
 		// Record a secondary lease. Returns the entry (existing one when the
 		// address is already present).
-		function ENT:AddExtraIP( sub, add, upbb, lanid, router )
-			if (!add) then return nil end
+		function ENT:AddExtraIP( addr, upbb, lanid, router )
+			if (!addr) then return nil end
+			local full = PCMod.IPv4.ParseLan( tostring( addr ) )
+			if (!full) then return nil end
 			local list = self:ExtraIPs()
 			for _, ex in ipairs( list ) do
-				if ((ex.Sub == sub) && (ex.Add == add)) then return ex end
+				if (ex.IPv4 == full.full) then return ex end
 			end
 			local ex = {
-				Sub = sub,
-				Add = add,
+				IPv4 = full.full,
 				UpBB = upbb or 0,
 				LanID = lanid or 0,
 				Router = router,
@@ -446,10 +478,13 @@ if (SERVER) then
 		end
 
 		// Drop the secondary with this address. Returns true when found.
-		function ENT:ReleaseExtraIP( sub, add )
+		function ENT:ReleaseExtraIP( addr )
+			if (!addr) then return false end
+			local p = PCMod.IPv4.ParseLan( tostring( addr ) )
+			local full = p and p.full or tostring( addr )
 			local list = self:ExtraIPs()
 			for i, ex in ipairs( list ) do
-				if ((ex.Sub == sub) && (ex.Add == add)) then
+				if (ex.IPv4 == full) then
 					table.remove( list, i )
 					return true
 				end
@@ -472,54 +507,82 @@ if (SERVER) then
 
 		// Every secondary address this device answers on (one per additional
 		// router it is linked to).
-		// Each entry: { IPv4 = "192.168.s.h", IPv6 = "fd00:..", Router = entindex }.
 		function ENT:GetExtraAddresses()
 			local out = {}
 			for _, ex in ipairs( self:ExtraIPs() ) do
+				local p = ParseLanAddress( ex.IPv4 )
 				out[ #out + 1 ] = {
-					IPv4 = "192.168." .. tostring( ex.Sub ) .. "." .. tostring( ex.Add ),
-					IPv6 = PCMod.IPv6.Format( { 0xfd00, ex.UpBB or 0, 0, ex.LanID or 0, 0, 0, 0, (ex.Sub or 0) * 256 + (ex.Add or 0) } ),
+					IPv4 = ex.IPv4,
+					IPv6 = (p and PCMod.IPv6.Format( { 0xfd00, ex.UpBB or 0, 0, ex.LanID or 0, 0, 0, 0, (p.sub or 0) * 256 + (p.add or 0) } )) or false,
 					Router = ex.Router,
 				}
 			end
 			return out
 		end
 
+		// Set the LAN IPv4 from a dotted quad. This is the one address PCs and
+		// router LAN interfaces use.
+		function ENT:SetLanAddress( addr, upbb, lanid )
+			local ip = self:Data().IP
+			ip.V6 = nil
+			ip.V6Prefix = nil
+			ip.V6Link = nil
+			if (!addr) then
+				ip.LAN = false
+			else
+				local p = ParseLanAddress( tostring( addr ) )
+				if (!p) then return false end
+				ip.LAN = p.full
+				if (upbb != nil) then ip.UpBB = upbb end
+				if (lanid != nil) then ip.LanID = lanid end
+			end
+			self:SetIPText()
+			return true
+		end
+
+		// Compatibility helpers used by the DHCP core: update one octet of the
+		// current LAN address, keeping the other.
 		function ENT:SetSubnet( subnet )
-			PCMod.Data[ self:EntIndex() ].IP.Sub = subnet
+			local ip = self:Data().IP
+			if ((subnet == false) || (subnet == nil)) then
+				ip.LAN = false
+			else
+				local p = ParseLanAddress( ip.LAN )
+				ip.LAN = "192.168." .. tostring( subnet ) .. "." .. tostring( (p and p.add) or 1 )
+			end
 			self:SetIPText()
 		end
 
 		function ENT:SetIP( ip )
-			PCMod.Data[ self:EntIndex() ].IP.Add = ip
+			local data = self:Data().IP
+			if ((ip == false) || (ip == nil)) then
+				data.LAN = false
+			else
+				local p = ParseLanAddress( data.LAN )
+				data.LAN = "192.168." .. tostring( (p and p.sub) or 0 ) .. "." .. tostring( ip )
+			end
 			self:SetIPText()
 		end
 
 		// Configure a static LAN IP (192.168.x.y). Pass "" or false to clear it and
 		// fall back to DHCP. Returns false on a malformed/out-of-range address.
-		// Surrounding whitespace is trimmed so a stray space from the UI still
-		// parses (and is stored in its canonical "192.168.c.d" form).
 		function ENT:SetStaticIP( addr )
 			local ip = self:Data().IP
 			if (type( addr ) == "string") then
 				addr = string.Trim( addr )
 			end
 			if (type( addr ) == "string" && addr != "") then
-				local a, b, c, d = string.match( addr, "^(%d+)%.(%d+)%.(%d+)%.(%d+)$" )
-				if ((!a) || (a != "192") || (b != "168")) then return false end
-				c, d = tonumber( c ), tonumber( d )
-				if ((!c) || (!d) || (c < 0) || (c > 255) || (d < 1) || (d > 254)) then return false end
-				ip.Static = "192.168." .. c .. "." .. d
+				local p = ParseLanAddress( addr )
+				if (!p) then return false end
+				ip.Static = p.full
 				// A static address is not owned by any DHCP router.
 				ip.Router = false
-				self:SetSubnet( c )
-				self:SetIP( d )
+				self:SetLanAddress( p.full )
 				return true
 			end
 			ip.Static = false
 			ip.Router = false
-			self:SetSubnet( false )
-			self:SetIP( false )
+			self:SetLanAddress( false )
 			return true
 		end
 
@@ -580,35 +643,58 @@ if (SERVER) then
 			return true
 		end
 
+		// Set the WAN/backbone IPv4 from a dotted quad. Routers use this for
+		// their uplink; it is the same plain IPv4 type as IP.LAN.
+		function ENT:SetWanAddress( addr, bb, host )
+			local ip = self:Data().IP
+			if (!addr) then
+				ip.WAN = false
+				ip.WanBB = false
+				ip.WanHost = false
+			else
+				local p = PCMod.IPv4.Parse( tostring( addr ) )
+				if (!p) then return false end
+				ip.WAN = tostring( addr )
+				ip.WanBB = bb or p.bb
+				ip.WanHost = (host != nil) and host or (p.host - 1)
+			end
+			self:SetBIPText()
+			return true
+		end
+
 		function ENT:SetBSubnet( subnet )
-			PCMod.Data[ self:EntIndex() ].IP.Back.Sub = subnet
+			local ip = self:Data().IP
+			ip.WanBB = ((subnet == false) || (subnet == nil)) and false or subnet
 			self:SetBIPText()
 		end
 
-		function ENT:SetBIP( ip )
-			PCMod.Data[ self:EntIndex() ].IP.Back.Add = ip
+		function ENT:SetBIP( host )
+			local ip = self:Data().IP
+			ip.WanHost = ((host == false) || (host == nil)) and false or host
 			self:SetBIPText()
 		end
-		
+
 		function ENT:SetIPText()
-			local tmp = PCMod.Data[ self:EntIndex() ].IP
-			if (tmp.Add && tmp.Sub) then
-				PCMod.Data[ self:EntIndex() ].IP.Full = "192.168."..tmp.Sub.."."..tmp.Add
-				self:SetNWString( "IP", PCMod.Data[ self:EntIndex() ].IP.Full )
+			local ip = self:Data().IP
+			local p = ParseLanAddress( ip.LAN )
+			if (p) then
+				ip.LAN = p.full
+				self:SetNWString( "IP", ip.LAN )
 				// Emulated dual-stack address (see PCMod.IPv6 in sh_common.lua).
 				// Hierarchical LAN: fd00:<bb>:0:<subnet>::<host>.
-				tmp.V6 = PCMod.IPv6.Format( { 0xfd00, tmp.UpBB or 0, 0, tmp.LanID or 0, 0, 0, 0, (tmp.Sub or 0) * 256 + tmp.Add } )
-				tmp.V6Prefix = PCMod.IPv6.LANPrefix( tmp.UpBB or 0, tmp.LanID or 0 )
-				tmp.V6Link = PCMod.IPv6.LinkLocal( tmp.V6 )
-				self:SetNWString( "IPv6", tmp.V6 or "" )
-				self:SetNWString( "IPv6.Prefix", tmp.V6Prefix or "" )
-				self:SetNWString( "IPv6.LinkLocal", tmp.V6Link or "" )
+				local host = (p.sub or 0) * 256 + p.add
+				ip.V6 = PCMod.IPv6.Format( { 0xfd00, ip.UpBB or 0, 0, ip.LanID or 0, 0, 0, 0, host } )
+				ip.V6Prefix = PCMod.IPv6.LANPrefix( ip.UpBB or 0, ip.LanID or 0 )
+				ip.V6Link = PCMod.IPv6.LinkLocal( ip.V6 )
+				self:SetNWString( "IPv6", ip.V6 or "" )
+				self:SetNWString( "IPv6.Prefix", ip.V6Prefix or "" )
+				self:SetNWString( "IPv6.LinkLocal", ip.V6Link or "" )
 			else
-				PCMod.Data[ self:EntIndex() ].IP.Full = false
-				tmp.V6 = false
-				tmp.V6Prefix = false
-				tmp.V6Link = false
-				self:SetNWString( "IP", "" )
+				ip.LAN = false
+				ip.V6 = false
+				ip.V6Prefix = false
+				ip.V6Link = false
+				self:SetNWString( "IP", ip.WAN or "" )
 				self:SetNWString( "IPv6", "" )
 				self:SetNWString( "IPv6.Prefix", "" )
 				self:SetNWString( "IPv6.LinkLocal", "" )
@@ -616,28 +702,28 @@ if (SERVER) then
 		end
 
 		function ENT:SetBIPText()
-			local tmp = PCMod.Data[ self:EntIndex() ].IP.Back
-			if (tmp.Add && tmp.Sub) then
-				// Hierarchical backbone IPv4: 10.<hi>.<lo>.<host>/32 (16-bit backbone
-				// id in the 2nd+3rd octets). host 1 is the backbone router itself
-				// (gateway); attached LAN routers get host 2, 3, ...
-				PCMod.Data[ self:EntIndex() ].IP.Back.Full = PCMod.IPv4.BackboneAddress( tmp.Sub, tmp.Add + 1 )
-				self:SetNWString( "IP.Back", PCMod.Data[ self:EntIndex() ].IP.Back.Full )
-				tmp.V6 = PCMod.IPv6.FromIPv4( tmp.Full )
-				tmp.V6Prefix = PCMod.IPv6.BackbonePrefix( tmp.Sub )
-				tmp.V6Link = PCMod.IPv6.LinkLocal( tmp.V6 )
-				self:SetNWString( "IPv6.Back", tmp.V6 or "" )
-				self:SetNWString( "IPv6.Back.Prefix", tmp.V6Prefix or "" )
-				self:SetNWString( "IPv6.Back.LinkLocal", tmp.V6Link or "" )
+			local ip = self:Data().IP
+			if ((ip.WanBB != false) && (ip.WanBB != nil) && (ip.WanHost != false) && (ip.WanHost != nil)) then
+				local host = ip.WanHost + 1
+				ip.WAN = PCMod.IPv4.BackboneAddress( ip.WanBB, host )
+				self:SetNWString( "IP.WAN", ip.WAN )
+				if (!ip.LAN) then self:SetNWString( "IP", ip.WAN ) end
+				ip.WanV6 = PCMod.IPv6.Format( { 0xfd00, ip.WanBB, 0, 0, 0, 0, 0, host } )
+				ip.WanV6Prefix = PCMod.IPv6.BackbonePrefix( ip.WanBB )
+				ip.WanV6Link = PCMod.IPv6.LinkLocal( ip.WanV6 )
+				self:SetNWString( "IPv6.WAN", ip.WanV6 or "" )
+				self:SetNWString( "IPv6.WAN.Prefix", ip.WanV6Prefix or "" )
+				self:SetNWString( "IPv6.WAN.LinkLocal", ip.WanV6Link or "" )
 			else
-				PCMod.Data[ self:EntIndex() ].IP.Back.Full = false
-				tmp.V6 = false
-				tmp.V6Prefix = false
-				tmp.V6Link = false
-				self:SetNWString( "IP.Back", "" )
-				self:SetNWString( "IPv6.Back", "" )
-				self:SetNWString( "IPv6.Back.Prefix", "" )
-				self:SetNWString( "IPv6.Back.LinkLocal", "" )
+				ip.WAN = false
+				ip.WanV6 = false
+				ip.WanV6Prefix = false
+				ip.WanV6Link = false
+				self:SetNWString( "IP.WAN", "" )
+				if (!ip.LAN) then self:SetNWString( "IP", "" ) end
+				self:SetNWString( "IPv6.WAN", "" )
+				self:SetNWString( "IPv6.WAN.Prefix", "" )
+				self:SetNWString( "IPv6.WAN.LinkLocal", "" )
 			end
 		end
 
@@ -646,9 +732,10 @@ if (SERVER) then
 		// LAN addressing is hierarchical: fd00:<bb>:0:<subnet>::<host>.
 		function ENT:GetIPv6()
 			local ip = self:Data().IP
-			if ((!ip.Sub) || (!ip.Add)) then return false end
+			local p = ParseLanAddress( ip.LAN )
+			if (!p) then return false end
 			if (ip.V6 == nil) then
-				local host = (ip.Sub or 0) * 256 + ip.Add
+				local host = (p.sub or 0) * 256 + p.add
 				ip.V6 = PCMod.IPv6.Format( { 0xfd00, ip.UpBB or 0, 0, ip.LanID or 0, 0, 0, 0, host } )
 			end
 			return ip.V6
@@ -658,14 +745,14 @@ if (SERVER) then
 			return self:GetIPv6()
 		end
 
-		// Backbone interface: fd00:<bb>::<host+1> (gateway .0 -> ::1).
+		// WAN interface IPv6: fd00:<bb>::<host+1> (host slot 0 -> ::1).
 		function ENT:GetBIPv6()
-			local ip = self:Data().IP.Back
-			if ((!ip.Sub) || (!ip.Add)) then return false end
-			if (ip.V6 == nil) then
-				ip.V6 = PCMod.IPv6.Format( { 0xfd00, ip.Sub, 0, 0, 0, 0, 0, ip.Add + 1 } )
+			local ip = self:Data().IP
+			if ((ip.WanBB == false) || (ip.WanBB == nil) || (ip.WanHost == false) || (ip.WanHost == nil)) then return false end
+			if (ip.WanV6 == nil) then
+				ip.WanV6 = PCMod.IPv6.Format( { 0xfd00, ip.WanBB, 0, 0, 0, 0, 0, ip.WanHost + 1 } )
 			end
-			return ip.V6
+			return ip.WanV6
 		end
 
 		function ENT:GetFullBIPv6()
@@ -675,7 +762,7 @@ if (SERVER) then
 		// The /64 LAN prefix fd00:<bb>:0:<net>::/64.
 		function ENT:GetIPv6Prefix()
 			local ip = self:Data().IP
-			if ((!ip.Sub) || (!ip.Add)) then return false end
+			if (!ParseLanAddress( ip.LAN )) then return false end
 			if (!ip.V6Prefix) then ip.V6Prefix = PCMod.IPv6.LANPrefix( ip.UpBB or 0, ip.LanID or 0 ) end
 			return ip.V6Prefix
 		end
@@ -706,10 +793,10 @@ if (SERVER) then
 
 		// The /32 backbone prefix fd00:<bb>::/32.
 		function ENT:GetBIPv6Prefix()
-			local ip = self:Data().IP.Back
-			if ((!ip.Sub) || (!ip.Add)) then return false end
-			if (!ip.V6Prefix) then ip.V6Prefix = PCMod.IPv6.BackbonePrefix( ip.Sub ) end
-			return ip.V6Prefix
+			local ip = self:Data().IP
+			if ((ip.WanBB == false) || (ip.WanBB == nil)) then return false end
+			if (!ip.WanV6Prefix) then ip.WanV6Prefix = PCMod.IPv6.BackbonePrefix( ip.WanBB ) end
+			return ip.WanV6Prefix
 		end
 
 		function ENT:GetBIPv6Network()
@@ -729,9 +816,9 @@ if (SERVER) then
 		function ENT:GetBIPv6LinkLocal()
 			local v6 = self:GetBIPv6()
 			if (!v6) then return false end
-			local ip = self:Data().IP.Back
-			if (!ip.V6Link) then ip.V6Link = PCMod.IPv6.LinkLocal( v6 ) end
-			return ip.V6Link
+			local ip = self:Data().IP
+			if (!ip.WanV6Link) then ip.WanV6Link = PCMod.IPv6.LinkLocal( v6 ) end
+			return ip.WanV6Link
 		end
 
 		// Which backbone /32 this LAN hangs off (0 = standalone). Used to build
@@ -770,9 +857,9 @@ if (SERVER) then
 			if (PCMod.IPv6.Matches( addr, self:GetFullBIP(), self:GetBIPv6() )) then return true end
 			// Secondary addresses (leases from other routers).
 			for _, ex in ipairs( self:ExtraIPs() ) do
-				local full = "192.168." .. tostring( ex.Sub ) .. "." .. tostring( ex.Add )
-				local v6 = PCMod.IPv6.Format( { 0xfd00, ex.UpBB or 0, 0, ex.LanID or 0, 0, 0, 0, (ex.Sub or 0) * 256 + (ex.Add or 0) } )
-				if (PCMod.IPv6.Matches( addr, full, v6 )) then return true end
+				local p = PCMod.IPv4.ParseLan( ex.IPv4 )
+				local v6 = p and PCMod.IPv6.Format( { 0xfd00, ex.UpBB or 0, 0, ex.LanID or 0, 0, 0, 0, (p.sub or 0) * 256 + (p.add or 0) } ) or false
+				if (PCMod.IPv6.Matches( addr, ex.IPv4, v6 )) then return true end
 			end
 			return false
 		end
@@ -782,8 +869,8 @@ if (SERVER) then
 			// included): source from the exact address that was contacted so
 			// the reply goes back out on the same identity.
 			if (dest && self:IsAddressedTo( dest )) then return dest end
-			// Pick the routable source: IPv6 for IPv6 destinations (the WAN is
-			// IPv6-only), private IPv4 for anything LAN-local.
+			// Pick the routable source: IPv6 for IPv6 destinations, otherwise
+			// the plain IPv4 address (LAN first, WAN for a backbone-only device).
 			if (dest && PCMod.IPv6.IsIPv6( dest )) then
 				return self:GetIPv6() or self:GetFullIP() or self:GetFullBIP()
 			end
@@ -1584,8 +1671,7 @@ if (SERVER) then
 					// Rebuild the address from the configured identity instead
 					// of adopting the copied lease table: a static address is
 					// re-applied, a DHCP client starts empty and re-leases on
-					// relink. Old dupes carry a baked IP table (Add/Sub) and are
-					// still honoured.
+					// relink.
 					local src = info.ip
 					local ipdata = dt.IP or {}
 					dt.IP = ipdata
@@ -1597,16 +1683,11 @@ if (SERVER) then
 						ipdata.Router = false
 						ipdata.Static = src.Static
 						if (self.SetStaticIP) then self:SetStaticIP( src.Static ) end
-					elseif (src.Add != nil) then
-						// Legacy dupe info with the address baked in.
-						dt.IP = (table.Copy && table.Copy( src )) or src
 					else
 						ipdata.Static = false
-						ipdata.Sub = false
-						ipdata.Add = false
-						ipdata.Full = false
 						ipdata.Router = false
 						ipdata.Extra = {}
+						if (self.SetLanAddress) then self:SetLanAddress( false ) end
 					end
 					self:UpdateData( dt )
 				end
@@ -1746,18 +1827,16 @@ if (CLIENT) then
 		local wireless = self:GetGVar( "wireless" )
 		if (wireless) then PCMod.Gui.DrawWirelessLinks( self ) end
 		
-		// Get the IP info
-		local IP = {}
-		IP.Back = {}
-		IP.Full = self:GetNWString( "IP" )
-		IP.Back.Full = self:GetNWString( "IP.Back" )
+		// Get the IP info (both are plain IPv4 strings)
+		local lan = self:GetNWString( "IP" )
+		local wan = self:GetNWString( "IP.WAN" )
 		
 		// Fill in the info table
 		local txt = {}
 		txt[1] = self.PrintName
 		if (wireless) then table.insert( txt, "Wireless" ) end
-		if (IP.Full != "") then table.insert( txt, IP.Full) end
-		if (IP.Back.Full != "") then table.insert( txt, IP.Back.Full ) end
+		if (lan != "") then table.insert( txt, lan ) end
+		if (wan != "") then table.insert( txt, wan ) end
 		if (self:GetGVar( "noreg" )) then table.insert( txt, "Hardware Failure" ) end
 		
 		// Draw the label

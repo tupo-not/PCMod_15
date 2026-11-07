@@ -28,6 +28,8 @@ AddCSLuaFile( "pcmod/sh_baseconfig.lua" ) -- Give base config file to client
 AddCSLuaFile( "pcmod/sh_config.lua" ) -- Give config file to client
 
 include( "pcmod/sh_common.lua" ) -- Common functions
+include( "pcmod/sh_dhcp.lua" ) -- DHCP / IPv4 lease mechanics
+AddCSLuaFile( "pcmod/sh_dhcp.lua" ) -- Give DHCP mechanics to client
 include( "pcmod/sh_ui_layout.lua" ) -- Pure layout primitives
 include( "pcmod/sh_window.lua" ) -- Shared window geometry
 AddCSLuaFile( "pcmod/sh_common.lua" ) -- Give common file to client

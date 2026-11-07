@@ -53,7 +53,12 @@ function PROG:RefreshWireless()
 	if (range > 0) then
 		ets = ents.FindInSphere( selfEnt:GetPos(), range )
 	else
-		ets = ents.FindByClass( "pcmod_router" )
+		ets = {}
+		for _, cls in ipairs( { "pcmod_router", "pcmod_erouter" } ) do
+			for _, ent in ipairs( ents.FindByClass( cls ) or {} ) do
+				table.insert( ets, ent )
+			end
+		end
 	end
 	local out = {}
 	for _, ent in pairs( ets or {} ) do

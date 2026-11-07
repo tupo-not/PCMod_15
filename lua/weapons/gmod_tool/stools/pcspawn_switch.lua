@@ -8,8 +8,6 @@ TOOL.Inst = {
 }
 
 TOOL.ModelList = {
-	"models/props_lab/reciever01c.mdl",
-	"models/props_lab/reciever01b.mdl",
 	"models/props_lab/reciever01a.mdl"
 }
 

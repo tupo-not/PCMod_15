@@ -67,8 +67,8 @@ function ent:SetNWString( k, v ) nw[ k ] = v end
 PCMod.Data[ 1 ] = {
 	HardDrive = {},
 	IP = {
-		Add = false, Sub = false, Full = false, V6 = false,
-		Back = { Add = false, Sub = false, Full = false, V6 = false },
+		LAN = false, WAN = false, WanBB = false, WanHost = false,
+		Extra = {}, V6 = false, WanV6 = false,
 	},
 }
 
@@ -109,6 +109,14 @@ assertEq( ent:GetFullBIP(), "10.0.3.1", "backbone gateway IPv4" )
 assertEq( ent:GetBIPv6(), "fd00:3::1", "backbone gateway IPv6" )
 ent:SetBIP( 1 )
 
+-- A device with only a WAN address (for example a PC on a backboned modem)
+-- reports that plain IPv4 as its primary address.
+local lanSave = ent:GetFullIP()
+ent:SetLanAddress( false )
+assertEq( ent:GetFullIP(), "10.0.3.2", "WAN-only device reports its WAN IPv4" )
+assertEq( nw[ "IP" ], "10.0.3.2", "WAN-only device publishes the IPv4 NW string" )
+ent:SetLanAddress( lanSave )
+
 -- Exact-address matching accepts every supported representation.
 assertTrue( ent:IsAddressedTo( "192.168.0.2" ), "LAN IPv4 matches" )
 assertTrue( ent:IsAddressedTo( "fd00:3:0:5::2" ), "LAN IPv6 matches" )
@@ -123,9 +131,8 @@ assertTrue( not ent:IsAddressedTo( "::1" ), "loopback is not this entity" )
 assertTrue( not ent:IsAddressedTo( nil ), "nil rejected" )
 
 -- Secondary addresses (multi-homed device): another router's lease.
-ent:AddExtraIP( 0, 9, 4, 6, 42 )
-assertEq( ent:ExtraIPs()[ 1 ].Sub, 0, "secondary subnet stored" )
-assertEq( ent:ExtraIPs()[ 1 ].Add, 9, "secondary host stored" )
+ent:AddExtraIP( "192.168.0.9", 4, 6, 42 )
+assertEq( ent:ExtraIPs()[ 1 ].IPv4, "192.168.0.9", "secondary IPv4 stored" )
 assertTrue( ent:IsAddressedTo( "192.168.0.9" ), "secondary IPv4 matches" )
 assertTrue( ent:IsAddressedTo( "fd00:4:0:6::9" ), "secondary IPv6 matches" )
 assertTrue( not ent:IsAddressedTo( "192.168.0.8" ), "other secondary host rejected" )
@@ -137,7 +144,7 @@ ent:UpdateExtraIPRouter( 42, 5, 8 )
 assertTrue( ent:IsAddressedTo( "fd00:5:0:8::9" ), "secondary IPv6 renumbered" )
 assertTrue( not ent:IsAddressedTo( "fd00:4:0:6::9" ), "old secondary IPv6 gone" )
 assertEq( ent:GetExtraAddresses()[ 1 ].IPv4, "192.168.0.9", "secondary listed for the UI" )
-assertTrue( ent:ReleaseExtraIP( 0, 9 ), "secondary released" )
+assertTrue( ent:ReleaseExtraIP( "192.168.0.9" ), "secondary released" )
 assertTrue( not ent:IsAddressedTo( "192.168.0.9" ), "released secondary no longer matches" )
 
 -- Subnet membership (what a router uses for on-link decisions).
@@ -153,9 +160,9 @@ PCMod.Data[ 1 ].IP.V6Link = nil
 assertEq( ent:GetIPv6(), "fd00:3:0:5::2", "lazy IPv6 derivation" )
 assertEq( ent:GetIPv6Prefix(), "fd00:3:0:5::/64", "lazy prefix derivation" )
 assertEq( ent:GetIPv6LinkLocal(), "fe80::2", "lazy link-local derivation" )
-PCMod.Data[ 1 ].IP.Back.V6 = nil
-PCMod.Data[ 1 ].IP.Back.V6Prefix = nil
-PCMod.Data[ 1 ].IP.Back.V6Link = nil
+PCMod.Data[ 1 ].IP.WanV6 = nil
+PCMod.Data[ 1 ].IP.WanV6Prefix = nil
+PCMod.Data[ 1 ].IP.WanV6Link = nil
 assertEq( ent:GetBIPv6(), "fd00:3::2", "lazy backbone IPv6 derivation" )
 assertEq( ent:GetBIPv6Prefix(), "fd00:3::/32", "lazy backbone prefix" )
 
@@ -215,7 +222,7 @@ local dump = { ["/mydocs/x.txt"] = { ItemType = "file", ItemContent = "hello" } 
 PCMod.Data[1].HardDrive = dump
 PCMod.Data[1].IsOn = true
 PCMod.Data[1].Password = "1234"
-PCMod.Data[1].IP = { Add = 5, Sub = 0, Full = "192.168.0.5", V6 = false, Back = { Add = false, Sub = false, Full = false, V6 = false } }
+PCMod.Data[1].IP = { LAN = "192.168.0.5", WAN = false, WanBB = false, WanHost = false, Extra = {}, V6 = false, WanV6 = false }
 ent.IsComputer = true
 ent.IsNetworkDevice = false
 local booted = false
@@ -231,22 +238,22 @@ assertTrue( dinfo.ip.Add == nil, "dupe does not bake in a DHCP address" )
 PCMod.Data[1].HardDrive = {}
 PCMod.Data[1].IsOn = false
 PCMod.Data[1].Password = ""
-PCMod.Data[1].IP = { Add = 1, Sub = 0, Back = { Add = false, Sub = false, Full = false, V6 = false } }
+PCMod.Data[1].IP = { LAN = "192.168.0.1", WAN = false, WanBB = false, WanHost = false, Extra = {}, V6 = false, WanV6 = false }
 ent:ApplyDupeInfo( nil, ent, dinfo, nil )
 assertTrue( PCMod.Data[1].HardDrive == dump, "dupe restores harddrive" )
 assertTrue( PCMod.Data[1].Password == "1234", "dupe restores password" )
-assertTrue( PCMod.Data[1].IP.Add == false, "dupe DHCP address is re-leased, not copied" )
+assertTrue( PCMod.Data[1].IP.LAN == false, "dupe DHCP address is re-leased, not copied" )
 assertTrue( booted == true, "dupe reboots a computer that was on" )
 
 -- Duplicating a PC with a configured static address keeps that identity but
 -- never shares the live IP table with the source entity.
-PCMod.Data[1].IP = { Add = 5, Sub = 0, Full = "192.168.0.5", V6 = false, Back = { Add = false, Sub = false, Full = false, V6 = false } }
+PCMod.Data[1].IP = { LAN = "192.168.0.5", WAN = false, WanBB = false, WanHost = false, Extra = {}, V6 = false, WanV6 = false }
 assertTrue( ent:SetNetworkConfig( "192.168.5.20", "255.255.255.0", "192.168.5.1" ) )
 local sinfo0 = ent:BuildDupeInfo()
 assertEq( sinfo0.ip.Static, "192.168.5.20", "dupe saves static IP" )
 assertEq( sinfo0.ip.Mask, "255.255.255.0", "dupe saves netmask" )
 assertEq( sinfo0.ip.Gateway, "192.168.5.1", "dupe saves gateway" )
-PCMod.Data[1].IP = { Add = 1, Sub = 0, Back = { Add = false, Sub = false, Full = false, V6 = false } }
+PCMod.Data[1].IP = { LAN = "192.168.0.1", WAN = false, WanBB = false, WanHost = false, Extra = {}, V6 = false, WanV6 = false }
 ent:ApplyDupeInfo( nil, ent, sinfo0, nil )
 assertEq( ent:GetStaticIP(), "192.168.5.20", "dupe restores static IP" )
 assertEq( ent:GetFullIP(), "192.168.5.20", "dupe restores static address" )
@@ -254,17 +261,13 @@ assertEq( ent:GetNetmask(), "255.255.255.0", "dupe restores netmask" )
 assertEq( ent:GetGateway(), "192.168.5.1", "dupe restores gateway" )
 assertTrue( PCMod.Data[1].IP ~= sinfo0.ip, "dupe gets its own IP table" )
 
--- Old dupe data with a baked address is still honoured (save compatibility).
-ent:ApplyDupeInfo( nil, ent, { ip = { Add = 7, Sub = 0, Full = "192.168.0.7", Back = { Add = false, Sub = false, Full = false, V6 = false } } }, nil )
-assertEq( PCMod.Data[1].IP.Add, 7, "legacy dupe address restored" )
-
 -- Map-save round-trip keeps the configured identity (not a stale DHCP lease).
 ent:SetNetworkConfig( "192.168.5.20", "255.255.255.0", "192.168.5.1" )
 local sinfo = ent:OnSave()
 assertEq( sinfo.ip.Static, "192.168.5.20", "save stores static IP" )
 assertEq( sinfo.ip.Mask, "255.255.255.0", "save stores netmask" )
 assertEq( sinfo.ip.Gateway, "192.168.5.1", "save stores gateway" )
-PCMod.Data[1].IP = { Add = 1, Sub = 0, Back = { Add = false, Sub = false, Full = false, V6 = false } }
+PCMod.Data[1].IP = { LAN = "192.168.0.1", WAN = false, WanBB = false, WanHost = false, Extra = {}, V6 = false, WanV6 = false }
 ent:OnRestore( sinfo )
 assertEq( ent:GetStaticIP(), "192.168.5.20", "restore re-applies static IP" )
 assertEq( ent:GetFullIP(), "192.168.5.20", "restored address" )
@@ -300,7 +303,7 @@ ent:ApplyDupeInfo( nil, ent, linfo, function( id ) if (id == 42) then return pas
 assertTrue( rec ~= nil and rec.srcprt == 1 and rec.destprt == 3 and rec.destent == pastedPeer, "dupe re-links ports via LinkPorts" )
 
 -- Static IP configuration (LAN-only 192.168.x.y: parse, reject, clear).
-PCMod.Data[1].IP = { Add = false, Sub = false, Full = false, V6 = false, Back = { Add = false, Sub = false, Full = false, V6 = false } }
+PCMod.Data[1].IP = { LAN = false, WAN = false, WanBB = false, WanHost = false, Extra = {}, V6 = false, WanV6 = false }
 assertTrue( ent:SetStaticIP( "192.168.5.7" ) == true, "static IP accepted" )
 assertEq( PCMod.Data[1].IP.Static, "192.168.5.7", "static IP stored" )
 assertEq( ent:GetStaticIP(), "192.168.5.7", "GetStaticIP returns stored value" )

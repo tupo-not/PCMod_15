@@ -27,6 +27,10 @@ DEV.FONT_FAMILIES = { "Tahoma", "Arial", "Verdana", "Courier New", "Times New Ro
 DEV.FONT_SCALES = { 75, 100, 125, 150, 200 }
 DEV.ShowSettings = false
 
+// Keep the font-settings page (and the document draft it put aside) when the
+// client device is garbage-collected while the player walks away.
+DEV.PersistKeys = { "ShowSettings", "PendingText", "PendingFilename" }
+
 function DEV:GetFontFamily()
 	local fam = PCMod.NP.FontFamily or "Tahoma"
 	for _, v in ipairs( self.FONT_FAMILIES ) do

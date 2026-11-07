@@ -6,7 +6,6 @@ DEV.Name = "base"
 
 // Override functions
 function DEV:Paint() end
-function DEV:Kill() end
 function DEV:KeyPress() end
 function DEV:Initialize() end
 function DEV:ButtonClick() end
@@ -15,6 +14,12 @@ function DEV:ListboxBlankClick() end
 function DEV:OnUpdate() end
 function DEV:DataRecieved() end
 function DEV:QuickType() end
+
+// Local UI state that survives the client device being garbage-collected
+// while the player is away from the screen (but not a program restart: the
+// program puts a fresh OpenID in DeviceData each time it starts). Devices opt
+// in by listing the fields they want restored.
+DEV.PersistKeys = {}
 
 // Input focus
 DEV.TB_Focus = ""
@@ -54,6 +59,28 @@ DEV.MinH = 0.6
 		self.TB_Focus = ""
 		self.WindowDragging = false
 		self.WindowResizing = false
+	end
+
+	function DEV:SaveLocalState()
+		if ((!self.DevID) || (!self.OpenID)) then return end
+		PCMod.SDraw = PCMod.SDraw or {}
+		PCMod.SDraw.DevState = PCMod.SDraw.DevState or {}
+		local st = { __openid = self.OpenID }
+		for _, k in ipairs( self.PersistKeys or {} ) do st[ k ] = self[ k ] end
+		PCMod.SDraw.DevState[ self.DevID ] = st
+	end
+
+	function DEV:RestoreLocalState()
+		if ((!self.DevID) || (!self.OpenID)) then return end
+		local st = PCMod.SDraw && PCMod.SDraw.DevState && PCMod.SDraw.DevState[ self.DevID ]
+		if ((!st) || (st.__openid != self.OpenID)) then return end
+		for k, v in pairs( st ) do
+			if (k != "__openid") then self[ k ] = v end
+		end
+	end
+
+	function DEV:Kill()
+		self:SaveLocalState()
 	end
 
 	function DEV:Int_Reinitialize( x, y, w, h )
@@ -143,6 +170,7 @@ DEV.MinH = 0.6
 
 	function DEV:Int_Initialize( x, y, w, h )
 		self:Tick()
+		self:RestoreLocalState()
 		self:Initialize( x, y, w, h )
 		self.win_x = x
 		self.win_y = y
@@ -491,6 +519,7 @@ DEV.MinH = 0.6
 			tmp.Content = ""
 			tmp.Locked = false
 			self.Textboxes[ name ] = tmp
+		self:AddControl( "textbox", tmp )
 		return tmp
 	end
 
@@ -582,10 +611,18 @@ DEV.MinH = 0.6
 	end
 
 	function DEV:RemoveTextbox( name )
+		local tb = self.Textboxes[ name ]
+		if ((tb) && (self.Controls) && (PCMod.UI) && (PCMod.UI.Widgets)) then
+			PCMod.UI.Widgets.Remove( self.Controls, "textbox", tb )
+		end
 		self.Textboxes[ name ] = nil
 	end
 
 	function DEV:RemoveListbox( name )
+		local lb = self.Listboxes[ name ]
+		if ((lb) && (self.Controls) && (PCMod.UI) && (PCMod.UI.Widgets)) then
+			PCMod.UI.Widgets.Remove( self.Controls, "listbox", lb )
+		end
 		self.Listboxes[ name ] = nil
 	end
 	

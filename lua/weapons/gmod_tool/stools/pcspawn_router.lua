@@ -1,10 +1,10 @@
 if (!PCTool) then include( "pcmod/sh_tool.lua" ) end
 
-TOOL.Name = "Router"
+TOOL.Name = "LAN Modem"
 TOOL.Class = "pcspawn_router"
-TOOL.Desc = "Spawns a router"
+TOOL.Desc = "Spawns a LAN modem (router with a fibre WAN uplink)"
 TOOL.Inst = {
-	{ "Spawn a router" }
+	{ "Spawn a LAN modem. Its WAN uplink uses a fibre optic cable." }
 }
 
 TOOL.ModelList = {
@@ -15,7 +15,7 @@ TOOL.ModelList = {
 TOOL.Type = "spawner"
 TOOL.SpawnType = "Networking"
 
-TOOL.EntName = "Router"
+TOOL.EntName = "LAN Modem"
 TOOL.EntClass = "pcmod_router"
 TOOL.DefaultMax = 8
 TOOL.Model = TOOL.ModelList[ 1 ]

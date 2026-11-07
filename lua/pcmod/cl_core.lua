@@ -26,6 +26,7 @@ if (!PCMod_NoInclude) then
 
 	include( "pcmod/sh_baseconfig.lua" ) -- Configuration file
 	include( "pcmod/sh_common.lua" ) -- Common functions
+	include( "pcmod/sh_dhcp.lua" ) -- DHCP / IPv4 lease mechanics
 	include( "pcmod/sh_ui_layout.lua" ) -- Pure layout primitives
 	include( "pcmod/sh_window.lua" ) -- Shared window geometry
 	include( "pcmod/sh_logging.lua" ) -- Logging functions
