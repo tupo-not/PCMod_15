@@ -8,7 +8,9 @@ TOOL.Inst = {
 }
 
 TOOL.ModelList = {
-	"models/props_lab/reciever01a.mdl"
+	"models/props_lab/reciever01a.mdl",
+	"models/PCMod/wrt54g.mdl",
+	"models/props_lab/reciever01b.mdl"
 }
 
 TOOL.Type = "spawner"
