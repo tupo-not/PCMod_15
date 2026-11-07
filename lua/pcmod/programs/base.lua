@@ -79,6 +79,29 @@ function PROG:SetScreenSpace( ss )
 	PCMod.Data[ ent:EntIndex() ].Drivers[ "gen_display" ]:SetScreen( ss )
 end
 
+// The active screen-space entry for this program. Programs with more than one
+// window state (ChatServ) may use a key that is not DeviceName, so the window
+// manager looks the entry up by owner as a fallback.
+function PROG:GetWindowDevice( ss )
+	ss = ss or self:GetScreenSpace()
+	if (!ss) then return nil end
+	if (ss.GetDevice) then
+		local dev = ss:GetDevice( self.DeviceName )
+		if (dev) then return dev end
+	end
+	// The live entries are in ss.Data on the server; a plain table is accepted
+	// on the client/tests.
+	local list = ss.Data or ss
+	for _, v in pairs( list ) do
+		if (type( v ) == "table") then
+			local owner = v.ProgName
+			if ((!owner) && (type( v.Data ) == "table")) then owner = v.Data.ProgName end
+			if (owner == self.Name) then return v end
+		end
+	end
+	return nil
+end
+
 function PROG:GetOS()
 	local ent = self.Entity
 	if ((!ent) || (!ent:IsValid())) then return end
@@ -97,6 +120,12 @@ function PROG:Tick()
 end
 
 function PROG:TriggerState( st )
+	self:BaseTriggerState( st )
+end
+
+// Shared simple-mode lifecycle. Programs with extra states may call this for
+// the states the base understands and handle their own on top.
+function PROG:BaseTriggerState( st )
 	if (!self.SimpleMode) then return end
 	if (st == 0) then
 		if (self.OS == "server") then
@@ -453,8 +482,7 @@ function PROG:RequestFocus( update )
 		// the window (closing menus and resetting text fields), so update the
 		// existing screen-space entry in place.
 		local ss = self:GetScreenSpace()
-		local dev = nil
-		if (ss && ss.GetDevice) then dev = ss:GetDevice( self.DeviceName ) end
+		local dev = self:GetWindowDevice( ss )
 		if (dev) then
 			dev.Priority = self:GetPriority()
 			self:SetScreenSpace( ss )
@@ -533,8 +561,7 @@ function PROG:ProcessCommand( com, args )
 		// would bump Rev and make the client refresh the window contents
 		// (discarding unsaved edits) after a drag.
 		local ss = self:GetScreenSpace()
-		local dev = nil
-		if (ss && ss.GetDevice) then dev = ss:GetDevice( self.DeviceName ) end
+		local dev = self:GetWindowDevice( ss )
 		if (dev) then
 			dev.X = self.WinX or dev.X
 			dev.Y = self.WinY or dev.Y
@@ -568,8 +595,7 @@ function PROG:ProcessCommand( com, args )
 		self:RequestFocus( false )
 		// In-place geometry update, same reasoning as win_move: do not bump Rev.
 		local ss = self:GetScreenSpace()
-		local dev = nil
-		if (ss && ss.GetDevice) then dev = ss:GetDevice( self.DeviceName ) end
+		local dev = self:GetWindowDevice( ss )
 		if (dev) then
 			dev.W = self.WinW or dev.W
 			dev.H = self.WinH or dev.H

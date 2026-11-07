@@ -11,6 +11,9 @@ PROG.SimpleMode = true -- Let the base do it's stuff, but we override our own st
 
 PROG.DeviceLink = "window_chatserv" -- This is the main window
 PROG.DeviceName = "window_chatserv"
+// The connection form is a different device type, so it keeps its own key.
+// The window manager finds whichever one is active by its program owner.
+PROG.ConnectKey = "window_chatserv_connect"
 PROG.DeviceData = {}
 
 PROG.Nick = "Unknown"
@@ -18,34 +21,34 @@ PROG.IP = "127.0.0.1"
 
 PROG.MLimit = 10
 
+// ChatServ has two window states: the connection form (1) and the connected
+// chat (2). They use different device types/keys, so entering a state removes
+// both entries and lets the client build the right window. The window manager
+// finds the active one by program owner, so either one can be moved or resized.
 function PROG:TriggerState( st )
-	if (self:GetOS()) then self.DeviceData.Th = self:GetOS():GetTheme() end
-	local ss = self:GetScreenSpace()
-	if (st == 0) then
-		self:OnEnd()
-		ss:RemoveDevice( self.DeviceName )
-		ss:RemoveDevice( "window_chatserv_connect" )
-		self:SetScreenSpace( ss )
+	if ((st == 1) || (st == 2)) then
+		local ss = self:GetScreenSpace()
+		if (ss) then
+			ss:RemoveDevice( self.DeviceName )
+			ss:RemoveDevice( self.ConnectKey )
+			self:SetScreenSpace( ss )
+		end
+		if (st == 2) then
+			self:UpdateSS()
+			return
+		end
 	end
-	if (st == 1) then
-		ss:RemoveDevice( self.DeviceName )
-		self:OnStart()
-		self:UpdateSS()
-	end
-	if (st == 2) then
-		ss:RemoveDevice( self.DeviceName )
-		ss:RemoveDevice( "window_chatserv_connect" )
-		self:SetScreenSpace( ss )
-	end
+	self:BaseTriggerState( st )
 end
 
 function PROG:BuildWindow()
 	if (self.State == 1) then
 		return {
-			Type = "window_chatserv_connect",
-			Key = "window_chatserv_connect",
+			Type = self.ConnectKey,
+			Key = self.ConnectKey,
 			Data = self.DeviceData,
-			Geometry = { x = 0.1, y = 0.1, w = 0.8, h = 0.8 },
+			Drag = true,
+			Resize = true,
 			Prepare = function( prog, data )
 				if (data.Msgs) then data.Msgs = {} end
 			end
@@ -56,6 +59,8 @@ function PROG:BuildWindow()
 			Type = self.DeviceLink,
 			Key = self.DeviceName,
 			Data = self.DeviceData,
+			Drag = true,
+			Resize = true,
 			Prepare = function( prog, data )
 				if (prog.ShouldClear) then data.Msgs = {} end
 			end,
@@ -112,6 +117,9 @@ end
 function PROG:OnStart()
 	self:GetOS():OpenNetPort( 72, "prog", "chatserv" )
 	self.DeviceData.Msgs = {}
+	// Show the last identity/address the player used on the connection form.
+	if ((self.Nick) && (self.Nick != "Unknown")) then self.DeviceData.Nk = self.Nick end
+	if ((self.IP) && (self.IP != "127.0.0.1")) then self.DeviceData.IP = self.IP end
 end
 
 function PROG:OnEnd()

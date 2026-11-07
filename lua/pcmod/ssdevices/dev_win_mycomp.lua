@@ -12,10 +12,16 @@ DEV.Section = "os"
 DEV.Net = {}
 DEV.Dvs = {}
 
-// Keep the active category when the client device is destroyed while the
-// player walks away from the screen. A program restart has a new OpenID, so
-// reopening the Control Panel still starts on the first page.
-DEV.PersistKeys = { "Section" }
+// Keep the active category and any per-page drafts when the client device is
+// destroyed while the player walks away from the screen. A program restart has
+// a new OpenID, so reopening the Control Panel still starts on the first page.
+DEV.PersistKeys = {
+	"Section",
+	"OldPassDraft", "NewPassDraft",
+	"StaticIPDraft", "NetmaskDraft", "GatewayDraft", "MacDraft",
+	"WifiPassDraft",
+	"KeyRepeatDraft", "KeyHoldDraft",
+}
 
 // Presets offered by the Control Panel. The active value lives in
 // PCMod.Cfg.GuiScale (and can also be changed with pc_guiscale <n>).

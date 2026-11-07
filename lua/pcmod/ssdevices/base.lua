@@ -67,6 +67,23 @@ DEV.MinH = 0.6
 		PCMod.SDraw.DevState = PCMod.SDraw.DevState or {}
 		local st = { __openid = self.OpenID }
 		for _, k in ipairs( self.PersistKeys or {} ) do st[ k ] = self[ k ] end
+		// Keep the text the player actually typed, not values pushed in by the
+		// program. Drafts for controls that are not on the current page are
+		// carried over, so switching categories does not drop them either.
+		local prev = PCMod.SDraw.DevState[ self.DevID ]
+		prev = (prev && (prev.__openid == self.OpenID) && prev.__textboxes) or {}
+		local drafts = {}
+		local present = {}
+		for name, tb in pairs( self.Textboxes or {} ) do
+			present[ name ] = true
+			if ((tb) && (tb.Edited) && (tb.Content != nil) && (tb.Content != "")) then
+				drafts[ name ] = tb.Content
+			end
+		end
+		for name, content in pairs( prev ) do
+			if (!present[ name ]) then drafts[ name ] = content end
+		end
+		st.__textboxes = drafts
 		PCMod.SDraw.DevState[ self.DevID ] = st
 	end
 
@@ -75,7 +92,23 @@ DEV.MinH = 0.6
 		local st = PCMod.SDraw && PCMod.SDraw.DevState && PCMod.SDraw.DevState[ self.DevID ]
 		if ((!st) || (st.__openid != self.OpenID)) then return end
 		for k, v in pairs( st ) do
-			if (k != "__openid") then self[ k ] = v end
+			if ((k != "__openid") && (k != "__textboxes")) then self[ k ] = v end
+		end
+	end
+
+	// Textboxes only exist after Initialize(), so drafts are applied after the
+	// layout has been built. Int_Reinitialize() suppresses this: it already
+	// keeps the live edits it captured before rebuilding.
+	function DEV:RestoreTextboxState()
+		if ((!self.DevID) || (!self.OpenID) || (self.__rebuilding)) then return end
+		local st = PCMod.SDraw && PCMod.SDraw.DevState && PCMod.SDraw.DevState[ self.DevID ]
+		if ((!st) || (st.__openid != self.OpenID)) then return end
+		for name, content in pairs( st.__textboxes or {} ) do
+			if (self.Textboxes[ name ]) then
+				self:SetTextboxText( name, content )
+				// It is still a draft, so keep it across the next walk-away.
+				self.Textboxes[ name ].Edited = true
+			end
 		end
 	end
 
@@ -90,7 +123,7 @@ DEV.MinH = 0.6
 		// also kept so a GUI-scale change cannot discard unsaved typing.
 		local saved = {}
 		for name, tb in pairs( self.Textboxes or {} ) do
-			if ((tb) && (tb.Content)) then saved[ name ] = tb.Content end
+			if ((tb) && (tb.Content)) then saved[ name ] = { Content = tb.Content, Edited = tb.Edited } end
 		end
 		local wasDragging = self.WindowDragging
 		local wasResizing = self.WindowResizing
@@ -100,9 +133,17 @@ DEV.MinH = 0.6
 		self:OnCreate()
 		self.WindowDragging = wasDragging
 		self.WindowResizing = wasResizing
+		// A rebuild keeps the live fields and the edits captured above; it must
+		// not re-apply the older saved draft (that would undo changes made since
+		// the device was restored).
+		self.__rebuilding = true
 		self:Int_Initialize( x, y, w, h )
-		for name, content in pairs( saved ) do
-			if (self.Textboxes[ name ]) then self:SetTextboxText( name, content ) end
+		self.__rebuilding = false
+		for name, info in pairs( saved ) do
+			if (self.Textboxes[ name ]) then
+				self:SetTextboxText( name, info.Content )
+				self.Textboxes[ name ].Edited = info.Edited
+			end
 		end
 	end
 
@@ -125,6 +166,7 @@ DEV.MinH = 0.6
 		if (self.Textboxes[ self.TB_Focus ]) then
 			if (!self.Textboxes[ self.TB_Focus ].Content) then self.Textboxes[ self.TB_Focus ].Content = "" end
 			self.Textboxes[ self.TB_Focus ].Content = self.Textboxes[ self.TB_Focus ].Content .. text
+			self.Textboxes[ self.TB_Focus ].Edited = true
 			self:CalcTextWrap( self.TB_Focus )
 		else
 			self:QuickType( text )
@@ -170,8 +212,9 @@ DEV.MinH = 0.6
 
 	function DEV:Int_Initialize( x, y, w, h )
 		self:Tick()
-		self:RestoreLocalState()
+		if (!self.__rebuilding) then self:RestoreLocalState() end
 		self:Initialize( x, y, w, h )
+		self:RestoreTextboxState()
 		self.win_x = x
 		self.win_y = y
 		self.win_w = w
@@ -368,6 +411,7 @@ DEV.MinH = 0.6
 		if (key == "tab") then txt = "	" end
 		if (f == false) then left = left .. txt end
 		self.Textboxes[ self.TB_Focus ].Content = left .. right
+		self.Textboxes[ self.TB_Focus ].Edited = true
 		if (key == "<--") then
 			self:CUR_Back()
 		else
@@ -495,6 +539,7 @@ DEV.MinH = 0.6
 			tmp.Text = text
 			tmp.Theme = theme
 			tmp.Content = ""
+			tmp.Edited = false
 			tmp.Locked = false
 			tmp.Char = 0
 			tmp.CUR_X = 0
@@ -517,6 +562,7 @@ DEV.MinH = 0.6
 			tmp.ScrollOffset = 0
 			tmp.Theme = theme
 			tmp.Content = ""
+			tmp.Edited = false
 			tmp.Locked = false
 			self.Textboxes[ name ] = tmp
 		self:AddControl( "textbox", tmp )
@@ -560,6 +606,9 @@ DEV.MinH = 0.6
 		// raised "attempt to index a nil value"
 		if (!self.Textboxes[ name ]) then return end
 		self.Textboxes[ name ].Content = text
+		// This value came from the program, not the keyboard: it is not a draft
+		// and must not outlive a device rebuild.
+		self.Textboxes[ name ].Edited = false
 		self:CUR_ToEnd( name )
 		self:CalcTextWrap( name )
 	end

@@ -146,4 +146,41 @@ d2.Section = 'os'
 d2:RestoreLocalState()
 assertEq(d2.Section, 'os', 'new program opening ignores stale page state')
 
+-- Typed textbox contents (not only PersistKeys) survive walking away, and a
+-- new program opening still starts from the fresh server values.
+local drafts = table.Copy(DEV)
+drafts:OnCreate()
+drafts.Th = 'basic'
+drafts.Section = 'network'
+drafts.Net = { Static='192.168.5.7', Mask='255.255.255.0', Gateway4='192.168.5.1', MAC='AA:BB:CC:DD:EE:FF' }
+drafts.DevID = '999:window_mycomp'
+drafts.OpenID = 201
+drafts:Initialize(10,20,800,600)
+drafts:SetTextboxText('txtStaticIP', '10.9.8.7')
+drafts.Textboxes.txtStaticIP.Edited = true
+drafts:SaveLocalState()
+
+local restored = table.Copy(DEV)
+restored:OnCreate()
+restored.Th = 'basic'
+restored.Section = 'network'
+restored.Net = { Static='192.168.5.99', Mask='255.255.0.0', Gateway4='192.168.5.254', MAC='99:88:77:66:55:44' }
+restored.DevID = '999:window_mycomp'
+restored.OpenID = 201
+restored:Initialize(10,20,800,600)
+restored:RestoreTextboxState()
+assertEq(restored:GetTextboxText('txtStaticIP'), '10.9.8.7', 'typed textbox draft restored after walking away')
+assertEq(restored:GetTextboxText('txtMac'), '99:88:77:66:55:44', 'unedited server values refresh on return')
+
+local fresh = table.Copy(DEV)
+fresh:OnCreate()
+fresh.Th = 'basic'
+fresh.Section = 'network'
+fresh.Net = drafts.Net
+fresh.DevID = '999:window_mycomp'
+fresh.OpenID = 202
+fresh:Initialize(10,20,800,600)
+fresh:RestoreTextboxState()
+assertEq(fresh:GetTextboxText('txtStaticIP'), '192.168.5.7', 'new program opening ignores old drafts')
+
 print('MYCOMP TESTS PASSED')

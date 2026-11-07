@@ -2,8 +2,8 @@
    "name"      		"PCMod",
    "title"      		"PCMod - Personal Computer",
    "version"      		"1.0",
-   "author"      		"PCMod Team",
+   "author"      		"sanazt & NAAIN",
    "description"  	"PCMod - A complete computer system for Garry's Mod, allowing you to play games, browse the web, chat, and more within the game.",
-   "url"      		"https://github.com/PCMod/PCMod",
+   "url"      		"https://github.com/tupo-not/PCMod_15",
    "workshopid"    	"3816131806"
 }
