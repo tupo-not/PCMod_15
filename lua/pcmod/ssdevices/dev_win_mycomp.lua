@@ -156,11 +156,11 @@ function DEV:InitializeNetwork( x, y, w, h )
 	MyCompList( self, self.Th, "lstNetInfo", UI.Box( R, 0.325, 0.21, 0.30, 0.62 ), true )
 
 	// Right half: manual address settings (IPv4, netmask, gateway, MAC).
-	MyCompTextbox( self, self.Th, "txtStaticIP", UI.Box( R, 0.80, 0.22, 0.26, 0.055 ), "IP:" )
-	MyCompTextbox( self, self.Th, "txtNetmask", UI.Box( R, 0.80, 0.31, 0.26, 0.055 ), "Mask:" )
-	MyCompTextbox( self, self.Th, "txtGateway", UI.Box( R, 0.80, 0.40, 0.26, 0.055 ), "Gateway:" )
-	MyCompTextbox( self, self.Th, "txtMac", UI.Box( R, 0.80, 0.49, 0.26, 0.055 ), "MAC:" )
-	MyCompButton( self, self.Th, "btnApplyNetwork", UI.Box( R, 0.63, 0.58, 0.335, 0.07 ), "Apply Network" )
+	MyCompTextbox( self, self.Th, "txtStaticIP", UI.Box( R, 0.80, 0.27, 0.26, 0.045 ), "IP:" )
+	MyCompTextbox( self, self.Th, "txtNetmask", UI.Box( R, 0.80, 0.35, 0.26, 0.045 ), "Mask:" )
+	MyCompTextbox( self, self.Th, "txtGateway", UI.Box( R, 0.80, 0.42, 0.26, 0.045 ), "Gateway:" )
+	MyCompTextbox( self, self.Th, "txtMac", UI.Box( R, 0.80, 0.49, 0.26, 0.045 ), "MAC:" )
+	MyCompButton( self, self.Th, "btnApplyNetwork", UI.Box( R, 0.7, 0.58, 0.205, 0.07 ), "Apply Network" )
 
 	MyCompButton( self, self.Th, "btnRefreshNetwork", UI.Box( R, 0.325, 0.86, 0.145, 0.07 ), "Refresh" )
 	MyCompButton( self, self.Th, "btnRenewNetwork", UI.Box( R, 0.48, 0.86, 0.145, 0.07 ), "Renew DHCP" )
@@ -307,7 +307,7 @@ function DEV:Paint( x, y, w, h )
 	if (self.Section == "network") then
 		self:RenderText( x+(w*0.465), y+(h*0.105), { "Network Settings & Status" }, Color( 0, 0, 0, 255 ), 1 )
 		self:RenderText( x+(w*0.465), y+(h*0.16), { "Status" }, Color( 0, 0, 0, 255 ), 1 )
-		self:RenderText( x+(w*0.63), y+(h*0.16), { "Address Settings" }, Color( 0, 0, 0, 255 ), 1 )
+		self:RenderText( x+(w*0.75), y+(h*0.16), { "Address Settings" }, Color( 0, 0, 0, 255 ), 1 )
 		if (self.IPError && (self.IPError != "")) then
 			self:RenderError( self.Th, x+(w*0.63), y+(h*0.68), self.IPError )
 		elseif (self.IPNote && (self.IPNote != "")) then
