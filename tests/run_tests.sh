@@ -44,6 +44,7 @@ TESTS=(
     mock_open_ui
     mock_ipv6
     mock_entity_ipv6
+    mock_overlay
     mock_entity_sounds
     mock_switch
     mock_netvariants

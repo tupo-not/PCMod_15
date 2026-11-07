@@ -1827,21 +1827,38 @@ if (CLIENT) then
 	
 	end
 	
+	// Addresses shown in the look-at overlay, one line per interface. Each IPv4
+	// is followed by its matching IPv6. A WAN-only device (a backbone router)
+	// publishes that address as its primary one too, so the duplicate IPv4 is
+	// skipped and only its IPv6 remains for the WAN line.
+	function ENT:GetOverlayAddresses()
+		local txt = {}
+		local function add( addr )
+			if ((!addr) || (addr == "")) then return end
+			if (table.HasValue( txt, addr )) then return end
+			table.insert( txt, addr )
+		end
+		local primary = self:GetNWString( "IP" )
+		local primary6 = self:GetNWString( "IPv6" )
+		local wan = self:GetNWString( "IP.WAN" )
+		local wan6 = self:GetNWString( "IPv6.WAN" )
+		add( primary )
+		add( primary6 )
+		add( wan )
+		add( wan6 )
+		return txt
+	end
+
 	function ENT:DrawInfo( origin )
 		// If we are wireless then draw wireless info
 		local wireless = self:GetGVar( "wireless" )
 		if (wireless) then PCMod.Gui.DrawWirelessLinks( self ) end
 		
-		// Get the IP info (both are plain IPv4 strings)
-		local lan = self:GetNWString( "IP" )
-		local wan = self:GetNWString( "IP.WAN" )
-		
 		// Fill in the info table
 		local txt = {}
 		txt[1] = self.PrintName
 		if (wireless) then table.insert( txt, "Wireless" ) end
-		if (lan != "") then table.insert( txt, lan ) end
-		if (wan != "") then table.insert( txt, wan ) end
+		for _, addr in ipairs( self:GetOverlayAddresses() ) do table.insert( txt, addr ) end
 		if (self:GetGVar( "noreg" )) then table.insert( txt, "Hardware Failure" ) end
 		
 		// Draw the label
