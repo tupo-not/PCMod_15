@@ -15,9 +15,9 @@ local CAM_CLASS = "gmod_wire_rt_camera"
 
 // Overlay/interaction range for the camera context overlay. Client-side only
 // (the server keeps its own, larger CONNECT_RANGE check in sv_alarmz.lua).
-// 512 sits between ReachDistance (256, keyboards) and SightRange (1024, screens):
-// the overlay is an interaction hint, so it shows only when close enough to act.
-local DEFAULT_OVERLAY_RANGE = 512
+// 200 units = ~5 meters (1 unit = 1 inch): the overlay is an interaction hint,
+// so it shows only when close enough to act. ReachDistance is 256 (~6.5 m).
+local DEFAULT_OVERLAY_RANGE = 200
 function PCMod.AlarmzCL.OverlayRange()
 	if (PCMod.Cfg && PCMod.Cfg.AlarmzOverlayRange && (PCMod.Cfg.AlarmzOverlayRange > 0)) then
 		return PCMod.Cfg.AlarmzOverlayRange
@@ -56,7 +56,7 @@ function PCMod.AlarmzCL.OverlayLines( camIdx, camEnt, state )
 			local first = nil
 			for pcIdx in pairs( state.links ) do if ((first == nil) || (pcIdx < first)) then first = pcIdx end end
 			table.insert( lines, "Linked to PC #" .. tostring( first ) .. ((n > 1) and (" (+" .. (n - 1) .. " more)") or "") )
-			table.insert( lines, "[E] Disconnect" )
+			table.insert( lines, "[E] Connect another PC  [RMB] Disconnect" )
 		elseif (state.hasPass) then
 			table.insert( lines, "Locked (password)" )
 			if (state.isOwner) then
@@ -132,10 +132,25 @@ end )
 
 // --- input -----------------------------------------------------------------------------------------------
 
-// Returns true when the use-key was consumed by the Alarmz flow (so the engine
-// does not also fire ENT:Use on the looked-at entity).
-function PCMod.AlarmzCL.OnUse()
+// Returns true when the key was consumed by the Alarmz flow (so the engine
+// does not also fire the default bind / ENT:Use on the looked-at entity).
+// [E] always starts/continues the connect flow (a camera can be linked to
+// several PCs at once); [RMB] on a linked camera disconnects it.
+function PCMod.AlarmzCL.OnUse( bnd )
 	if (PCMod.Gui.CamLocked) then return false end
+	if (bnd == "+attack2") then
+		if (PCMod.AlarmzCL.Target != 0) then
+			local state = PCMod.AlarmzCL.States[ PCMod.AlarmzCL.Target ]
+			local links = (state && state.links) or {}
+			local hasLinks = false
+			for _ in pairs( links ) do hasLinks = true break end
+			if (hasLinks) then
+				PCMod.AlarmzCL.Send( "disconnect", PCMod.AlarmzCL.Target, 0, "" )
+				return true
+			end
+		end
+		return false
+	end
 	if (PCMod.AlarmzCL.PickCam != 0) then
 		local tr = LocalPlayer():GetEyeTrace()
 		local ent = tr.Entity
@@ -148,25 +163,17 @@ function PCMod.AlarmzCL.OnUse()
 		return true
 	end
 	if (PCMod.AlarmzCL.Target != 0) then
-		local state = PCMod.AlarmzCL.States[ PCMod.AlarmzCL.Target ]
-		local links = (state && state.links) or {}
-		local hasLinks = false
-		for _ in pairs( links ) do hasLinks = true break end
-		if (hasLinks) then
-			PCMod.AlarmzCL.Send( "disconnect", PCMod.AlarmzCL.Target, 0, "" )
-		else
-			PCMod.AlarmzCL.PendingBegin = PCMod.AlarmzCL.Target
-			PCMod.AlarmzCL.Send( "begin", PCMod.AlarmzCL.Target, 0, "" )
-		end
+		PCMod.AlarmzCL.PendingBegin = PCMod.AlarmzCL.Target
+		PCMod.AlarmzCL.Send( "begin", PCMod.AlarmzCL.Target, 0, "" )
 		return true
 	end
 	return false
 end
 
 hook.Add( "PlayerBindPress", "PCMod.AlarmzCL.Use", function( ply, bnd )
-	if (bnd != "+use") then return end
+	if ((bnd != "+use") && (bnd != "+attack2")) then return end
 	if (ply != LocalPlayer()) then return end
-	if (PCMod.AlarmzCL.OnUse()) then return true end
+	if (PCMod.AlarmzCL.OnUse( bnd )) then return true end
 end )
 
 // --- target tracking + overlay ---------------------------------------------------------------------------

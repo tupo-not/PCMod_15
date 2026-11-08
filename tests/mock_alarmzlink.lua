@@ -326,7 +326,8 @@ assertEq( lines[ 2 ], "Status: ONLINE", "overlay shows status" )
 assertEq( lines[ 3 ], "[E] Connect", "open camera offers connect" )
 lines = PCMod.AlarmzCL.OverlayLines( 11, cam11, { hasPass = false, isOwner = true, links = { [ 31 ] = true } } )
 assertTrue( string.find( lines[ 3 ], "Linked to PC #31", 1, true ) != nil, "overlay lists link" )
-assertEq( lines[ 4 ], "[E] Disconnect", "linked camera offers disconnect" )
+assertTrue( string.find( lines[ 4 ], "Connect another PC", 1, true ) != nil, "linked camera can be connected to another PC too" )
+assertTrue( string.find( lines[ 4 ], "Disconnect", 1, true ) != nil, "linked camera offers disconnect" )
 lines = PCMod.AlarmzCL.OverlayLines( 11, cam11, { hasPass = true, isOwner = false, links = {} } )
 assertTrue( string.find( lines[ 3 ], "Locked", 1, true ) != nil, "locked camera marked" )
 assertEq( lines[ 4 ], "[E] Enter password", "locked camera asks for password" )
@@ -410,13 +411,21 @@ netHandlers[ "pcmod_alarmz_result" ]()
 assertTrue( #createdWins > 0, "set-password offer opened after first connect" )
 assertTrue( string.find( createdWins[ #createdWins ].title, "set password", 1, true ) != nil, "setpass window title" )
 
--- E on a linked camera sends disconnect
+-- E on a camera always starts the connect flow (multi-PC links allowed);
+-- RMB on a linked camera disconnects it
 PCMod.AlarmzCL.PickCam = 0
 PCMod.AlarmzCL.Target = 11
 PCMod.AlarmzCL.States[ 11 ] = { hasPass = false, isOwner = true, links = { [ 31 ] = true } }
 clSent = {}
 hooks[ "PlayerBindPress:PCMod.AlarmzCL.Use" ]( clPly, "+use" )
-assertEq( clSent[ #clSent ].fields[ 1 ], "disconnect", "E on linked camera disconnects" )
+assertEq( clSent[ #clSent ].fields[ 1 ], "begin", "E on linked camera starts connect (multi-PC)" )
+clSent = {}
+local rmbConsumed = hooks[ "PlayerBindPress:PCMod.AlarmzCL.Use" ]( clPly, "+attack2" )
+assertEq( rmbConsumed, true, "RMB on linked camera is consumed" )
+assertEq( clSent[ #clSent ].fields[ 1 ], "disconnect", "RMB on linked camera disconnects" )
+-- RMB on an unlinked camera does nothing
+PCMod.AlarmzCL.States[ 11 ] = { hasPass = false, isOwner = true, links = {} }
+assertTrue( hooks[ "PlayerBindPress:PCMod.AlarmzCL.Use" ]( clPly, "+attack2" ) == nil, "RMB on unlinked camera passes through" )
 
 -- overlay drawing uses the PCMod label style
 clLabels = {}
@@ -426,11 +435,11 @@ hooks[ "HUDPaint:PCMod.AlarmzCL.Overlay" ]()
 assertTrue( #clLabels > 0, "overlay drawn when aiming at camera" )
 assertEq( clLabels[ 1 ][ 1 ], "RT Camera #11", "overlay first line is the camera id" )
 
--- overlay range is a cfg setting (default 512), checked client-side
-PCMod.Cfg = { AlarmzOverlayRange = 512 }
-assertEq( PCMod.AlarmzCL.OverlayRange(), 512, "range read from cfg" )
-local nearCam = MakeEnt( 14, "gmod_wire_rt_camera", { pos = V( 500, 0, 0 ) } ) -- 500 < 512
-local farCam = MakeEnt( 15, "gmod_wire_rt_camera", { pos = V( 600, 0, 0 ) } )  -- 600 > 512
+-- overlay range is a cfg setting (default 200 ~= 5 m), checked client-side
+PCMod.Cfg = { AlarmzOverlayRange = 200 }
+assertEq( PCMod.AlarmzCL.OverlayRange(), 200, "range read from cfg" )
+local nearCam = MakeEnt( 14, "gmod_wire_rt_camera", { pos = V( 150, 0, 0 ) } ) -- 150 < 200
+local farCam = MakeEnt( 15, "gmod_wire_rt_camera", { pos = V( 250, 0, 0 ) } )  -- 250 > 200
 clTrace.Entity = farCam
 clSent = {}
 hooks[ "Think:PCMod.AlarmzCL.Track" ]()
@@ -443,10 +452,10 @@ clTrace.Entity = farCam
 hooks[ "Think:PCMod.AlarmzCL.Track" ]()
 assertEq( PCMod.AlarmzCL.Target, 0, "target cleared immediately when leaving the radius" )
 PCMod.Cfg = {}
-assertEq( PCMod.AlarmzCL.OverlayRange(), 512, "default 512 when cfg missing" )
+assertEq( PCMod.AlarmzCL.OverlayRange(), 200, "default 200 (~5 m) when cfg missing" )
 PCMod.Cfg = { AlarmzOverlayRange = 100 }
 assertEq( PCMod.AlarmzCL.OverlayRange(), 100, "cfg override respected" )
-PCMod.Cfg = { AlarmzOverlayRange = 512 }
+PCMod.Cfg = { AlarmzOverlayRange = 200 }
 clTrace.Entity = nil
 
 -- draw-time range gate: even with Target set, nothing is drawn beyond the range
