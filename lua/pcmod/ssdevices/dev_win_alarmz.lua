@@ -185,10 +185,18 @@ function DEV:RebuildCamList()
 		self:AddListboxItem( "lstCams", "cam_" .. idx, self:CamLabel( idx, self:GetCam( idx ) ) .. " [LINKED]" )
 	end
 	if (self.SelEnt != 0) then self:SetListboxSelRow( "lstCams", "cam_" .. self.SelEnt ) end
-	// Auto-watch the first linked camera when nothing is selected
+	// Auto-watch a camera when nothing is selected: prefer the camera the server
+	// remembers (DeviceData.SelCam via "selectcam") so re-creating the window
+	// (e.g. after leaving PC control) restores the last choice instead of
+	// jumping back to the first linked camera.
 	if ((self.SelEnt == 0) && istable( self.Cams )) then
-		for _, c in ipairs( self.Cams ) do
-			if (self:GetCam( c )) then self:SelectCam( c ) break end
+		local want = tonumber( self.SelCam ) or 0
+		if ((want != 0) && self:GetCam( want ) && table.HasValue( self.Cams, want )) then
+			self:SelectCam( want )
+		else
+			for _, c in ipairs( self.Cams ) do
+				if (self:GetCam( c )) then self:SelectCam( c ) break end
+			end
 		end
 	end
 end

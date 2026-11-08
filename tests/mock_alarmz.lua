@@ -479,6 +479,24 @@ assertTrue( cam13.IsObserved == false, "Kill unobserves the camera" )
 assertTrue( cam13.RenderTarget == nil, "Kill leaves no RT reference" )
 assertEq( dev.SelEnt, 0, "Kill clears selection" )
 
+-- Re-creating the window (e.g. after leaving PC control, which garbage-collects
+-- the device) restores the last selected camera from the server-side SelCam
+-- instead of jumping back to the first linked camera.
+dev:SelectCam( 12 )
+assertEq( dev.SelEnt, 12, "second camera selected" )
+dev:Kill()
+local dev2 = table.Copy( DEV )
+dev2:OnCreate()
+dev2.Th = "basic"
+dev2.win_x, dev2.win_y, dev2.win_w, dev2.win_h = 0, 0, 800, 600
+dev2.RunProgCommand = dev.RunProgCommand
+dev2.Cams = { 11, 12, 13 }
+dev2.SelCam = 12
+Now = 120
+dev2:Initialize( 0, 0, 800, 600 )
+assertEq( dev2.SelEnt, 12, "re-created window restores the previously selected camera" )
+assertTrue( cam12.IsObserved == true, "restored camera is observed again" )
+
 -- Alerts were also pushed through the HUD notification API.
 assertTrue( #notifies > 0, "alerts also pushed to PCMod.Gui.Notify" )
 
