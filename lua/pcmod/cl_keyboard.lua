@@ -113,60 +113,18 @@ end
 hook.Add( "Initialize", "PCMod.Gui.InitKeyboard", PCMod.Gui.InitKeyboard )
 
 // ---------------------------------------------------------------------------------------------------------
-// ShowQuickType - Shows the Quick Type menu
+// PasteQuickType - Pastes the system clipboard into the focused PC device
 // ---------------------------------------------------------------------------------------------------------
-function PCMod.Gui.ShowQuickType()
-	// Create the frame
-	local window = vgui.CreateWindow( 0.8, 0.8, "PCMod Quick Type" )
-	window:ShowCloseButton( false )
-	PCMod.Gui.QuickType = window
-	
-	// Create the textbox
-	local pn = vgui.Create( "DTextEntry" )
-	pn:SetParent( window )
-	pn:SetPos( 5, 35 )
-	pn:SetSize( window:GetWide()-10, window:GetTall()-70 )
-	pn:SetMultiline( true )
-	PCMod.Gui.QuickTypeText = pn
-	
-	// Create the buttons
-	local btn = vgui.Create( "DButton" )
-	btn:SetParent( window )
-	btn:SetPos( 5, window:GetTall()-25 )
-	btn:SetSize( window:GetWide()-10, 20 )
-	btn:SetText( "Enter" )
-	btn.DoClick = function( self )
-		PCMod.Gui.QuickTypeEnter( PCMod.Gui.QuickTypeText:GetValue() )
-		PCMod.Gui.HideQuickType()
+function PCMod.Gui.PasteQuickType()
+	local text = GetClipboardText()
+	if ((!text) || (text == "")) then
+		if (PCMod.Gui.Notify) then PCMod.Gui.Notify( "Clipboard is empty", true ) end
+		return
 	end
-
-	local btn2 = vgui.Create( "DButton" )
-	btn2:SetParent( window )
-	btn2:SetPos( window:GetWide()-25, 5 )
-	btn2:SetSize( 20, 20 )
-	btn2:SetText( "X" )
-	btn2.DoClick = function( self )
-		PCMod.Gui.HideQuickType()
-	end
-	
-	PCMod.EnableCapture( false )
-
-	// Show the window
-	window:SetVisible( true )
-	window:MakePopup()
+	PCMod.Gui.QuickTypeEnter( text )
 end
-usermessage.Hook( "pcmod_quicktype", PCMod.Gui.ShowQuickType )
+usermessage.Hook( "pcmod_quicktype", PCMod.Gui.PasteQuickType )
 
-// ---------------------------------------------------------------------------------------------------------
-// HideQuickType - Hides the Quick Type menu
-// ---------------------------------------------------------------------------------------------------------
-function PCMod.Gui.HideQuickType()
-	if (PCMod.Gui.QuickType) then
-		PCMod.Gui.QuickType:Remove()
-		PCMod.Gui.QuickType = nil
-		PCMod.EnableCapture( true )
-	end
-end
 
 // ---------------------------------------------------------------------------------------------------------
 // QuickTypeEnter - Pass text to the focused device

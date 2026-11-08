@@ -83,4 +83,40 @@ down[ KEY_A ] = true
 hookThink()
 assertEq( #fires, n, "capture disabled blocks input" )
 
+-- Quick Type is now clipboard-based: the pcmod_quicktype usermessage pastes
+-- GetClipboardText() into the focused device instead of opening a text window.
+function istable( v ) return type( v ) == "table" end
+local umHooks = {}
+usermessage = { Hook = function( name, fn ) umHooks[ name ] = fn end }
+vgui = { Register = function() end, Create = function() end, CreateWindow = function() end }
+include = function() end -- cl_input.lua fixture is already loaded above
+function GetConVar( name ) return nil end
+function CreateClientConVar( name, default ) return { GetFloat = function() return tonumber( default ) or 0 end } end
+local notifyLog = {}
+PCMod = { Msg = function() end, Warning = function() end, Gui = { Notify = function( msg, err ) table.insert( notifyLog, { msg = msg, err = err } ) end } }
+
+dofile( "cl_keyboard.lua" )
+
+assertTrue( umHooks[ "pcmod_quicktype" ] != nil, "pcmod_quicktype usermessage is hooked" )
+assertTrue( PCMod.Gui.PasteQuickType != nil, "clipboard paste handler exists" )
+assertTrue( PCMod.Gui.ShowQuickType == nil, "old manual typing window is gone" )
+
+local pasted = {}
+local mockdev = { Int_QuickType = function( self, text ) table.insert( pasted, text ) end }
+PCMod.SDraw = { DevFocus = "win_test", DevMap = { [ "1:win_test" ] = mockdev } }
+PCMod.Gui.CamLockID = 1
+
+local clipText = "bolshaya portyanka teksta\nvtoraya stroka"
+function GetClipboardText() return clipText end
+umHooks[ "pcmod_quicktype" ]()
+assertEq( #pasted, 1, "one paste happened" )
+assertEq( pasted[ 1 ], clipText, "clipboard text routed into the focused device" )
+
+function GetClipboardText() return "" end
+local nNot = #notifyLog
+umHooks[ "pcmod_quicktype" ]()
+assertEq( #pasted, 1, "empty clipboard pastes nothing" )
+assertEq( #notifyLog, nNot + 1, "empty clipboard notifies the player" )
+assertTrue( string.find( notifyLog[ #notifyLog ].msg, "Clipboard is empty", 1, true ) != nil, "empty-clipboard notification message" )
+
 print("KEYBOARD TESTS PASSED")
