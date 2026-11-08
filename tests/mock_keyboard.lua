@@ -83,22 +83,45 @@ down[ KEY_A ] = true
 hookThink()
 assertEq( #fires, n, "capture disabled blocks input" )
 
--- Quick Type is now clipboard-based: the pcmod_quicktype usermessage pastes
--- the system clipboard into the focused device instead of opening a text window.
+-- Quick Type is now a text window ("Clipboard" button): the usermessage carries
+-- the server-stored text (same on every PC), the entry is prefilled with it (or
+-- with the system clipboard when nothing is stored), and Enter saves the text
+-- on the server + pastes it into the focused device.
 function istable( v ) return type( v ) == "table" end
 local umHooks = {}
 usermessage = { Hook = function( name, fn ) umHooks[ name ] = fn end }
-vgui = { Register = function() end, Create = function() end, CreateWindow = function() end }
+local madePanels = {}
+local function mockPanel( title )
+	local p = { _valid = true, title = title or "", _val = "" }
+	function p:IsValid() return self._valid end
+	function p:Remove() self._valid = false end
+	function p:GetValue() return self._val end
+	function p:SetValue( v ) self._val = v end
+	function p:GetWide() return 400 end
+	function p:GetTall() return 200 end
+	return setmetatable( p, { __index = function() return function() end end } )
+end
+vgui = {
+	Register = function() end,
+	CreateWindow = function( w, h, t ) local p = mockPanel( t ) table.insert( madePanels, p ) return p end,
+	Create = function( cls ) local p = mockPanel( cls ) table.insert( madePanels, p ) return p end,
+}
 include = function() end -- cl_input.lua fixture is already loaded above
 function GetConVar( name ) return nil end
 function CreateClientConVar( name, default ) return { GetFloat = function() return tonumber( default ) or 0 end } end
 local notifyLog = {}
+local qtSaved = {}
+net = {
+	Start = function( name ) net.cur = { name = name, fields = {} } end,
+	WriteString = function( s ) table.insert( net.cur.fields, s ) end,
+	SendToServer = function() table.insert( qtSaved, net.cur ) net.cur = nil end,
+}
 PCMod = { Msg = function() end, Warning = function() end, Gui = { Notify = function( msg, err ) table.insert( notifyLog, { msg = msg, err = err } ) end } }
 
 dofile( "cl_keyboard.lua" )
 
 assertTrue( umHooks[ "pcmod_quicktype" ] != nil, "pcmod_quicktype usermessage is hooked" )
-assertTrue( PCMod.Gui.ClipboardPaste != nil, "clipboard paste handler exists" )
+assertTrue( PCMod.Gui.OpenQuickTypeWindow != nil, "text window handler exists" )
 assertTrue( PCMod.Gui.ShowQuickType == nil, "old manual typing window is gone" )
 
 local pasted = {}
@@ -106,33 +129,32 @@ local mockdev = { Int_QuickType = function( self, text ) table.insert( pasted, t
 PCMod.SDraw = { DevFocus = "win_test", DevMap = { [ "1:win_test" ] = mockdev } }
 PCMod.Gui.CamLockID = 1
 
-local clipText = "bolshaya portyanka teksta\nvtoraya stroka"
-function GetClipboardText() return clipText end
-umHooks[ "pcmod_quicktype" ]()
-assertEq( #pasted, 1, "one paste happened" )
-assertEq( pasted[ 1 ], clipText, "clipboard text routed into the focused device" )
+-- server-stored text prefills the window; Enter saves + pastes
+madePanels = {}
+umHooks[ "pcmod_quicktype" ]( { ReadString = function() return "hello pc" end } )
+assertEq( #madePanels, 3, "window + entry + button created" )
+local qwin, qentry, qbtn = madePanels[ 1 ], madePanels[ 2 ], madePanels[ 3 ]
+assertEq( qentry.title, "DTextEntry", "entry is a text entry" )
+assertEq( qentry._val, "hello pc", "entry prefilled with the server-stored text" )
+qentry:SetValue( "edited text" )
+qbtn.DoClick()
+assertEq( qtSaved[ #qtSaved ].fields[ 1 ], "edited text", "text saved on the server" )
+assertEq( qtSaved[ #qtSaved ].name, "pcmod_quicktype_save", "save net message" )
+assertEq( pasted[ #pasted ], "edited text", "text pasted into the focused device" )
+assertTrue( qwin._valid == false, "window closed after Enter" )
 
-function GetClipboardText() return "" end
-local nNot = #notifyLog
-umHooks[ "pcmod_quicktype" ]()
-assertEq( #pasted, 1, "empty clipboard pastes nothing" )
-assertEq( #notifyLog, nNot + 1, "empty clipboard notifies the player" )
-assertTrue( string.find( notifyLog[ #notifyLog ].msg, "Clipboard is empty", 1, true ) != nil, "empty-clipboard notification message" )
+-- nothing stored -> prefill from the system clipboard when available
+function GetClipboardText() return "clip content" end
+madePanels = {}
+umHooks[ "pcmod_quicktype" ]( { ReadString = function() return "" end } )
+assertEq( madePanels[ 2 ]._val, "clip content", "empty stored text prefills from clipboard" )
 
--- fallback: clipboard module API instead of the GetClipboardText global
+-- no clipboard API and nothing stored -> empty entry, no crash
 GetClipboardText = nil
-clipboard = { GetText = function() return "from clipboard module" end }
-umHooks[ "pcmod_quicktype" ]()
-assertEq( pasted[ #pasted ], "from clipboard module", "clipboard.GetText fallback works" )
-
--- no clipboard API at all (the in-game error on record): no crash, just a notice
 clipboard = nil
-local nNot2 = #notifyLog
-local nPast = #pasted
-local crashed = not pcall( umHooks[ "pcmod_quicktype" ] )
+madePanels = {}
+local crashed = not pcall( umHooks[ "pcmod_quicktype" ], { ReadString = function() return "" end } )
 assertTrue( not crashed, "missing clipboard API does not raise a Lua error" )
-assertEq( #pasted, nPast, "nothing pasted without a clipboard API" )
-assertEq( #notifyLog, nNot2 + 1, "player is notified that clipboard is unavailable" )
-assertTrue( string.find( notifyLog[ #notifyLog ].msg, "not available", 1, true ) != nil, "unavailable-clipboard message" )
+assertEq( madePanels[ 2 ]._val, "", "entry empty when nothing stored and no clipboard API" )
 
 print("KEYBOARD TESTS PASSED")

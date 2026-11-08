@@ -409,8 +409,20 @@ end
 concommand.Add( "pc_locked", PCMod.Locked )
 
 // ---------------------------------------------------------------------------------------------------------
-// PC_QuickType - Shows the QuickType menu on the client
+// PC_QuickType - Shows the QuickType (clipboard text) window on the client
 // ---------------------------------------------------------------------------------------------------------
+// The last typed text is stored per player on the server, so the window opens
+// with the same text on every PC the player uses this session.
+PCMod.QuickTypeTexts = {}
+
+util.AddNetworkString( "pcmod_quicktype_save" )
+net.Receive( "pcmod_quicktype_save", function( len, ply )
+	if (!IsValid( ply )) then return end
+	local text = net.ReadString() or ""
+	if (#text > 8000) then text = string.sub( text, 1, 8000 ) end
+	PCMod.QuickTypeTexts[ ply:SteamID() ] = text
+end )
+
 function PCMod.PC_QuickType( ply, com, args )
 	if (!ply || !ply:IsValid() || !ply:IsPlayer()) then return end -- NULL target errors in umsg.Start and leaves the message open
 	if (!args) then args = {} end
@@ -424,6 +436,7 @@ function PCMod.PC_QuickType( ply, com, args )
 		return
 	end
 	umsg.Start( "pcmod_quicktype", ply )
+		umsg.String( PCMod.QuickTypeTexts[ ply:SteamID() ] or "" )
 	umsg.End()
 end
 concommand.Add( "pc_quicktype", PCMod.PC_QuickType )

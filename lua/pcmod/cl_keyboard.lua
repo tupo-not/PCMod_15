@@ -113,29 +113,60 @@ end
 hook.Add( "Initialize", "PCMod.Gui.InitKeyboard", PCMod.Gui.InitKeyboard )
 
 // ---------------------------------------------------------------------------------------------------------
-// ClipboardPaste - Pastes the system clipboard into the focused PC device
+// OpenQuickTypeWindow - Text window for quick typing ("Clipboard" button).
 // ---------------------------------------------------------------------------------------------------------
-// GetClipboardText does not exist in every GMod build (the error on record),
-// so probe for an available read API instead of calling a possibly-nil global.
+// The server stores the last text per player, so the window opens prefilled
+// with the same text on every PC. When nothing is stored yet, the system
+// clipboard is used as the initial content when a read API exists.
 local function ReadClipboard()
 	if (GetClipboardText) then return GetClipboardText(), true end
 	if (clipboard && clipboard.GetText) then return clipboard.GetText(), true end
 	return nil, false
 end
 
-function PCMod.Gui.ClipboardPaste()
-	local text, ok = ReadClipboard()
-	if (!ok) then
-		if (PCMod.Gui.Notify) then PCMod.Gui.Notify( "Clipboard is not available in this game build", true ) end
-		return
-	end
+function PCMod.Gui.OpenQuickTypeWindow( stored )
+	if (PCMod.Gui.QuickTypeWin && PCMod.Gui.QuickTypeWin:IsValid()) then PCMod.Gui.QuickTypeWin:Remove() end
+	local text = stored
 	if ((!text) || (text == "")) then
-		if (PCMod.Gui.Notify) then PCMod.Gui.Notify( "Clipboard is empty", true ) end
-		return
+		local c, ok = ReadClipboard()
+		if (ok && c && (c != "")) then text = c end
 	end
-	PCMod.Gui.QuickTypeEnter( text )
+	text = text or ""
+
+	local win = vgui.CreateWindow( 0.4, 0.3, "Clipboard text" )
+	win:ShowCloseButton( true )
+	PCMod.Gui.QuickTypeWin = win
+
+	local pn = vgui.Create( "DTextEntry" )
+	pn:SetParent( win )
+	pn:SetPos( 5, 35 )
+	pn:SetSize( win:GetWide()-10, win:GetTall()-70 )
+	pn:SetMultiline( true )
+	pn:SetValue( text )
+
+	local btn = vgui.Create( "DButton" )
+	btn:SetParent( win )
+	btn:SetPos( 5, win:GetTall()-25 )
+	btn:SetSize( win:GetWide()-10, 20 )
+	btn:SetText( "Enter" )
+	btn.DoClick = function( self )
+		local t = pn:GetValue() or ""
+		// persist on the server (shared across all PCs), then paste locally
+		net.Start( "pcmod_quicktype_save" )
+			net.WriteString( t )
+		net.SendToServer()
+		PCMod.Gui.QuickTypeEnter( t )
+		if (win && win:IsValid()) then win:Remove() end
+		PCMod.Gui.QuickTypeWin = nil
+		PCMod.EnableCapture( true )
+	end
+
+	PCMod.EnableCapture( false ) -- let the real keyboard type into the entry
+	win:MakePopup()
 end
-usermessage.Hook( "pcmod_quicktype", PCMod.Gui.ClipboardPaste )
+usermessage.Hook( "pcmod_quicktype", function( um )
+	PCMod.Gui.OpenQuickTypeWindow( um:ReadString() )
+end )
 
 
 // ---------------------------------------------------------------------------------------------------------
