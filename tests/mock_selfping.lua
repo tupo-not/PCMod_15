@@ -70,4 +70,31 @@ assertEq( #delivered, 4, "remote packet not delivered locally" )
 assertTrue( wired != nil and wired.dest == "192.168.5.99", "remote packet leaves the host" )
 assertEq( wired.portid, 1, "remote packet uses the network port" )
 
+-- Unplugging the last cable drops a leased identity, so the old address is not
+-- left on screen for a replacement device that gets it next.
+local ipdata = {
+	LAN = "192.168.5.20", WanBB = 1, WanHost = 4,
+	Extra = { { IPv4 = "192.168.6.9" } }, Router = 5,
+	Mask = "255.255.255.0", MaskBits = 24, Gateway = "192.168.5.1",
+}
+local ent2 = {}
+function ent2:IsValid() return true end
+function ent2:Data() return { IP = ipdata } end
+function ent2:SetLanAddress( v ) ipdata.LAN = v or false end
+function ent2:SetBSubnet( v ) ipdata.WanBB = v or false end
+function ent2:SetBIP( v ) ipdata.WanHost = v or false end
+drv.Entity = ent2
+drv.HasNetworkLink = function() return false end
+drv:CallEvent( { Event = "unlinked" } )
+assertTrue( ipdata.LAN == false, "unlink clears the leased LAN address" )
+assertTrue( ipdata.WanBB == false and ipdata.WanHost == false, "unlink clears the leased WAN address" )
+assertEq( #ipdata.Extra, 0, "unlink clears secondary leases" )
+assertTrue( ipdata.Router == false, "unlink forgets the lease owner" )
+
+-- A static address is configured, not leased, and survives the unplug.
+ipdata.Static = "192.168.5.50"
+ipdata.LAN = "192.168.5.50"
+drv:CallEvent( { Event = "unlinked" } )
+assertEq( ipdata.LAN, "192.168.5.50", "static address survives an unlink" )
+
 print( "ALL SELFPING TESTS PASSED" )

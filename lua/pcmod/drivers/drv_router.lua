@@ -60,26 +60,210 @@ function DRV:Initialize()
 	// Stateful IPv6 flows allow replies back into the LAN without opening it to
 	// unsolicited WAN traffic.
 	self.V6Flows = {}
+	// L3 helpers are independent modules: ARP resolves a next hop, hello
+	// routing learns prefixes/neighbours.
+	self.ArpCache = {}
+	self.PrefixRoutes = {}
+	self.NeighborMAC = {}
+	self.Neighbors = {}
+	self.RouteAdv = {}
 
 	timer.Simple(1, function() if (!IsValid( self.Entity )) then return end self.BSubnet = self.Entity:GetBSubnet() end)
 	timer.Simple(1, function() if (!IsValid( self.Entity )) then return end self.Subnet = self.Entity:GetSubnet() end)
+	// Routing is a router-to-router hello protocol; switches only carry it.
+	PCMod.Routing.Start( self )
+	// A LAN router is a DHCP client on its WAN side. If the cable is already
+	// restored, ask for an address once the ports exist.
+	if (PCMod.IsLanRouterClass( self.Entity:GetClass() )) then
+		timer.Simple( 1, function()
+			if ((!IsValid( self.Entity )) || (self.Uplink)) then return end
+			local ports = self.Entity:Ports()
+			for _, idx in ipairs( self.OPorts or {} ) do
+				if (ports[ idx ] && ports[ idx ].Connected) then
+					self:SendDHCPDiscover( idx )
+					break
+				end
+			end
+		end )
+	end
+end
+
+function DRV:PortSide( port )
+	if (table.HasValue( self.NPorts, port )) then return "lan" end
+	if (table.HasValue( self.OPorts, port )) then return "wan" end
+	if (port == 0) then return "lan" end
+	return nil
+end
+
+function DRV:InterfaceIP( side )
+	if (side == "wan") then return (self.Entity.GetFullBIP && self.Entity:GetFullBIP()) or "0.0.0.0" end
+	return (self.Entity.GetFullIP && self.Entity:GetFullIP()) or "0.0.0.0"
+end
+
+// Send a raw frame out one port. Wireless has no port index; deliver to the
+// associated clients and let their DHCP/ARP state filter the frame.
+function DRV:SendOnPort( port, data )
+	if (port == 0) then
+		for _, pc in pairs( self.WirelessClients or {} ) do
+			if ((pc) && (pc.IsValid) && (pc:IsValid())) then
+				local cd = PCMod.Data[ pc:EntIndex() ]
+				local net = cd && cd.Drivers && cd.Drivers[ "gen_network" ]
+				if (net) then net:DataRecieved( 0, data ) end
+			end
+		end
+		return
+	end
+	self.Entity:PushData( port, data )
 end
 
 function DRV:DataRecieved( port, data )
 	PCMod.Msg( "[webgr]Checking Ports", true )
-	if (table.HasValue( self.NPorts, port )) then
-		// Data is from a network port (PC / LAN side).
-		return self:Process( data, "lan" )
+	// DHCP, ARP and routing hellos are application frames. Switches/modems
+	// forward them as ordinary L2 traffic; only routers interpret them.
+	if ((istable( data )) && (data[1] == "sendpacket") && (istable( data[2] ))) then
+		local app = data[2][4]
+		local macs = data[4] or {}
+		if (PCMod.Net.IsDHCP( app )) then
+			if (app[2] == "discover") then return self:DHCPServerReceive( port, app, macs ) end
+			if (app[2] == "request") then return self:DHCPServerRequest( port, app, macs ) end
+			if (app[2] == "release") then return self:DHCPServerRelease( app ) end
+			return self:DHCPClientReceive( port, app )
+		end
+		if (PCMod.Net.IsARP( app )) then return PCMod.ARP.Handle( self, port, app, macs ) end
+		if (PCMod.Net.IsHello( app )) then
+			// Routing hellos only make sense on an uplink/backbone interface.
+			if (self:PortSide( port ) != "wan") then return true end
+			return PCMod.Routing.Handle( self, port, app, macs )
+		end
 	end
-	if (table.HasValue( self.OPorts, port )) then
-		// Data is from an optic port (router / WAN side).
-		return self:Process( data, "wan" )
-	end
-	if (port == 0) then
-		// Data is from wireless (LAN side).
-		if (self.Wireless) then self:Process( data, "lan" ) end
-	end
+	local side = self:PortSide( port )
+	if (side) then return self:Process( data, side ) end
 	// Data is from another port unrelated to us
+end
+
+function DRV:DHCPServerReceive( port, app, macs )
+	local side = self:PortSide( port )
+	if (!side) then return false end
+	local payload = app[5] or {}
+	local mac = payload.mac or (macs && macs.SourceMAC)
+	local rec = PCMod.DHCPServer.Offer( self, side, mac, app[3], port )
+	if (!rec) then return false end
+	local cfg = PCMod.DHCPServer.Config( self, rec )
+	local reply = {
+		"sendpacket",
+		{ self:InterfaceIP( side ), cfg.ip, PCMod.Net.DHCPClientPort, PCMod.Net.DHCPOffer( app[3], self.Entity:EntIndex(), cfg ) },
+		nil,
+		{ SourceMAC = self.Entity:GetMAC(), DestMAC = mac or PCMod.MAC.BROADCAST },
+	}
+	self:SendOnPort( port, reply )
+	return true
+end
+
+function DRV:DHCPServerRequest( port, app, macs )
+	local side = self:PortSide( port )
+	if (!side) then return false end
+	// The client names the server whose offer it accepted; other servers that
+	// also saw the discover must stay quiet instead of NACKing it.
+	if (app[4] && (tonumber( app[4] ) != self.Entity:EntIndex())) then return true end
+	local payload = app[5] or {}
+	local mac = payload.mac or (macs && macs.SourceMAC)
+	local rec = PCMod.DHCPServer.Ack( self, mac, app[3], app[4] )
+	local reply
+	if (rec) then
+		PCMod.ARP.Learn( self, rec.ip, mac, port )
+		local cfg = PCMod.DHCPServer.Config( self, rec )
+		reply = {
+			"sendpacket",
+			{ self:InterfaceIP( side ), cfg.ip, PCMod.Net.DHCPClientPort, PCMod.Net.DHCPAck( app[3], self.Entity:EntIndex(), cfg ) },
+			nil,
+			{ SourceMAC = self.Entity:GetMAC(), DestMAC = mac or PCMod.MAC.BROADCAST },
+		}
+	else
+		reply = {
+			"sendpacket",
+			{ self:InterfaceIP( side ), PCMod.Net.BroadcastIP, PCMod.Net.DHCPClientPort, PCMod.Net.DHCPNack( app[3], self.Entity:EntIndex() ) },
+			nil,
+			{ SourceMAC = self.Entity:GetMAC(), DestMAC = mac or PCMod.MAC.BROADCAST },
+		}
+	end
+	self:SendOnPort( port, reply )
+	return true
+end
+
+function DRV:DHCPServerRelease( app )
+	local payload = app[5] or {}
+	PCMod.DHCPServer.Release( self, payload.mac )
+	return true
+end
+
+// Offer/ack meant for this router when it is itself a DHCP client on WAN.
+function DRV:DHCPClientReceive( port, app )
+	if (!self.DHCPState) then return false end
+	return PCMod.DHCPClient.Handle( self, app )
+end
+
+// Ask upstream for this router's own WAN address. The same discover as any
+// host; the answer carries the backbone id and the /64 id it may use.
+function DRV:SendDHCPDiscover( port, retries )
+	retries = retries or 3
+	local p = self.Entity:Ports()[ port ]
+	if ((!p) || (!p.Connected)) then return false end
+	self.LastDHCP = nil
+	PCMod.DHCPClient.Start( self, {
+		send = function( body )
+			// Routers are network devices, so ENT:SendPacket would loop the
+			// frame back into our own DataRecieved; push it onto the wire.
+			self.Entity:PushData( port, {
+				"sendpacket",
+				{ "0.0.0.0", PCMod.Net.BroadcastIP, PCMod.Net.DHCPServerPort, body },
+				nil,
+				{ SourceMAC = self.Entity:GetMAC(), DestMAC = PCMod.MAC.BROADCAST },
+			} )
+		end,
+		apply = function( cfg )
+			PCMod.DHCPClient.ApplyRouter( self.Entity, self, cfg, port )
+		end,
+	} )
+	if ((!self.LastDHCP) && (retries > 0) && timer && timer.Simple) then
+		timer.Simple( 1, function()
+			if ((!IsValid( self.Entity )) || (self.Uplink)) then return end
+			self:SendDHCPDiscover( port, retries - 1 )
+		end )
+	end
+	return true
+end
+
+// Resolve the last hop with ARP on the interface, then send. Unknown hosts
+// fall back to flooding the interface; switches do the L2 filtering.
+function DRV:DeliverOnInterface( pid, packet, pass, ports, side )
+	if ((!ports) || (#ports == 0)) then return false end
+	// ARP is IPv4; an emulated IPv6 destination resolves through its mapped
+	// IPv4 form, which is the same host identity.
+	local arpTarget = packet.Dest
+	if (PCMod.IPv6.IsIPv6( packet.Dest )) then arpTarget = PCMod.IPv6.ToIPv4( packet.Dest ) or packet.Dest end
+	local rec = PCMod.ARP.Resolve( self, arpTarget, ports, self:InterfaceIP( side ) )
+	if (rec) then
+		packet.DestMAC = rec.mac
+		local out = rec.port or ports[ 1 ]
+		self.Entity:PushData( out, { "deliver", pid, pass } )
+		return true
+	end
+	packet.DestMAC = PCMod.MAC.BROADCAST
+	for _, idx in ipairs( ports ) do
+		self.Entity:PushData( idx, { "deliver", pid, pass } )
+	end
+	return true
+end
+
+function DRV:PushToRouted( pid, packet, pass, port, bb )
+	if (!port) then return false end
+	// Use the MAC of the immediate next-hop backbone, not the far destination.
+	local route = self.Routes && self.Routes[ bb ]
+	local via = route && route.via
+	local mac = via && self.NeighborMAC && self.NeighborMAC[ via ]
+	if (mac) then packet.DestMAC = mac end
+	self.Entity:PushData( port, { "deliver", pid, pass } )
+	return true
 end
 
 function DRV:Process( data, side )
@@ -355,32 +539,27 @@ function DRV:ProcessPacket( pid, pass, side )
 	local dest6 = PCMod.IPv6.IsIPv6( packet.Dest )
 
 	if (!dest6) then
-		// Same-LAN IPv4 (192.168.x) is delivered locally and never leaves it.
-		local port = self:HasPC( packet.Dest )
-		if (port) then
-			self.Entity:PushData( port, { "deliver", pid, pass } )
+		// Private LAN IPv4 is only meaningful on a LAN interface.
+		if (PCMod.IPv4.ParseLan( packet.Dest )) then
+			if (self:DeliverToWirelessClient( packet )) then return end
+			self:DeliverOnInterface( pid, packet, pass, self.NPorts, "lan" )
 			return
 		end
-		if (self:DeliverToWirelessClient( packet )) then return end
 		// 10.x backbone IPv4 routes across backbones; at the LAN edge a router
 		// masquerades its private hosts behind its own /32.
 		local bb4 = PCMod.IPv4.Parse( packet.Dest )
 		if (bb4) then
 			if (self:IsBackbone()) then
-				// Backbone router: route my own /16 (host table) or a peer /16.
 				local mybb = self.Entity:GetBSubnet()
 				if (bb4.bb == mybb) then
-					local cport = self:HasRouter( packet.Dest )
-					if (cport) then
-						self.Entity:PushData( cport, { "deliver", pid, pass } )
-						return
-					end
-				else
-					local nPort = self:RouteForBB( bb4.bb )
-					if (nPort) then
-						self.Entity:PushData( nPort, { "deliver", pid, pass } )
-						return
-					end
+					if (self:DeliverToWirelessClient( packet )) then return end
+					self:DeliverOnInterface( pid, packet, pass, self.OPorts, "wan" )
+					return
+				end
+				local nPort = self:RouteForBB( bb4.bb )
+				if (nPort) then
+					self:PushToRouted( pid, packet, pass, nPort, bb4.bb )
+					return
 				end
 			elseif (self.Uplink) then
 				// LAN router: masquerade only traffic that originated from my own
@@ -400,39 +579,33 @@ function DRV:ProcessPacket( pid, pass, side )
 	// IPv6: on-link LAN first.
 	local lp = self:GetIPv6Prefix()
 	if (lp && PCMod.IPv6.InSubnet( packet.Dest, lp )) then
-		local port = self:HasPC( packet.Dest )
-		if (port) then
-			self.Entity:PushData( port, { "deliver", pid, pass } )
-			return
-		end
 		if (self:DeliverToWirelessClient( packet )) then return end
-		// Unknown host on my own /64: IPv6 has no broadcast.
-		PCMod.Msg( "[webgr]No host for on-link IPv6 target " .. tostring( packet.Dest ), true )
+		self:DeliverOnInterface( pid, packet, pass, self.NPorts, "lan" )
 		return
 	end
 
 	// Route by hierarchy.
 	local hier = PCMod.IPv6.Hierarchy( packet.Dest )
 	if (self.Entity:GetClass() == "pcmod_brouter") then
-		// Backbone router: child /64s (my /32) and peer /32s (neighbors).
+		// A LAN router advertises its /64 in the routing hello; route to the
+		// advertised next hop instead of looking up connected devices.
+		local prefix = PCMod.IPv6.GetPrefix( packet.Dest, 64 )
+		local rec = prefix && PCMod.Routing.PrefixRoute( self, prefix )
+		if (rec) then
+			if (rec.mac) then packet.DestMAC = rec.mac end
+			self.Entity:PushData( rec.port, { "deliver", pid, pass } )
+			return
+		end
 		local mybb = self.Entity:GetBSubnet()
 		if (hier && (hier.bb == mybb)) then
-			local childPort = self.ChildLan && self.ChildLan[ hier.lan ]
-			if (childPort) then
-				self.Entity:PushData( childPort, { "deliver", pid, pass } )
-				return
-			end
-			// A backbone-attached station (through a modem/switch) has no /64
-			// of its own; find it by its host address instead.
-			local hostPort = self:HasRouter( packet.Dest )
-			if (hostPort) then
-				self.Entity:PushData( hostPort, { "deliver", pid, pass } )
-				return
-			end
+			// A backbone-attached host has no /64 of its own; deliver on the
+			// backbone interface and let ARP/switches find it.
+			self:DeliverOnInterface( pid, packet, pass, self.OPorts, "wan" )
+			return
 		elseif (hier) then
 			local nPort = self:RouteForBB( hier.bb )
 			if (nPort) then
-				self.Entity:PushData( nPort, { "deliver", pid, pass } )
+				self:PushToRouted( pid, packet, pass, nPort, hier.bb )
 				return
 			end
 		end
@@ -459,40 +632,17 @@ function DRV:CallEvent( data )
 		local port = self.Entity:Ports()[ data[ 1 ] ]
 		if (!port) then return end
 		local cls = self.Entity:GetClass()
-		// A switch passes a synthetic link event carrying the real far-side
-		// device (data[3]); without one this is a normal direct cable.
 		local peerEnt = data[ 3 ] || port.ConEnt
-		if (!peerEnt) then return end
-		local peer = peerEnt:GetClass()
-
-		if ((cls == "pcmod_brouter") && PCMod.IsLanRouterClass( peer )) then
-			// LAN router attaches to my backbone: give it a /64 of my /32 and a
-			// WAN backbone address, then renumber its LAN.
-			self:AttachLANRouter( data[ 1 ], port, peerEnt )
-		elseif ((cls == "pcmod_brouter") && (peer == "pcmod_brouter")) then
-			// Peer backbone: learn its /32 -> this port, then reconverge.
-			self.BLAN[ data[ 1 ] ] = port
-			if (!self.Neighbors) then self.Neighbors = {} end
-			self.Neighbors[ peerEnt:GetBSubnet() ] = port
-			self:RecalcRoutes()
-			PCMod.Network.Reconverge()
-		elseif ((cls == "pcmod_brouter") && (peerEnt.IsComputer == true)) then
-			// A computer on the backbone side (typically through a modem) gets
-			// a 10.x host address from this backbone's /24, not a private LAN
-			// lease from some other router.
-			self:AssignBackboneLease( peerEnt, data[ 1 ] )
-		elseif (PCMod.IsLanRouterClass( cls ) && PCMod.IsRouterClass( peer )) then
-			// My WAN uplink (directly or through a switch/modem).
+		// Routers learn peers from hellos, not from link events relayed by
+		// switches. A direct cable gets an immediate hello for fast start.
+		PCMod.Routing.Send( self, true )
+		if (PCMod.IsLanRouterClass( cls ) && table.HasValue( self.OPorts, data[ 1 ] )) then
+			// A LAN router is a DHCP client on its WAN interface.
+			self:SendDHCPDiscover( data[ 1 ] )
+		end
+		if (PCMod.IsLanRouterClass( cls ) && peerEnt && PCMod.IsRouterClass( peerEnt:GetClass() ) && table.HasValue( self.OPorts, data[ 1 ] )) then
+			// Immediate default-route hint; DHCP also sets it on the ack.
 			self.Uplink = port
-		elseif (PCMod.IsLanRouterClass( cls ) && (peer != "pcmod_switch") && (peer != "pcmod_modem")) then
-			// A computer plugs into a LAN port. Switches/modems themselves never
-			// take a DHCP lease; the devices behind them do. A PC behind a modem
-			// on the WAN side is not on this router's LAN, so it must not get a
-			// 192.168 lease (that was why WAN-side laptops showed a LAN address).
-			if (table.HasValue( self.NPorts, data[ 1 ] )) then
-				self.LAN[ data[ 1 ] ] = port
-				if (!self:HasLease( peerEnt )) then self:AssignLease( peerEnt ) end
-			end
 		end
 	end
 	if (e == "unlinked") then
@@ -513,15 +663,13 @@ function DRV:CallEvent( data )
 			local child = cdata && cdata.Drivers && cdata.Drivers[ "webgr_router" ]
 			if (child && child.ReconfigureClients) then child:ReconfigureClients() end
 		elseif ((cls == "pcmod_brouter") && (peer == "pcmod_brouter")) then
-			if (self.Neighbors) then self.Neighbors[ peerEnt:GetBSubnet() ] = nil end
+			local pbb = peerEnt:GetBSubnet()
+			if (self.Neighbors) then self.Neighbors[ pbb ] = nil end
+			if (self.RouteAdv) then self.RouteAdv[ pbb ] = nil end
 			self:RecalcRoutes()
 			PCMod.Network.Reconverge()
 		elseif ((cls == "pcmod_brouter") && (peerEnt.IsComputer == true)) then
-			self:ReleaseBackboneLease( peerEnt )
-		elseif ((cls == "pcmod_brouter") && (peerEnt.IsSwitch == true)) then
-			// The modem/switch itself left this backbone port: its leases go
-			// with it, even if no per-host event arrives.
-			self:ReleaseBackboneLeasesOnPort( data[ 1 ] )
+			PCMod.DHCPServer.Release( self, peerEnt.GetMAC && peerEnt:GetMAC() )
 		elseif (PCMod.IsLanRouterClass( cls ) && PCMod.IsRouterClass( peer )) then
 			self.Uplink = nil
 			// Lost our uplink: fall back to standalone addressing.
@@ -540,7 +688,7 @@ function DRV:CallEvent( data )
 		elseif (PCMod.IsLanRouterClass( cls ) && (peer != "pcmod_switch") && (peer != "pcmod_modem")) then
 			// Pulling the cable only takes the lease away when the client is
 			// not still joined over Wi-Fi.
-			if (!self:HasWirelessClient( peerEnt )) then self:ReleaseLease( peerEnt ) end
+			if (!self:HasWirelessClient( peerEnt )) then PCMod.DHCPServer.Release( self, peerEnt.GetMAC && peerEnt:GetMAC() ) end
 		end
 	end
 end
@@ -579,16 +727,28 @@ end
 // ---------------------------------------------------------------------------
 
 function DRV:DHCPTable( scope ) return PCMod.DHCP.Table( self, scope ) end
-function DRV:DHCPPool( scope ) return PCMod.DHCP.Pool( self, scope ) end
+function DRV:DHCPPool( scope )
+	if (PCMod.DHCPServer && PCMod.DHCPServer.Pool) then
+		local a, b, c = PCMod.DHCPServer.Pool( self, scope )
+		if (a) then return a, b, c end
+	end
+	return PCMod.DHCP.Pool( self, scope )
+end
 function DRV:DHCPLeaseHost( scope, pc ) return PCMod.DHCP.LeaseHost( self, scope, pc ) end
 function DRV:DHCPAllocHost( scope, pc ) return PCMod.DHCP.AllocLease( self, scope, pc ) end
 function DRV:DHCPDropHost( scope, pc ) return PCMod.DHCP.DropLease( self, scope, pc ) end
 
-function DRV:StaticLeases() return PCMod.DHCP.StaticLeases( self ) end
-function DRV:StaticLeaseForMAC( mac ) return PCMod.DHCP.StaticLeaseForMAC( self, mac ) end
-function DRV:StaticLeaseHosts() return PCMod.DHCP.StaticHosts( self ) end
-function DRV:AddStaticLease( ip, mac ) return PCMod.DHCP.AddStaticLease( self, ip, mac ) end
-function DRV:DeleteStaticLease( idx ) return PCMod.DHCP.DeleteStaticLease( self, idx ) end
+// The scope this router hands leases out on: a backbone serves the 10.x
+// segment, a LAN router serves its own 192.168 segment.
+function DRV:LeaseScope()
+	return self:IsBackbone() and "wan" or "lan"
+end
+
+function DRV:StaticLeases() return PCMod.DHCPServer.StaticList( self, self:LeaseScope() ) end
+function DRV:StaticLeaseForMAC( mac ) return PCMod.DHCPServer.StaticForMAC( self, self:LeaseScope(), mac ) end
+function DRV:DynamicLeases() return PCMod.DHCPServer.List( self, self:LeaseScope() ) end
+function DRV:AddStaticLease( ip, mac ) return PCMod.DHCPServer.AddStatic( self, self:LeaseScope(), ip, mac ) end
+function DRV:DeleteStaticLease( idx ) return PCMod.DHCPServer.DeleteStatic( self, self:LeaseScope(), idx ) end
 
 function DRV:ApplyDHCP( scope, pc, host, port ) return PCMod.DHCP.Apply( self, scope, pc, host, port ) end
 function DRV:AssignDHCP( scope, pc, port ) return PCMod.DHCP.Assign( self, scope, pc, port ) end
@@ -623,6 +783,9 @@ function DRV:SetLinkToEntity( other )
 end
 
 function DRV:HasDHCPLease( scope, pc )
+	if (pc && pc.GetMAC && PCMod.DHCPServer) then
+		return (PCMod.DHCPServer.Find( self, scope, pc:GetMAC() ) != nil)
+	end
 	return PCMod.DHCP.Has( self, scope, pc )
 end
 
@@ -673,8 +836,14 @@ function DRV:HasPC( ip )
 end
 
 // True when the PC is cabled to this router, directly or through a switch.
+// Leases remember whether they arrived on a wired port, so no topology scan
+// is needed; the direct-port check remains for legacy/no-DHCP clients.
 function DRV:IsWiredClient( pc )
 	if ((!pc) || (!pc:IsValid())) then return false end
+	if (pc.GetMAC && PCMod.DHCPServer) then
+		local rec = PCMod.DHCPServer.Find( self, "lan", pc:GetMAC() )
+		if (rec) then return (rec.wired == true) end
+	end
 	for _, v in pairs( self.LAN or {} ) do
 		if (v.Connected) then
 			local ent = v.ConEnt
@@ -695,17 +864,14 @@ function DRV:HasWirelessClient( pc )
 	return ((self.WirelessClients) && (self.WirelessClients[ pc:EntIndex() ] != nil)) or false
 end
 
-// Register a PC that connected to this router over Wi-Fi.
+// Register a PC that connected to this router over Wi-Fi. Association only
+// handles authentication/range; the client gets its address from DHCP like
+// any other host, so nothing is leased here.
 function DRV:AddWirelessClient( pc )
 	if ((!pc) || (!pc:IsValid())) then return false end
 	if (!self.WirelessClients) then self.WirelessClients = {} end
 	self.WirelessClients[ pc:EntIndex() ] = pc
-	// AssignLease reuses the lease the client already holds from us, so a
-	// wired client joining Wi-Fi keeps its address and a Wi-Fi-only client on
-	// a second router gets a secondary address.
-	local host = self:AssignLease( pc )
-	if (!host) then return "full" end
-	return "assigned"
+	return true
 end
 
 // Release and immediately re-request a client's lease. The control panel's
@@ -713,6 +879,14 @@ end
 // without physically relinking the device. A client with no recorded lease is
 // treated like a fresh link, so a stale lease table self-heals.
 function DRV:RenewLease( pc )
+	// A backbone router only hands out 10.x hosts. Renewing there in the LAN
+	// scope used to invent a 192.168 lease that the device could not even use.
+	if (self:IsBackbone()) then
+		return self:RenewDHCP( "wan", pc )
+	end
+	// A LAN router only renews devices that are actually on a LAN interface
+	// (cabled to a LAN port or joined over Wi-Fi).
+	if ((!self:IsWiredClient( pc )) && (!self:HasWirelessClient( pc ))) then return nil end
 	return self:RenewDHCP( "lan", pc )
 end
 
@@ -917,47 +1091,98 @@ end
 // ---------------------------------------------------------------------------
 function DRV:RecalcRoutes()
 	if (!self:IsBackbone()) then return end
-	self.Routes = {}
 	local mybb = self.Entity:GetBSubnet()
-	if (mybb) then self.Routes[ mybb ] = { dist = 0, via = nil } end
-	for bb, port in pairs( self.Neighbors or {} ) do
-		local cur = self.Routes[ bb ]
-		if ((!cur) || (cur.dist > 1)) then self.Routes[ bb ] = { dist = 1, via = bb } end
+	local routes = {}
+	if (mybb) then routes[ mybb ] = { dist = 0, via = nil } end
+	// Direct neighbours are one hop away.
+	for bb in pairs( self.Neighbors or {} ) do
+		if (bb != mybb) then routes[ bb ] = { dist = 1, via = bb } end
 	end
+	// Relax the distance vectors advertised by those neighbours. Running a few
+	// passes lets a change propagate across a chain of backbones immediately,
+	// instead of waiting one hello interval per hop.
+	local adv = self.RouteAdv or {}
+	for _ = 1, 32 do
+		local changed = false
+		for fromBB, dv in pairs( adv ) do
+			if ((self.Neighbors && self.Neighbors[ fromBB ]) && istable( dv )) then
+				for dest, dist in pairs( dv ) do
+					if ((dest != mybb) && (dest != fromBB)) then
+						local nd = (tonumber( dist ) or 0) + 1
+						local cur = routes[ dest ]
+						if ((!cur) || (cur.dist > nd)) then
+							routes[ dest ] = { dist = nd, via = fromBB }
+							changed = true
+						end
+					end
+				end
+			end
+		end
+		if (!changed) then break end
+	end
+	self.Routes = routes
 end
 
-function DRV:GetDV()
+// Distance vector for a hello. `excludeBB` implements split horizon: routes
+// learned through that neighbour are not advertised back to it, which prevents
+// two backbones from reviving a dead path by pointing at each other.
+function DRV:GetDV( excludeBB )
 	local dv = {}
-	for bb, r in pairs( self.Routes or {} ) do dv[ bb ] = r.dist end
+	for bb, r in pairs( self.Routes or {} ) do
+		if ((!excludeBB) || (r.via != excludeBB)) then dv[ bb ] = r.dist end
+	end
 	return dv
 end
 
 function DRV:NeighborDrv( port )
-	local ent = port && port.ConEnt
+	local p = port
+	if (type( p ) == "number") then
+		local ports = self.Entity.Ports && self.Entity:Ports()
+		p = ports && ports[ p ]
+	end
+	local ent = p && p.ConEnt
 	if ((!ent) || (!ent:IsValid())) then return nil end
 	local data = PCMod.Data[ ent:EntIndex() ]
 	return data && data.Drivers && data.Drivers[ "webgr_router" ]
 end
 
-// Push this router's distance vector to every neighbouring backbone.
+// Push this router's distance vector to every neighbouring backbone, with
+// split horizon so a route is never sent back the way it was learned.
 function DRV:AdvertiseRoutes()
 	if (!self:IsBackbone()) then return end
 	for bb, port in pairs( self.Neighbors or {} ) do
 		local drv = self:NeighborDrv( port )
-		if (drv && drv.RecvRoutes) then drv:RecvRoutes( self.Entity:GetBSubnet(), self:GetDV() ) end
+		if (drv && drv.RecvRoutes) then drv:RecvRoutes( self.Entity:GetBSubnet(), self:GetDV( bb ) ) end
 	end
 end
 
-// Merge a neighbour's distance vector (Bellman-Ford update).
+// Merge a neighbour's distance vector and recompute the table. Keeping the
+// last advertisement per neighbour lets RecalcRoutes relax multi-hop paths.
 function DRV:RecvRoutes( fromBB, dv )
 	if (!self:IsBackbone()) then return end
-	for bb, dist in pairs( dv or {} ) do
-		if (bb != self.Entity:GetBSubnet()) then
-			local nd = dist + 1
-			local cur = self.Routes[ bb ]
-			if ((!cur) || (cur.dist > nd)) then self.Routes[ bb ] = { dist = nd, via = fromBB } end
-		end
+	if (!fromBB) then return end
+	self.RouteAdv = self.RouteAdv or {}
+	self.RouteAdv[ fromBB ] = dv
+	local old = self.Routes
+	self:RecalcRoutes()
+	// A changed table is pushed onward immediately, so a chain converges in one
+	// tick instead of one hello interval per hop. Split horizon terminates it.
+	if (self:RoutesDiffer( old, self.Routes ) && self.AdvertiseRoutes) then
+		self:AdvertiseRoutes()
 	end
+end
+
+// True when two distance-vector tables disagree about any destination.
+function DRV:RoutesDiffer( a, b )
+	if ((!a) || (!b)) then return true end
+	for bb, r in pairs( a ) do
+		local o = b[ bb ]
+		if ((!o) || ((o.dist or 0) != (r.dist or 0))) then return true end
+	end
+	for bb in pairs( b ) do
+		if (!a[ bb ]) then return true end
+	end
+	return false
 end
 
 // The next-hop optic port for an IPv6 /32 destination (nil = no route).
@@ -974,10 +1199,21 @@ function DRV:RemoveWirelessClient( pc )
 	end
 	// Leaving Wi-Fi must not strip the address of a client that is still
 	// cabled to this router - the cable and the Wi-Fi link share the lease.
-	// (ReleaseLease itself only takes away the address this router handed
-	// out, so a client cabled to another router keeps that primary.)
 	if (self:IsWiredClient( pc )) then return end
-	self:ReleaseLease( pc )
+	local mac = pc.GetMAC && pc:GetMAC()
+	local rec = mac && PCMod.DHCPServer.Find( self, "lan", mac )
+	if (!rec) then return end
+	local ipdata = pc.Data && pc:Data() && pc:Data().IP
+	if (ipdata) then
+		if (ipdata.Router == self.Entity:EntIndex()) then
+			if (pc.SetSubnet) then pc:SetSubnet( false ) end
+			if (pc.SetIP) then pc:SetIP( false ) end
+			ipdata.Router = false
+		elseif (pc.ReleaseExtraIP) then
+			pc:ReleaseExtraIP( rec.ip )
+		end
+	end
+	PCMod.DHCPServer.Release( self, mac )
 end
 
 // Deliver an in-flight packet to a Wi-Fi client on this router. Returns true
@@ -1390,10 +1626,7 @@ end
 
 // Shared navigation bar linking the pages.
 function DRV:WebNav( current )
-	local items = { { "", "Home" }, { "wifi", "Wi-Fi" }, { "lan", "LAN" }, { "firewall", "Firewall" } }
-	if (self:IsBackbone()) then
-		table.insert( items, { "static", "Static DHCP" } )
-	end
+	local items = { { "", "Home" }, { "wifi", "Wi-Fi" }, { "lan", "LAN" }, { "firewall", "Firewall" }, { "static", "DHCP Leases" } }
 	local parts = {}
 	for _, it in ipairs( items ) do
 		table.insert( parts, '<a href="/' .. it[ 1 ] .. '">' .. it[ 2 ] .. '</a>' )
@@ -1440,9 +1673,8 @@ function DRV:PageHome()
 	if (first) then
 		table.insert( lines, "<p><b>DHCP pool:</b> " .. first .. " - " .. last .. " (" .. tostring( finishHost - startHost + 1 ) .. " hosts)</p>" )
 	end
-	if (self:IsBackbone()) then
-		table.insert( lines, '<p><b>Static DHCP:</b> ' .. tostring( #self:StaticLeases() ) .. ' reservation(s) <a href="/static">[Manage]</a></p>' )
-	end
+	table.insert( lines, '<p><b>DHCP leases:</b> ' .. tostring( #self:DynamicLeases() ) .. ' active, ' .. tostring( #self:StaticLeases() ) .. ' static <a href="/static">[Manage]</a></p>' )
+
 
 	local wc = 0
 	for _, v in pairs( self.WirelessClients or {} ) do if (v) then wc = wc + 1 end end
@@ -1456,6 +1688,12 @@ function DRV:PageHome()
 			local child = port && port.ConEnt
 			local name = "LAN router #" .. tostring( (child && child:IsValid() && child:EntIndex()) or "?" )
 			table.insert( links, '<li><a href="fd00:' .. tostring( bb ) .. ':0:' .. tostring( lanid ) .. '::1">' .. name .. '</a></li>' )
+		end
+		// Child /64s learned from routing hellos.
+		for prefix, rec in pairs( self.PrefixRoutes or {} ) do
+			if (rec && rec.port) then
+				table.insert( links, '<li>' .. tostring( prefix ) .. ' via port ' .. tostring( rec.port ) .. '</li>' )
+			end
 		end
 		for nbb, port in pairs( self.Neighbors or {} ) do
 			table.insert( links, '<li><a href="fd00:' .. tostring( nbb ) .. '::1">Backbone fd00:' .. tostring( nbb ) .. '::/32</a></li>' )
@@ -1518,15 +1756,38 @@ function DRV:PageLAN()
 	return table.concat( lines, "\n" )
 end
 
-// Backbone admin: static DHCP reservations, IP <-> MAC.
+// DHCP page: active (dynamic) leases plus static IP <-> MAC reservations.
+// The scope follows the router role, so LAN and backbone pages look the same.
 function DRV:PageStaticLeases()
+	local scope = self:LeaseScope()
+	local isWan = (scope == "wan")
 	local bb = self.Entity:GetBSubnet()
 	local lines = {}
-	table.insert( lines, "<h1>Backbone static DHCP</h1>" )
+	table.insert( lines, "<h1>" .. (isWan and "Backbone" or "LAN") .. " DHCP leases</h1>" )
 	table.insert( lines, self:WebNav( "static" ) )
 	table.insert( lines, "<hr>" )
-	table.insert( lines, "<p>Reserve a backbone IPv4 for a MAC address. The reservation is handed out when that device links to the backbone.</p>" )
-	table.insert( lines, "<p><b>Backbone:</b> " .. PCMod.IPv4.BackbonePrefix( bb ) .. " (hosts 12-254)</p>" )
+
+	local dyn = self:DynamicLeases()
+	table.insert( lines, "<h2>Active leases</h2>" )
+	if (#dyn == 0) then
+		table.insert( lines, "<p>No active leases.</p>" )
+	else
+		for _, rec in ipairs( dyn ) do
+			local expires = tonumber( rec.expires ) or 0
+			local left = math.max( 0, math.floor( (expires - PCMod.Net.Now()) / 60 ) )
+			table.insert( lines, '<p>' .. tostring( rec.ip ) .. ' -> ' .. tostring( rec.mac )
+				.. ' <i>' .. tostring( rec.static and "static" or "dynamic" ) .. '</i>'
+				.. ' (' .. tostring( left ) .. ' min)</p>' )
+		end
+	end
+
+	table.insert( lines, "<hr>" )
+	table.insert( lines, "<p>Reserve an IPv4 for a MAC address. The reservation is handed out when that device asks for a lease.</p>" )
+	if (isWan) then
+		table.insert( lines, "<p><b>Backbone:</b> " .. tostring( PCMod.IPv4.BackbonePrefix( bb ) ) .. " (hosts 12-254)</p>" )
+	else
+		table.insert( lines, "<p><b>LAN:</b> " .. self:GetLanPrefix() .. " (hosts 2-" .. tostring( self:PoolMax() ) .. ")</p>" )
+	end
 
 	local list = self:StaticLeases()
 	if (#list == 0) then
@@ -1605,7 +1866,7 @@ function DRV:GetWebPage( path )
 	if (page == "wifi") then return self:PageWifi() end
 	if (page == "lan") then return self:PageLAN() end
 	if (page == "firewall") then return self:PageFirewall() end
-	if ((page == "static") && self:IsBackbone()) then return self:PageStaticLeases() end
+	if (page == "static") then return self:PageStaticLeases() end
 	return self:PageHome()
 end
 
@@ -1623,6 +1884,7 @@ function DRV:HandleWebRequest( packet )
 end
 
 function DRV:OnRemove()
+	if (PCMod.Routing && PCMod.Routing.Stop) then PCMod.Routing.Stop( self ) end
 	self.LAN = {}
 	self.BLAN = {}
 	self.BSubnet = self.Entity:GetBSubnet()
@@ -1636,7 +1898,11 @@ function DRV:OnRemove()
 	self.V6Flows = {}
 	self.Children = {}
 	self.ChildLan = {}
+	self.ArpCache = {}
+	self.PrefixRoutes = {}
 	self.Neighbors = {}
+	self.NeighborMAC = {}
+	self.RouteAdv = {}
 	self.Uplink = nil
 	self.ForwardFlows = {}
 	self.NatOut = {}

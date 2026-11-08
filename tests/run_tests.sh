@@ -47,6 +47,7 @@ TESTS=(
     mock_overlay
     mock_entity_sounds
     mock_switch
+    mock_dora
     mock_netvariants
     mock_router
     mock_trace
@@ -56,7 +57,9 @@ TESTS=(
     mock_selfping
     mock_leases
     mock_dhcp
+    mock_dhcp_conflict
     mock_routing
+    mock_hello
     mock_wiring
     mock_windows
     mock_keyboard

@@ -41,6 +41,12 @@ FIXTURES = {
     "pcmod_notepad.lua": "pcmod/programs/pr_notepad.lua",
     "pcmod_notepad_ui.lua": "pcmod/ssdevices/dev_win_notepad.lua",
     "pcmod_sh_dhcp.lua": "pcmod/sh_dhcp.lua",
+    "pcmod_sh_netproto.lua": "pcmod/sh_netproto.lua",
+    "pcmod_sh_dhcp_server.lua": "pcmod/sh_dhcp_server.lua",
+    "pcmod_sh_dhcp_client.lua": "pcmod/sh_dhcp_client.lua",
+    "pcmod_sh_arp.lua": "pcmod/sh_arp.lua",
+    "pcmod_sh_l2.lua": "pcmod/sh_l2.lua",
+    "pcmod_sh_routing.lua": "pcmod/sh_routing.lua",
     "pcmod_drv_router.lua": "pcmod/drivers/drv_router.lua",
     "pcmod_drv_network.lua": "pcmod/drivers/drv_network.lua",
     "pcmod_drv_bios.lua": "pcmod/drivers/drv_bios.lua",
@@ -77,6 +83,7 @@ CHECK_ONLY = [
     "weapons/gmod_tool/stools/pcspawn_router.lua",
     "weapons/gmod_tool/stools/pcspawn_erouter.lua",
     "weapons/gmod_tool/stools/pcspawn_modem.lua",
+    "weapons/gmod_tool/stools/pcwire.lua",
 ]
 
 

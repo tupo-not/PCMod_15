@@ -27,18 +27,23 @@ function ENT:Setup( setupdata )
 	if (!setupdata) then setupdata = self.DefaultSetupData end -- Ensure we have setup data
 	local dt = self:Data() -- Get our data
 	
-	// Create our ports
+	// Create our ports. Port 1 is always the WAN uplink so wiring and the
+	// admin pages are predictable; 2-5 are the LAN switch ports. The uplink
+	// medium is selectable (fibre or Ethernet), so one tool can spawn both the
+	// LAN Modem and the Router variants.
+	local uplink = setupdata.Uplink
+	if ((uplink != "network") && (uplink != "optic")) then uplink = self.WanType or "optic" end
+	if ((uplink != "network") && (uplink != "optic")) then uplink = "optic" end
 	local pts = {}
-	table.insert( pts, self:CreatePort( "network" ) )
-	table.insert( pts, self:CreatePort( "network" ) )
-	table.insert( pts, self:CreatePort( "network" ) )
-	table.insert( pts, self:CreatePort( "network" ) )
-	local wan = self:CreatePort( self.WanType or "optic" )
+	local wan = self:CreatePort( uplink )
 	// An Ethernet WAN still looks like a normal network cable to the driver,
 	// so flag it; the driver splits LAN and WAN by this flag rather than by
 	// the physical cable type.
-	if ((self.WanType == "network") && (wan.Type == "network")) then wan.WAN = true end
+	if ((uplink == "network") && (wan.Type == "network")) then wan.WAN = true end
 	table.insert( pts, wan )
+	for i = 1, 4 do
+		table.insert( pts, self:CreatePort( "network" ) )
+	end
 	dt.Ports = pts
 	
 	// Install the main driver

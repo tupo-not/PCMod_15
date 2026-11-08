@@ -462,6 +462,14 @@ function OS:GetBIPv6Prefix()
 	return self:Network():GetBIPv6Prefix()
 end
 
+function OS:GetBIPv6()
+	return self:Network():GetBIPv6()
+end
+
+function OS:GetBIPv6LinkLocal()
+	return self:Network():GetBIPv6LinkLocal()
+end
+
 function OS:GetBIPv6Subnet()
 	return self:GetBIPv6Prefix()
 end

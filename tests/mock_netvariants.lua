@@ -110,21 +110,29 @@ assertEq( erouter.WanType, "network", "Ethernet WAN type" )
 erouter:Setup( { Wireless = false } )
 local rports = PCMod.Data[ 2 ].Ports
 assertEq( #rports, 5, "router still has five ports" )
-for i = 1, 4 do
+assertEq( rports[ 1 ].Type, "network", "WAN port is Ethernet" )
+assertTrue( rports[ 1 ].WAN, "port 1 is the flagged WAN uplink" )
+for i = 2, 5 do
 	assertEq( rports[ i ].Type, "network", "LAN port " .. i .. " is Ethernet" )
 	assertTrue( !rports[ i ].WAN, "LAN port " .. i .. " is not the WAN uplink" )
 end
-assertEq( rports[ 5 ].Type, "network", "WAN port is Ethernet" )
-assertTrue( rports[ 5 ].WAN, "WAN port is flagged for the router driver" )
 
--- The LAN modem keeps the fibre WAN.
+-- The LAN modem keeps the fibre WAN, still on port 1.
 local lanmodem = makeEnt( 3, RouterENT )
 assertEq( lanmodem.PrintName, "LAN Modem", "LAN modem name" )
 assertEq( lanmodem.WanType, "optic", "LAN modem WAN type" )
 lanmodem:Setup( { Wireless = false } )
 local lports = PCMod.Data[ 3 ].Ports
-assertEq( lports[ 5 ].Type, "optic", "LAN modem WAN is fibre" )
-assertTrue( !lports[ 5 ].WAN, "fibre WAN does not need the Ethernet flag" )
+assertEq( lports[ 1 ].Type, "optic", "LAN modem WAN is fibre on port 1" )
+assertTrue( !lports[ 1 ].WAN, "fibre WAN does not need the Ethernet flag" )
+
+-- The merged spawn tool can pick the uplink medium for the same base entity.
+local switchable = makeEnt( 4, RouterENT )
+switchable:Setup( { Wireless = false, Uplink = "network" } )
+local sports = PCMod.Data[ 4 ].Ports
+assertEq( sports[ 1 ].Type, "network", "selected Ethernet WAN medium" )
+assertTrue( sports[ 1 ].WAN, "selected Ethernet WAN is flagged for the driver" )
+for i = 2, 5 do assertEq( sports[ i ].Type, "network", "remaining ports stay LAN Ethernet" ) end
 
 -- Shared class helpers treat both LAN router variants alike.
 assertTrue( PCMod.IsLanRouterClass( "pcmod_router" ), "fibre LAN router helper" )

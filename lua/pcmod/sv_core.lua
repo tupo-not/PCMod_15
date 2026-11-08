@@ -28,8 +28,20 @@ AddCSLuaFile( "pcmod/sh_baseconfig.lua" ) -- Give base config file to client
 AddCSLuaFile( "pcmod/sh_config.lua" ) -- Give config file to client
 
 include( "pcmod/sh_common.lua" ) -- Common functions
+include( "pcmod/sh_netproto.lua" ) -- DHCP/ARP/hello wire formats
 include( "pcmod/sh_dhcp.lua" ) -- DHCP / IPv4 lease mechanics
+include( "pcmod/sh_dhcp_server.lua" ) -- MAC-keyed DHCP server
+include( "pcmod/sh_dhcp_client.lua" ) -- DHCP client state machine
+include( "pcmod/sh_arp.lua" ) -- ARP next-hop resolution
+include( "pcmod/sh_l2.lua" ) -- Pure L2 bridge algorithm
+include( "pcmod/sh_routing.lua" ) -- Broadcast hello routing
 AddCSLuaFile( "pcmod/sh_dhcp.lua" ) -- Give DHCP mechanics to client
+AddCSLuaFile( "pcmod/sh_netproto.lua" )
+AddCSLuaFile( "pcmod/sh_dhcp_server.lua" )
+AddCSLuaFile( "pcmod/sh_dhcp_client.lua" )
+AddCSLuaFile( "pcmod/sh_arp.lua" )
+AddCSLuaFile( "pcmod/sh_l2.lua" )
+AddCSLuaFile( "pcmod/sh_routing.lua" )
 include( "pcmod/sh_ui_layout.lua" ) -- Pure layout primitives
 include( "pcmod/sh_window.lua" ) -- Shared window geometry
 AddCSLuaFile( "pcmod/sh_common.lua" ) -- Give common file to client

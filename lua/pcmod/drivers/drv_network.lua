@@ -18,6 +18,107 @@ function DRV:Initialize()
 	for k, v in pairs( self.Entity:Ports() ) do
 		if (v.Type == "network") then self.NetworkPort = k end
 	end
+	// Addressing is driven by DHCP now: the host asks, a router answers. The
+	// machine does not need to know which router (or how many switches) it is
+	// attached to. Boot and cable events both trigger a fresh discover.
+	if (self.Entity.AddEHook) then
+		self.Entity:AddEHook( "driver", self.Name, "linked" )
+		self.Entity:AddEHook( "driver", self.Name, "unlinked" )
+		self.Entity:AddEHook( "driver", self.Name, "turnon" )
+	end
+end
+
+// A network cable was plugged in (or restored from a save), or the machine
+// booted. Ask for an address like a real DHCP client instead of relying on
+// router-side link topology events.
+function DRV:CallEvent( data )
+	if ((!data) || (!data.Event)) then return end
+	if ((!self.Entity) || (!self.Entity:IsValid())) then return end
+	if (data.Event == "linked") then
+		local ports = self.Entity && self.Entity:Ports() or {}
+		local port = ports[ data[ 1 ] ]
+		if ((port) && (port.Type == "network")) then self:DHCPDiscover() end
+	elseif (data.Event == "unlinked") then
+		// The last cable is gone: drop the lease-derived identity so this
+		// machine cannot keep showing (and answering for) an address that a
+		// replacement device will be given. A static address is configured,
+		// not leased, so it stays.
+		if (!self:HasNetworkLink()) then self:ClearDHCPAddress() end
+	elseif (data.Event == "turnon") then
+		self:DHCPDiscover()
+	end
+end
+
+// Forget a DHCP-assigned identity (primary LAN/WAN and secondaries).
+function DRV:ClearDHCPAddress()
+	local ent = self.Entity
+	if ((!ent) || (!ent.IsValid) || (!ent:IsValid())) then return false end
+	local ipdata = ent.Data && ent:Data() && ent:Data().IP
+	if ((!ipdata) || ipdata.Static) then return false end
+	if (ent.SetLanAddress) then ent:SetLanAddress( false ) end
+	if (ent.SetBSubnet) then ent:SetBSubnet( false ) end
+	if (ent.SetBIP) then ent:SetBIP( false ) end
+	ipdata.Router = false
+	ipdata.Extra = {}
+	ipdata.Mask = nil
+	ipdata.MaskBits = nil
+	ipdata.Gateway = nil
+	self.LastDHCP = nil
+	return true
+end
+
+function DRV:HasNetworkLink()
+	if ((!self.Entity) || (!self.Entity:IsValid())) then return false end
+	local ports = self.Entity:Ports() or {}
+	for _, port in pairs( ports ) do
+		if (port.Connected && ((port.Type == "network") || (port.Type == "optic"))) then return true end
+	end
+	return self:WirelessConnected()
+end
+
+// Broadcast a DHCP discover. The first router whose port the request arrives
+// on answers with the address for that interface (LAN router -> private
+// address, backbone router -> 10.x host). Retries cover a cable that was
+// plugged in before the rest of the segment was ready.
+function DRV:DHCPDiscover( retries )
+	retries = retries or 3
+	if ((!self.Entity) || (!self.Entity:IsValid()) || (!self:HasNetworkLink())) then return end
+	local ipdata = self.Entity:Data() && self.Entity:Data().IP
+	if (ipdata && ipdata.Static) then return end
+	self.LastDHCP = nil
+	PCMod.DHCPClient.Start( self, {
+		send = function( body )
+			self:SendPacket( PCMod.Net.BroadcastIP, PCMod.Net.DHCPServerPort, body, nil, "0.0.0.0" )
+		end,
+		apply = function( cfg )
+			PCMod.DHCPClient.ApplyHost( self.Entity, cfg )
+		end,
+	} )
+	if ((!self.LastDHCP) && (retries > 0) && timer && timer.Simple) then
+		timer.Simple( 1, function()
+			if ((!IsValid( self.Entity )) || (self.LastDHCP)) then return end
+			self:DHCPDiscover( retries - 1 )
+		end )
+	end
+end
+
+function DRV:HandleDHCP( body )
+	return PCMod.DHCPClient.Handle( self, body )
+end
+
+// ARP is how a router finds us without tracking devices. Answer only for an
+// address we actually own; the reply carries our MAC.
+function DRV:HandleARP( port, body, macs )
+	if (!PCMod.Net.IsARP( body )) then return false end
+	if (body[2] == "request") then
+		local target = body[3]
+		if (!self.Entity:IsAddressedTo( target )) then return true end
+		local myip = self.Entity:GetSourceAddress( target ) or self.Entity:GetFullIP()
+		if (!myip) then return true end
+		self.Entity:SendPacket( port, body[4] or "0.0.0.0", 0, PCMod.Net.ARPReply( target, myip, self.Entity:EnsureMAC() ), nil, myip )
+		return true
+	end
+	return true
 end
 
 function DRV:GetOSDriver( dname )
@@ -35,6 +136,13 @@ end
 // and deliver it locally when it is addressed to us.
 function DRV:DataRecieved( port, data )
 	if (istable( data ) && (data[1] == "sendpacket") && istable( data[2] )) then
+		local app = data[2][4]
+		if (istable( app ) && (app[1] == "dhcp")) then
+			return self:HandleDHCP( app )
+		end
+		if (PCMod.Net.IsARP( app )) then
+			return self:HandleARP( port, app, data[4] or {} )
+		end
 		local body = data[2]
 		local macs = data[4] or {}
 		local pid = PCMod.Network.CreatePacket( body[1], body[2], body[3], body[4], nil, macs.SourceMAC, macs.DestMAC, data[5] )
@@ -181,6 +289,14 @@ function DRV:GetBIPv6Prefix()
 	return self.Entity:GetBIPv6Prefix()
 end
 
+function DRV:GetBIPv6()
+	return self.Entity:GetBIPv6()
+end
+
 function DRV:GetBIPv6Gateway()
 	return self.Entity:GetBIPv6Gateway()
+end
+
+function DRV:GetBIPv6LinkLocal()
+	return self.Entity:GetBIPv6LinkLocal()
 end

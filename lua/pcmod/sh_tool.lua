@@ -219,8 +219,11 @@ function PCTool.RegisterSTool( TOOL )
 		if (SERVER) then
 		
 			function TOOL:LeftClick( trace )
+				// Allow a spawner to pick its entity class from the panel (for
+				// example the router's fibre vs Ethernet uplink).
+				local entclass = (self.GetSpawnClass && self:GetSpawnClass()) or self.EntClass
 				// Validate the target
-				if ((trace.Entity) && ((trace.Entity:IsPlayer()) || (trace.Entity:GetClass()==self.EntClass))) then return false end
+				if ((trace.Entity) && ((trace.Entity:IsPlayer()) || (trace.Entity:GetClass()==entclass))) then return false end
 				
 				// Get some variables
 				local ply = self:GetOwner()
@@ -233,7 +236,7 @@ function PCTool.RegisterSTool( TOOL )
 				local setupdata = self:BuildSetupData()
 
 				// Make the entity
-				local ent = PCTool.SpawnEntity( ply, model, pos, ang, self.EntClass, nil, setupdata )
+				local ent = PCTool.SpawnEntity( ply, model, pos, ang, entclass, nil, setupdata )
 				
 				// If the entity does not exist, end here
 				if ((!ent) || (!ent:IsValid())) then return false end

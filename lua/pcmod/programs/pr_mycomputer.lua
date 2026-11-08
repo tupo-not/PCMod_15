@@ -26,6 +26,18 @@ function PROG:RefreshNetwork()
 	local selfEnt = self.Entity
 	local ipdata = (selfEnt && selfEnt.Data && selfEnt:Data() && selfEnt:Data().IP) or nil
 	if (ipdata && ipdata.Static) then static = ipdata.Static end
+	// A host attached straight to a backbone has only a WAN identity, so the
+	// LAN /64 accessors are empty. Fall back to the backbone IPv6 fields.
+	local v6 = os:GetIPv6()
+	local v6prefix = os:GetIPv6Prefix()
+	local v6gw = os:GetIPv6Gateway()
+	local v6ll = os:GetIPv6LinkLocal()
+	if ((!v6) && os.GetBIPv6) then
+		v6 = os:GetBIPv6()
+		if (os.GetBIPv6Prefix) then v6prefix = os:GetBIPv6Prefix() end
+		if (os.GetBIPv6Gateway) then v6gw = os:GetBIPv6Gateway() end
+		if (os.GetBIPv6LinkLocal) then v6ll = os:GetBIPv6LinkLocal() end
+	end
 	self.DeviceData.Net = {
 		MAC = os:GetMAC(),
 		IPv4 = ipv4,
@@ -33,10 +45,10 @@ function PROG:RefreshNetwork()
 		Mask = ipdata && ipdata.Mask or nil,
 		MaskBits = ipdata && ipdata.MaskBits or nil,
 		Gateway4 = ipdata && ipdata.Gateway or nil,
-		IPv6 = os:GetIPv6(),
-		Prefix = os:GetIPv6Prefix(),
-		Gateway = os:GetIPv6Gateway(),
-		LinkLocal = os:GetIPv6LinkLocal(),
+		IPv6 = v6,
+		Prefix = v6prefix,
+		Gateway = v6gw,
+		LinkLocal = v6ll,
 		Extras = (os.GetExtraAddresses && os:GetExtraAddresses()) or {}
 	}
 	self.DeviceData.IPNote = ""
@@ -127,22 +139,29 @@ function PROG:GetConnectedRouterDrivers()
 	return out
 end
 
-// Force a fresh DHCP lease on every router this PC is attached to, so the
-// current pool/netmask is picked up without relinking the cable.
+// Force a fresh DHCP lease. The device only broadcasts a discover; whichever
+// router owns the interface it arrives on answers. The old router-walking
+// fallback remains for drivers without DHCP support (older clients/mocks).
 function PROG:RenewNetwork()
+	local net = self:GetNetworkDriver()
 	local renewed = 0
-	for _, drv in ipairs( self:GetConnectedRouterDrivers() ) do
-		if (drv.RenewLease && drv:RenewLease( self.Entity )) then renewed = renewed + 1 end
+	if (net && net.DHCPDiscover) then
+		net.LastDHCP = nil
+		net:DHCPDiscover()
+		if (net.LastDHCP) then renewed = 1 end
+	else
+		for _, drv in ipairs( self:GetConnectedRouterDrivers() ) do
+			if (drv.RenewLease && drv:RenewLease( self.Entity )) then renewed = renewed + 1 end
+		end
 	end
 	// Keep the Wi-Fi status in step with whether we still have a lease.
-	local net = self:GetNetworkDriver()
 	if (net && net.WirelessEnt && net.WirelessEnt:IsValid()) then
 		local rdata = PCMod.Data[ net.WirelessEnt:EntIndex() ]
 		local rdrv = rdata && rdata.Drivers && rdata.Drivers[ "webgr_router" ]
 		net.WirelessIPv4 = (rdrv && rdrv.HasLease && rdrv:HasLease( self.Entity )) and true or false
 	end
 	self:RefreshNetwork()
-	self.DeviceData.IPNote = (renewed > 0) and "Address renewed." or "No DHCP lease to renew."
+	self.DeviceData.IPNote = (renewed > 0) and "Address renewed." or "No DHCP answer."
 	self:UpdateSS()
 end
 
@@ -205,8 +224,17 @@ function PROG:ConnectWireless( entIndex, pass )
 	end
 	// "full" still connects, but the client has no IPv4 lease (IPv6-only),
 	// exactly like a real DHCP server that runs out of addresses.
-	if (reg == "assigned") then net.WirelessIPv4 = true end
-	if (reg == "full") then net.WirelessIPv4 = false end
+	if (net.DHCPDiscover && PCMod.DHCPServer) then
+		// Association is auth/range only. Addressing over Wi-Fi is DHCP, just
+		// like a cable: ask, and the router serving this link answers.
+		net.LastDHCP = nil
+		net:DHCPDiscover()
+		net.WirelessIPv4 = (net.LastDHCP != nil)
+	else
+		// Older clients/routers without DHCP still report the association result.
+		if (reg == "assigned") then net.WirelessIPv4 = true end
+		if (reg == "full") then net.WirelessIPv4 = false end
+	end
 	self:RefreshNetwork()
 	self:UpdateSS()
 end
@@ -214,7 +242,14 @@ end
 function PROG:DisconnectWireless()
 	local net = self:GetNetworkDriver()
 	if (net && net.DisconnectWireless) then net:DisconnectWireless() end
+	// With the wireless link gone a cable may be the only path; ask for an
+	// address again instead of keeping a lease that was released.
+	if (net && net.DHCPDiscover) then
+		net.LastDHCP = nil
+		net:DHCPDiscover()
+	end
 	self.DeviceData.Wifi = { Connected = false }
+	self:RefreshNetwork()
 	self:UpdateSS()
 end
 

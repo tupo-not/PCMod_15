@@ -708,6 +708,20 @@ function PCMod.IPv4.ParseLan( addr )
 	return { sub = c, add = d, full = "192.168." .. c .. "." .. d }
 end
 
+// True when two private LAN addresses live in the same subnet for `bits`.
+// Used to tell "the same LAN came back under a new router" (replace the primary)
+// from a genuinely different LAN (keep both as primary + secondary).
+function PCMod.IPv4.SameLan( a, b, bits )
+	local pa, pb = PCMod.IPv4.ParseLan( a ), PCMod.IPv4.ParseLan( b )
+	if ((!pa) || (!pb)) then return false end
+	bits = math.Clamp( math.floor( tonumber( bits ) or 24 ), 16, 32 )
+	if (bits <= 16) then return true end
+	local m = 2 ^ (32 - bits)
+	local va = (pa.sub * 256) + pa.add
+	local vb = (pb.sub * 256) + pb.add
+	return (math.floor( va / m ) == math.floor( vb / m ))
+end
+
 // Netmask text ("255.255.255.0", "/24" or "24") -> prefix bits (0-32), or nil.
 function PCMod.IPv4.MaskToBits( mask )
 	if (type( mask ) == "number") then

@@ -26,6 +26,8 @@ PCMod.TableToString = function( t ) return t end
 PCMod.StringToTable = function( s ) return s end
 
 dofile( "pcmod_sh_common.lua" )
+dofile( "pcmod_sh_netproto.lua" )
+dofile( "pcmod_sh_l2.lua" )
 PCMod.Msg = function() end
 
 PCMod.Wiring = {
@@ -162,13 +164,13 @@ local frame2 = { "sendpacket", { "192.168.0.9", "192.168.0.3", 80, "again" } }
 fwd:DataRecieved( 2, frame2 )
 assertEq( count( sent ), fwd.PortCount - 1, "new sendpacket frame is forwarded" )
 
--- Once a MAC/IP has been learned the switch unicasts to that port.
+-- A known destination MAC is unicast back to the port it was learned on.
 sent = {}
-local reply = { "sendpacket", { "192.168.0.3", "192.168.0.2", 80, "reply" } }
+local reply = { "sendpacket", { "192.168.0.3", "192.168.0.9", 80, "reply" } }
+reply[ 4 ] = { SourceMAC = "AA:BB:CC:DD:EE:03", DestMAC = frame2[ 4 ].SourceMAC }
 fwd:DataRecieved( 3, reply )
-assertEq( count( sent ), 1, "known destination is unicast" )
-assertTrue( sent[ 1 ] != nil, "reply is sent to the port that owns the destination MAC" )
-assertTrue( PCMod.MAC.Equal( reply[ 4 ].DestMAC, macA ), "frame carries the learned destination MAC" )
+assertEq( count( sent ), 1, "known destination MAC is unicast" )
+assertTrue( sent[ 2 ] != nil, "reply is sent to the port that owns the destination MAC" )
 
 -- Deliver frames use the packet table as their identity.
 PCMod.Network.Packets[ 1 ] = {}
@@ -190,59 +192,10 @@ sent = {}
 fwd:DataRecieved( 1, { "deliver", 99, 0 } )
 assertEq( count( sent ), 0, "unknown deliver frame is dropped" )
 
--- Topology relay: routers must learn about devices on other switch ports,
--- otherwise a switch breaks backbone/LAN prefix assignment.
-local seg = makeSwitch( 5 )
-seg:Setup( { Mode = "optic" } )
-local events = {}
-local function makeRouter( idx, cls )
-	local r = { IsPCMod = true }
-	local p = {}
-	function r:IsValid() return true end
-	function r:EntIndex() return idx end
-	function r:GetClass() return cls end
-	function r:Ports() return { [ 1 ] = p } end
-	function r:FireEvent( ev ) table.insert( events, { Ent = idx, Ev = ev } ) end
-	return r
-end
-local br = makeRouter( 80, "pcmod_brouter" )
-local lr = makeRouter( 81, "pcmod_router" )
-local segPorts = PCMod.Data[ 5 ].Ports
-segPorts[ 1 ].Connected = true
-segPorts[ 1 ].ConEnt = br
-segPorts[ 2 ].Connected = true
-segPorts[ 2 ].ConEnt = lr
-br:Ports()[ 1 ].ConEnt = seg
-lr:Ports()[ 1 ].ConEnt = seg
-
-seg:NotifyBridgeLinked()
-local function findEvent( entIdx, name, peer )
-	for _, e in ipairs( events ) do
-		if (e.Ent == entIdx && e.Ev[ 1 ] == name && e.Ev[ #e.Ev ] == peer) then return e end
-	end
-	return nil
-end
-assertTrue( findEvent( 80, "linked", lr ) != nil, "backbone router sees the LAN router behind the switch" )
-assertTrue( findEvent( 81, "linked", br ) != nil, "LAN router sees the backbone router behind the switch" )
-assertEq( findEvent( 80, "linked", lr ).Ev[ 2 ], 1, "far-side link carries the router's own port index" )
-
--- Unplugging the LAN router tells the backbone it is gone, and vice versa.
-segPorts[ 2 ].Connected = false
-segPorts[ 2 ].ConEnt = nil
-events = {}
-seg:NotifyBridgeUnlinked( lr )
-assertTrue( findEvent( 80, "unlinked", lr ) != nil, "backbone router is told the LAN router left" )
-assertTrue( findEvent( 81, "unlinked", br ) != nil, "removed router is told about the remaining peer" )
-
--- A computer on the backbone segment is also announced to the backbone router,
--- so it can be given a 10.x host address.
-local pc = makeRouter( 82, "pcmod_tower" )
-pc.IsComputer = true
-pc:Ports()[ 1 ].ConEnt = seg
-segPorts[ 3 ].Connected = true
-segPorts[ 3 ].ConEnt = pc
-events = {}
-seg:NotifyBridgeLinked()
-assertTrue( findEvent( 80, "linked", pc ) != nil, "backbone router sees a computer behind the switch/modem" )
+-- Pure L2: no router relay and no IP awareness. The switch only learns MACs.
+assertTrue( sw.CollectSegment == nil, "switch has no topology walk" )
+assertTrue( sw.GetBridgePeers == nil, "switch does not expose devices to routers" )
+assertTrue( fwd.IPTable == nil, "switch keeps no IP table" )
+assertTrue( fwd.MacTable != nil, "switch learns MACs" )
 
 print( "mock_switch PASSED" )

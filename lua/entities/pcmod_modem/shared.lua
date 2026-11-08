@@ -39,8 +39,4 @@ function ENT:Setup( setupdata )
 
 	self:SetNWString( "MAC", dt.MAC )
 	self:UpdateData( dt )
-
-	// Keep the routing topology transparent across the converter.
-	self:AddEHook( "ent", nil, "linked" )
-	self:AddEHook( "ent", nil, "unlinked" )
 end

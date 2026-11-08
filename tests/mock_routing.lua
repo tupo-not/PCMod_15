@@ -14,6 +14,7 @@ dofile( "pcmod_drv_router.lua" )
 local function assertTrue( v, m )
     if (not v) then error( "FAILED: " .. m, 2 ) end
 end
+function istable( v ) return type( v ) == "table" end
 
 local function makeBackbone( idx, bb )
     local o = { Idx = idx, BB = bb }

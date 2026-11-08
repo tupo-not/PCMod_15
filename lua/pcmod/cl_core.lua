@@ -26,7 +26,13 @@ if (!PCMod_NoInclude) then
 
 	include( "pcmod/sh_baseconfig.lua" ) -- Configuration file
 	include( "pcmod/sh_common.lua" ) -- Common functions
+	include( "pcmod/sh_netproto.lua" ) -- DHCP/ARP/hello wire formats
 	include( "pcmod/sh_dhcp.lua" ) -- DHCP / IPv4 lease mechanics
+	include( "pcmod/sh_dhcp_server.lua" ) -- MAC-keyed DHCP server
+	include( "pcmod/sh_dhcp_client.lua" ) -- DHCP client state machine
+	include( "pcmod/sh_arp.lua" ) -- ARP next-hop resolution
+	include( "pcmod/sh_l2.lua" ) -- Pure L2 bridge algorithm
+	include( "pcmod/sh_routing.lua" ) -- Broadcast hello routing
 	include( "pcmod/sh_ui_layout.lua" ) -- Pure layout primitives
 	include( "pcmod/sh_window.lua" ) -- Shared window geometry
 	include( "pcmod/sh_logging.lua" ) -- Logging functions

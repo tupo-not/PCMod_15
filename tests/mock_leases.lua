@@ -6,9 +6,16 @@ PCMod = {
     DeriveDriver = function() return {} end,
 }
 math.Clamp = function( v, a, b ) if (v < a) then return a end if (v > b) then return b end return v end
+function istable( v ) return type( v ) == "table" end
+CurTime = CurTime or function() return 0 end
 
 dofile( "pcmod_sh_common.lua" )
 dofile( "pcmod_sh_dhcp.lua" )
+dofile( "pcmod_sh_netproto.lua" )
+dofile( "pcmod_sh_dhcp_server.lua" )
+dofile( "pcmod_sh_dhcp_client.lua" )
+dofile( "pcmod_sh_arp.lua" )
+dofile( "pcmod_sh_routing.lua" )
 dofile( "pcmod_drv_router.lua" )
 
 local function assertEq( a, b, m )
@@ -127,45 +134,58 @@ DRV:ReleaseLease( stat )
 assertEq( stat.sub, 5, "static subnet survives lease release" )
 assertEq( stat.ip, 7, "static address survives lease release" )
 
--- A laptop wired to this router that joins and leaves Wi-Fi keeps its lease
--- (and address): Wi-Fi shares the lease the cable already earned.
+-- A wired laptop joining Wi-Fi only registers the association; addressing is
+-- DHCP's job and the wired lease is untouched.
 DRV.Leases = {}
 DRV.WirelessClients = {}
 DRV.LAN = {}
 local lap = mkPC( 50 )
+function lap:GetMAC() return "AA:BB:CC:DD:EE:50" end
 DRV.LAN[ 1 ] = { Connected = true, ConEnt = lap }
 assertEq( DRV:AssignLease( lap ), 2, "wired lease" )
 assertEq( lap.ip, 2, "wired address" )
 assertEq( lap.ipdata.Router, 1, "primary lease owner recorded" )
-assertEq( DRV:AddWirelessClient( lap ), "assigned", "wired client joins wi-fi" )
-assertEq( lap.ip, 2, "joining wi-fi keeps the wired address" )
-assertEq( #lap.extras, 0, "same-router wi-fi does not add a secondary address" )
+assertTrue( DRV:AddWirelessClient( lap ), "wired client joins wi-fi" )
+assertTrue( DRV:HasWirelessClient( lap ), "association is recorded" )
+assertEq( lap.ip, 2, "joining wi-fi leaves the wired address alone" )
 DRV:RemoveWirelessClient( lap )
 assertTrue( DRV.Leases[ 2 ] == lap, "wired client keeps its lease after leaving wi-fi" )
 assertEq( lap.ip, 2, "wired client keeps its address after leaving wi-fi" )
 
--- A pure Wi-Fi client that leaves loses both the lease and the address.
+-- A pure Wi-Fi client's DHCP lease is released when it disconnects.
 DRV.LAN[ 1 ] = nil
 local air = mkPC( 51 )
-assertEq( DRV:AddWirelessClient( air ), "assigned", "wi-fi-only client joins" )
-assertEq( air.ip, 3, "wi-fi-only client leased" )
+function air:GetMAC() return "AA:BB:CC:DD:EE:51" end
+local airCfg = PCMod.DHCPServer.Cfg( DRV )
+airCfg.Leases[ "AA:BB:CC:DD:EE:51" ] = {
+    mac = "AA:BB:CC:DD:EE:51", scope = "lan", host = 3,
+    ip = "192.168.0.3", expires = PCMod.Net.Now() + 3600,
+}
+air:SetSubnet( 0 )
+air:SetIP( 3 )
+air.ipdata.Router = 1
+assertTrue( DRV:AddWirelessClient( air ), "wi-fi-only client joins" )
 DRV:RemoveWirelessClient( air )
-assertTrue( DRV.Leases[ 3 ] == nil, "wi-fi-only lease released" )
+assertTrue( airCfg.Leases[ "AA:BB:CC:DD:EE:51" ] == nil, "wi-fi-only lease released" )
 assertEq( air.ip, false, "wi-fi-only address cleared" )
 
 -- A device already leased on ANOTHER router gets a SECONDARY address here;
 -- leaving our Wi-Fi removes only that secondary, its primary stays intact.
 local roam = mkPC( 52 )
+function roam:GetMAC() return "AA:BB:CC:DD:EE:52" end
 roam:SetSubnet( 0 )
 roam:SetIP( 9 )
 roam.ipdata.Router = 777
-assertEq( DRV:AddWirelessClient( roam ), "assigned", "roaming client joins" )
+airCfg.Leases[ "AA:BB:CC:DD:EE:52" ] = {
+    mac = "AA:BB:CC:DD:EE:52", scope = "lan", host = 3,
+    ip = "192.168.0.3", expires = PCMod.Net.Now() + 3600,
+}
+roam:AddExtraIP( "192.168.0.3", 3, 5, 1 )
+assertTrue( DRV:AddWirelessClient( roam ), "roaming client joins" )
 assertEq( roam.ip, 9, "roaming client keeps its primary address" )
-assertEq( #roam.extras, 1, "roaming client gains a secondary address" )
-assertEq( roam.extras[ 1 ].IPv4, "192.168.0.3", "secondary lease address" )
-assertEq( roam.extras[ 1 ].Router, 1, "secondary lease owner recorded" )
+assertEq( #roam.extras, 1, "roaming client keeps its secondary address" )
 DRV:RemoveWirelessClient( roam )
-assertTrue( DRV.Leases[ 3 ] == nil, "roaming lease bookkeeping dropped" )
+assertTrue( airCfg.Leases[ "AA:BB:CC:DD:EE:52" ] == nil, "roaming lease bookkeeping dropped" )
 assertEq( #roam.extras, 0, "roaming secondary address removed" )
 assertEq( roam.ip, 9, "roaming primary address untouched" )
 
@@ -253,5 +273,22 @@ local m30b = mkPC( 73 )
 assertEq( DRV:AssignLease( m30 ), 2, "/30 first lease" )
 assertEq( m30.ip, 2, "/30 client address" )
 assertEq( DRV:AssignLease( m30b ), nil, "/30 pool exhausted" )
+
+-- Renew picks the scope from the attachment: a LAN client renews a LAN lease,
+-- while a device that is not on a LAN interface must not be given one.
+DRV.Leases = {}
+DRV.WirelessClients = {}
+DRV.LAN = {}
+routData.RouterCfg = {}
+PCMod.Cfg.LanNetmask = 24
+PCMod.Cfg.DHCPStart = 2
+PCMod.Cfg.DHCPEnd = 254
+local renewClient = mkPC( 74 )
+DRV.LAN[ 1 ] = { Connected = true, ConEnt = renewClient }
+assertEq( DRV:RenewLease( renewClient ), 2, "LAN client renews a LAN lease" )
+assertTrue( DRV:HasDHCPLease( "lan", renewClient ), "renewed client keeps a LAN lease" )
+local stray = mkPC( 75 )
+assertEq( DRV:RenewLease( stray ), nil, "non-LAN device gets no LAN lease" )
+assertTrue( not DRV:HasDHCPLease( "lan", stray ), "non-LAN device is not added to the LAN table" )
 
 print( "ALL LEASE TESTS PASSED" )

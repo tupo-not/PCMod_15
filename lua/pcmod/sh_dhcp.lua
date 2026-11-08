@@ -210,8 +210,12 @@ function PCMod.DHCP.Apply( router, scope, pc, host, port )
 		return true
 	end
 	local hasPrimary = ipdata && PCMod.IPv4.ParseLan( ipdata.LAN )
-	if (hasPrimary) then
-		// The primary belongs to another network: take a secondary address.
+	// Same subnet = same LAN under a (possibly replaced) router: promote the
+	// lease instead of stacking a duplicate secondary address on top.
+	local sameLan = hasPrimary && PCMod.IPv4.SameLan( ipdata.LAN, full, ipdata.MaskBits or 24 )
+	if (hasPrimary && (!sameLan)) then
+		// The primary belongs to a genuinely different network: take a
+		// secondary address.
 		if (pc.AddExtraIP) then
 			pc:AddExtraIP( full, rip.UpBB or 0, rip.LanID or 0, router.Entity:EntIndex() )
 		else
@@ -220,7 +224,9 @@ function PCMod.DHCP.Apply( router, scope, pc, host, port )
 			pc:SetIP( add )
 		end
 	else
-		// First lease this client holds: it becomes the primary address.
+		if (pc.ReleaseExtraIP) then pc:ReleaseExtraIP( full ) end
+		// First lease this client holds (or the same LAN came back): it
+		// becomes the primary address.
 		pc:SetSubnet( sub )
 		pc:SetIP( add )
 		if (ipdata) then ipdata.Router = router.Entity:EntIndex() end
