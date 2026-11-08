@@ -12,7 +12,18 @@ PCMod.AlarmzCL.PendingBegin = 0  -- camera we sent "begin" for and await state f
 PCMod.AlarmzCL.LastAction = ""
 
 local CAM_CLASS = "gmod_wire_rt_camera"
-local USE_RANGE = 4096
+
+// Overlay/interaction range for the camera context overlay. Client-side only
+// (the server keeps its own, larger CONNECT_RANGE check in sv_alarmz.lua).
+// 512 sits between ReachDistance (256, keyboards) and SightRange (1024, screens):
+// the overlay is an interaction hint, so it shows only when close enough to act.
+local DEFAULT_OVERLAY_RANGE = 512
+function PCMod.AlarmzCL.OverlayRange()
+	if (PCMod.Cfg && PCMod.Cfg.AlarmzOverlayRange && (PCMod.Cfg.AlarmzOverlayRange > 0)) then
+		return PCMod.Cfg.AlarmzOverlayRange
+	end
+	return DEFAULT_OVERLAY_RANGE
+end
 
 // --- pure helpers (unit-tested) ------------------------------------------------------------------------
 
@@ -26,9 +37,9 @@ end
 
 function PCMod.AlarmzCL.InRange( ent )
 	if (!IsValid( ent )) then return false end
-	local tr = LocalPlayer():GetEyeTrace()
+	local r = PCMod.AlarmzCL.OverlayRange()
 	local d = LocalPlayer():GetShootPos():DistToSqr( ent:GetPos() )
-	return (d <= (USE_RANGE * USE_RANGE))
+	return (d <= (r * r))
 end
 
 // Overlay text for a camera. Pure function - easy to test.

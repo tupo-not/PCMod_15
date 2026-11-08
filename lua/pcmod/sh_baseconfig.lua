@@ -73,6 +73,7 @@ cfg.RPDisks = { -- Do not edit
 
 cfg.ReachDistance = 256 -- How far away can a person reach? (For keyboards)
 cfg.SightRange = 1024 -- How far away can a person see? (For monitor screens)
+cfg.AlarmzOverlayRange = 512 -- How close must the player be for the Alarmz camera context overlay to show? (Units)
 cfg.WirelessRange = 2048 -- How far away can a wireless router reach? (0 = Unlimited Range)
 cfg.WirelessInfo = true -- Should we draw wireless links when looking at a wireless router?
 cfg.WirelessInfoDrawCol = Color( 255, 0, 0, 255 )

@@ -401,4 +401,27 @@ hooks[ "HUDPaint:PCMod.AlarmzCL.Overlay" ]()
 assertTrue( #clLabels > 0, "overlay drawn when aiming at camera" )
 assertEq( clLabels[ 1 ][ 1 ], "RT Camera #11", "overlay first line is the camera id" )
 
+-- overlay range is a cfg setting (default 512), checked client-side
+PCMod.Cfg = { AlarmzOverlayRange = 512 }
+assertEq( PCMod.AlarmzCL.OverlayRange(), 512, "range read from cfg" )
+local nearCam = MakeEnt( 14, "gmod_wire_rt_camera", { pos = V( 500, 0, 0 ) } ) -- 500 < 512
+local farCam = MakeEnt( 15, "gmod_wire_rt_camera", { pos = V( 600, 0, 0 ) } )  -- 600 > 512
+clTrace.Entity = farCam
+clSent = {}
+hooks[ "Think:PCMod.AlarmzCL.Track" ]()
+assertEq( PCMod.AlarmzCL.Target, 0, "camera beyond the overlay range is not targeted" )
+assertEq( #clSent, 0, "no state request for an out-of-range camera" )
+clTrace.Entity = nearCam
+hooks[ "Think:PCMod.AlarmzCL.Track" ]()
+assertEq( PCMod.AlarmzCL.Target, 14, "camera within range is targeted" )
+clTrace.Entity = farCam
+hooks[ "Think:PCMod.AlarmzCL.Track" ]()
+assertEq( PCMod.AlarmzCL.Target, 0, "target cleared immediately when leaving the radius" )
+PCMod.Cfg = {}
+assertEq( PCMod.AlarmzCL.OverlayRange(), 512, "default 512 when cfg missing" )
+PCMod.Cfg = { AlarmzOverlayRange = 100 }
+assertEq( PCMod.AlarmzCL.OverlayRange(), 100, "cfg override respected" )
+PCMod.Cfg = { AlarmzOverlayRange = 512 }
+clTrace.Entity = nil
+
 print( "ALL ALARMZ LINK TESTS PASSED" )
