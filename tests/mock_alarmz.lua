@@ -275,30 +275,24 @@ dev:Paint( 0, 0, 800, 600 )
 assertTrue( texLast == "sentinel", "no camera texture drawn without wiremod" )
 assertTrue( matLast == nil, "no material drawn without wiremod" )
 
--- Wiremod present, two cameras (one active, one inactive).
+-- Wiremod present, two cameras (one active, one inactive). Both linked to this PC.
 WireLib = {}
 local cam11 = MakeCam( 11, true, 80 )
 local cam12 = MakeCam( 12, false, 60 )
 Ents = { [11] = cam11, [12] = cam12 }
+dev.Cams = { 11, 12 }
 Now = 101
 dev:ScanCameras()
 assertTrue( dev.WireOK == true, "wiremod detected" )
-assertTrue( dev.CamList[ 11 ] != nil and dev.CamList[ 12 ] != nil, "both cameras found" )
-assertEq( #dev.Listboxes.lstCams.Order, 2, "two rows in camera list" )
+assertTrue( dev.CamList[ 11 ] != nil and dev.CamList[ 12 ] != nil, "both cameras tracked" )
+assertEq( #dev.Listboxes.lstCams.Order, 2, "two linked rows in camera list" )
 assertEq( dev.Listboxes.lstCams.Order[ 1 ], "cam_11", "list sorted by entindex (1)" )
 assertEq( dev.Listboxes.lstCams.Order[ 2 ], "cam_12", "list sorted by entindex (2)" )
 assertTrue( string.find( dev.Listboxes.lstCams.List.cam_11, "%[ON%]" ) != nil, "active camera labelled ON" )
 assertTrue( string.find( dev.Listboxes.lstCams.List.cam_12, "%[OFF%]" ) != nil, "inactive camera labelled OFF" )
-assertTrue( hasAlert( dev, "Camera #11 detected" ), "detection alert logged" )
-
--- cameras linked to this PC (server registry) are marked [LINKED] and the
--- first one is auto-watched
-dev.Cams = { 12 }
-Now = 101.5
-dev:ScanCameras()
-assertTrue( string.find( dev.Listboxes.lstCams.List.cam_12, "%[LINKED%]" ) != nil, "linked camera labelled [LINKED]" )
-assertTrue( string.find( dev.Listboxes.lstCams.List.cam_11, "LINKED", 1, true ) == nil, "unlinked camera not labelled" )
-assertEq( dev.SelEnt, 12, "first linked camera auto-selected" )
+assertTrue( string.find( dev.Listboxes.lstCams.List.cam_11, "LINKED", 1, true ) != nil, "linked camera marked" )
+assertEq( countNotifies( "detected" ), 0, "no 'detected' notifications on scan" )
+assertEq( dev.SelEnt, 11, "first linked camera auto-selected" )
 
 -- Select camera 11 through the listbox: it becomes observed, its RenderTarget
 -- is drawn through the material, and the server is told about the selection.
@@ -429,19 +423,31 @@ dev:Paint( 0, 0, 800, 600 )
 assertTrue( texLast == "sentinel", "RenderTarget still never passed to surface.SetTexture" )
 assertTrue( matLast != nil and matLast.basetexture == cam12.RenderTarget, "video switched to the remaining linked camera" )
 
--- Re-creation after a confirmed removal: "detected" fires again.
+-- Re-creation after a confirmed removal: still no "detected" notification.
 local cam11c = MakeCam( 11, true, 80 )
 Ents[ 11 ] = cam11c
 Now = 115
 dev:ScanCameras()
-assertTrue( dev.CamList[ 11 ] != nil, "re-created camera listed again" )
-assertEq( countNotifies( "detected" ), det0 + 1, "detected fires again after real removal + re-creation" )
+assertTrue( dev.CamList[ 11 ] != nil, "re-created camera tracked again" )
+assertEq( countNotifies( "detected" ), det0, "no detected alert even after re-creation" )
 
 -- Refresh button picks up a newly spawned camera.
 local cam13 = MakeCam( 13, true, 90 )
 Ents = { [11] = cam11c, [12] = cam12, [13] = cam13 }
 dev:ButtonClick( "btnRefresh" )
 assertTrue( dev.CamList[ 13 ] != nil, "refresh finds new camera" )
+
+-- Only LINKED cameras appear in the list: when the server pushes a new
+-- DeviceData.Cams (disconnect), the row disappears on the next scan.
+dev.Cams = { 13 }
+Now = 116
+dev:ScanCameras()
+assertEq( #dev.Listboxes.lstCams.Order, 1, "unlinked cameras disappear from the list" )
+assertEq( dev.Listboxes.lstCams.Order[ 1 ], "cam_13", "only the still-linked camera remains" )
+dev.Cams = { 11, 12, 13 }
+Now = 117
+dev:ScanCameras()
+assertEq( #dev.Listboxes.lstCams.Order, 3, "re-linking restores the rows" )
 
 -- Selecting a camera that does not exist client-side: alert, no selection.
 dev:SelectCam( 99 )

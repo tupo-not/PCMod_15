@@ -124,10 +124,9 @@ function DEV:ScanCameras()
 			seen[ idx ] = true
 			local entry = self.CamList[ idx ]
 			if (!entry) then
-				// Genuinely new camera (never seen, or seen again only after a
-				// confirmed removal) - the ONLY place "detected" fires.
+				// Newly seen camera. No "detected" notification - only real
+				// events (connect/disconnect/errors, signal, removal) alert.
 				self.CamList[ idx ] = { lastSeen = now, goneSince = nil }
-				self:AddAlert( "Camera #" .. idx .. " detected" )
 			else
 				// Already known camera: re-scan / move / FOV / Active changes
 				// only refresh the entry - no alerts.
@@ -171,16 +170,19 @@ function DEV:ScanCameras()
 	self:RebuildCamList()
 end
 
+// The camera list shows ONLY cameras linked to this PC (server registry via
+// DeviceData.Cams). Discovered-but-unlinked cameras are tracked in CamList for
+// state/alerts but never listed.
 function DEV:RebuildCamList()
 	if ((!self.Listboxes) || (!self.Listboxes[ "lstCams" ])) then return end
 	self:ClearListbox( "lstCams" )
 	local idxs = {}
-	for idx in pairs( self.CamList or {} ) do table.insert( idxs, idx ) end
+	for _, idx in ipairs( self.Cams or {} ) do
+		if (self:GetCam( idx )) then table.insert( idxs, idx ) end
+	end
 	table.sort( idxs )
 	for _, idx in ipairs( idxs ) do
-		local label = self:CamLabel( idx, self:GetCam( idx ) )
-		if (istable( self.Cams ) && table.HasValue( self.Cams, idx )) then label = label .. " [LINKED]" end
-		self:AddListboxItem( "lstCams", "cam_" .. idx, label )
+		self:AddListboxItem( "lstCams", "cam_" .. idx, self:CamLabel( idx, self:GetCam( idx ) ) .. " [LINKED]" )
 	end
 	if (self.SelEnt != 0) then self:SetListboxSelRow( "lstCams", "cam_" .. self.SelEnt ) end
 	// Auto-watch the first linked camera when nothing is selected
@@ -189,6 +191,15 @@ function DEV:RebuildCamList()
 			if (self:GetCam( c )) then self:SelectCam( c ) break end
 		end
 	end
+end
+
+// How many linked cameras are currently visible clientside
+function DEV:LinkedCount()
+	local n = 0
+	for _, idx in ipairs( self.Cams or {} ) do
+		if (self:GetCam( idx )) then n = n + 1 end
+	end
+	return n
 end
 
 // Watch a camera: unobserve the previous one, observe the new one. The actual
@@ -325,7 +336,7 @@ function DEV:Paint( x, y, w, h )
 		statusTxt = "WIREMOD NOT DETECTED"
 		statusCol = c_bad
 	elseif (self.SelEnt == 0) then
-		if (table.Count( self.CamList or {} ) == 0) then
+		if (self:LinkedCount() == 0) then
 			statusTxt = "NO CAMERAS FOUND"
 		else
 			statusTxt = "SELECT A CAMERA"
