@@ -12,6 +12,10 @@ function table.Count( t )
 	for _ in pairs( t ) do n = n + 1 end
 	return n
 end
+function table.HasValue( t, v )
+	for _, x in pairs( t ) do if (x == v) then return true end end
+	return false
+end
 function istable( v ) return type( v ) == "table" end
 function Color( r, g, b, a ) return { r = r, g = g, b = b, a = a or 255 } end
 function string.Trim( s ) return (string.gsub( s, "^%s*(.-)%s*$", "%1" )) end
@@ -227,6 +231,12 @@ assertEq( prog.AlarmSound, "x.wav", "alarm sound changed" )
 prog:DoCommand( "exit", {} )
 assertTrue( prog.Exited == true, "exit command exits" )
 
+-- linked cameras from the server registry (sv_alarmz) are pushed on start
+prog.Entity = { IsValid = function() return true end, EntIndex = function() return 31 end }
+PCMod.Alarmz = { CamsForPC = function( pcIdx ) assertEq( pcIdx, 31, "cams requested for this PC" ) return { 11 } end }
+prog:OnStart()
+assertEq( prog.DeviceData.Cams[ 1 ], 11, "linked cameras sent to the window on start" )
+
 -- =============================================================================
 -- Part 2: client-side window device (dev_win_alarmz.lua) + Wiremod integration
 -- =============================================================================
@@ -280,6 +290,15 @@ assertEq( dev.Listboxes.lstCams.Order[ 2 ], "cam_12", "list sorted by entindex (
 assertTrue( string.find( dev.Listboxes.lstCams.List.cam_11, "%[ON%]" ) != nil, "active camera labelled ON" )
 assertTrue( string.find( dev.Listboxes.lstCams.List.cam_12, "%[OFF%]" ) != nil, "inactive camera labelled OFF" )
 assertTrue( hasAlert( dev, "Camera #11 detected" ), "detection alert logged" )
+
+-- cameras linked to this PC (server registry) are marked [LINKED] and the
+-- first one is auto-watched
+dev.Cams = { 12 }
+Now = 101.5
+dev:ScanCameras()
+assertTrue( string.find( dev.Listboxes.lstCams.List.cam_12, "%[LINKED%]" ) != nil, "linked camera labelled [LINKED]" )
+assertTrue( string.find( dev.Listboxes.lstCams.List.cam_11, "LINKED", 1, true ) == nil, "unlinked camera not labelled" )
+assertEq( dev.SelEnt, 12, "first linked camera auto-selected" )
 
 -- Select camera 11 through the listbox: it becomes observed, its RenderTarget
 -- is drawn through the material, and the server is told about the selection.
@@ -397,14 +416,18 @@ assertTrue( dev.CamList[ 11 ] != nil, "still within grace right after disappeara
 Now = 114
 dev:Tick() -- 114 - 110 = 4 >= GONE_GRACE(3)
 assertTrue( dev.CamList[ 11 ] == nil, "camera dropped from list after grace" )
-assertEq( dev.SelEnt, 0, "selection cleared after confirmed removal" )
 assertEq( countNotifies( "removed" ), rem0 + 1, "removal alert logged exactly once" )
-assertEq( lastProgCall().com, "selectcam" )
-assertEq( lastProgCall().a, 0, "server told selection cleared" )
+local sawClear = false
+for _, c in ipairs( progCalls ) do
+	if ((c.com == "selectcam") && (c.a == 0)) then sawClear = true end
+end
+assertTrue( sawClear, "server told selection cleared" )
+assertEq( dev.SelEnt, 12, "auto-switched to the remaining linked camera" )
 texLast = "sentinel"
 matLast = nil
 dev:Paint( 0, 0, 800, 600 )
-assertTrue( texLast == "sentinel" and matLast == nil, "nothing drawn after camera removal" )
+assertTrue( texLast == "sentinel", "RenderTarget still never passed to surface.SetTexture" )
+assertTrue( matLast != nil and matLast.basetexture == cam12.RenderTarget, "video switched to the remaining linked camera" )
 
 -- Re-creation after a confirmed removal: "detected" fires again.
 local cam11c = MakeCam( 11, true, 80 )

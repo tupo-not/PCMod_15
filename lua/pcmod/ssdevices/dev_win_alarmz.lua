@@ -22,6 +22,7 @@ DEV.Th = "basic"
 DEV.Al = 0
 DEV.Cm = 0
 DEV.SelCam = 0
+DEV.Cams = {} -- camera entindexes linked to this PC (from sv_alarmz via program)
 
 // Client-side monitor state (never part of the server payload, so it survives
 // Rev bumps and window moves)
@@ -177,9 +178,17 @@ function DEV:RebuildCamList()
 	for idx in pairs( self.CamList or {} ) do table.insert( idxs, idx ) end
 	table.sort( idxs )
 	for _, idx in ipairs( idxs ) do
-		self:AddListboxItem( "lstCams", "cam_" .. idx, self:CamLabel( idx, self:GetCam( idx ) ) )
+		local label = self:CamLabel( idx, self:GetCam( idx ) )
+		if (istable( self.Cams ) && table.HasValue( self.Cams, idx )) then label = label .. " [LINKED]" end
+		self:AddListboxItem( "lstCams", "cam_" .. idx, label )
 	end
 	if (self.SelEnt != 0) then self:SetListboxSelRow( "lstCams", "cam_" .. self.SelEnt ) end
+	// Auto-watch the first linked camera when nothing is selected
+	if ((self.SelEnt == 0) && istable( self.Cams )) then
+		for _, c in ipairs( self.Cams ) do
+			if (self:GetCam( c )) then self:SelectCam( c ) break end
+		end
+	end
 end
 
 // Watch a camera: unobserve the previous one, observe the new one. The actual

@@ -27,6 +27,12 @@ PROG.WindowH = 0.80
 function PROG:OnStart()
 	if (!self.DeviceData) then self.DeviceData = {} end
 	self.DeviceData.SelCam = 0
+	// Cameras manually linked to this PC (server registry: sv_alarmz.lua)
+	if (PCMod.Alarmz && self.Entity && self.Entity:IsValid()) then
+		self.DeviceData.Cams = PCMod.Alarmz.CamsForPC( self.Entity:EntIndex() )
+	else
+		self.DeviceData.Cams = {}
+	end
 	self:GetDevice()
 	self:DoCommand( "disable", {} )
 end
