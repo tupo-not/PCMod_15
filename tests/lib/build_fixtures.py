@@ -66,6 +66,8 @@ FIXTURES = {
     "sselements_button.lua": "pcmod/sselements/button.lua",
     "pcmod_os_base.lua": "pcmod/osystems/base.lua",
     "pcmod_installdisk.lua": "weapons/pcmod_installdisk/shared.lua",
+    "pcmod_alarmz.lua": "pcmod/programs/pr_alarmz.lua",
+    "pcmod_alarmz_ui.lua": "pcmod/ssdevices/dev_win_alarmz.lua",
 }
 
 # Additional sources that only need a syntax check.

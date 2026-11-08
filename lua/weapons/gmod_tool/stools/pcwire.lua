@@ -7,7 +7,7 @@
 
 TOOL.Category		= "PCMod - Wiring"
 TOOL.Name			= "#Wire Tool"
-TOOL.Tab			= "PCMod 13"
+TOOL.Tab			= "PCmod"
 TOOL.Command		= nil
 TOOL.ConfigName		= ""
 

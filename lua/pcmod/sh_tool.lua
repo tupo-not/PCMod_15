@@ -130,7 +130,7 @@ end
 // ---------------------------------------------------------------------------------------------------------
 function PCTool.RegisterSTool( TOOL )
 
-	TOOL.Tab = "PCMod 13"
+	TOOL.Tab = "PCmod"
 	TOOL.Command = nil
 	TOOL.ConfigName = ""
 	TOOL.Category = "PCMod - " .. TOOL.SpawnType
