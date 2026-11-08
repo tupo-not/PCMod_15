@@ -41,7 +41,7 @@ function PCMod.Gui.ShowLockFrame( show )
 	btn:SetParent( pn )
 	btn:SetSize( pn:GetWide()-10, 20 )
 	btn:SetPos( 5, 55 )
-	btn:SetText( "Paste" )
+	btn:SetText( "Clipboard" )
 	btn.DoClick = function( self )
 	/*
 	net.Start("ekrantazele")

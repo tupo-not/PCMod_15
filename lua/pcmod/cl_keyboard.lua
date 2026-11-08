@@ -113,17 +113,29 @@ end
 hook.Add( "Initialize", "PCMod.Gui.InitKeyboard", PCMod.Gui.InitKeyboard )
 
 // ---------------------------------------------------------------------------------------------------------
-// PasteQuickType - Pastes the system clipboard into the focused PC device
+// ClipboardPaste - Pastes the system clipboard into the focused PC device
 // ---------------------------------------------------------------------------------------------------------
-function PCMod.Gui.PasteQuickType()
-	local text = GetClipboardText()
+// GetClipboardText does not exist in every GMod build (the error on record),
+// so probe for an available read API instead of calling a possibly-nil global.
+local function ReadClipboard()
+	if (GetClipboardText) then return GetClipboardText(), true end
+	if (clipboard && clipboard.GetText) then return clipboard.GetText(), true end
+	return nil, false
+end
+
+function PCMod.Gui.ClipboardPaste()
+	local text, ok = ReadClipboard()
+	if (!ok) then
+		if (PCMod.Gui.Notify) then PCMod.Gui.Notify( "Clipboard is not available in this game build", true ) end
+		return
+	end
 	if ((!text) || (text == "")) then
 		if (PCMod.Gui.Notify) then PCMod.Gui.Notify( "Clipboard is empty", true ) end
 		return
 	end
 	PCMod.Gui.QuickTypeEnter( text )
 end
-usermessage.Hook( "pcmod_quicktype", PCMod.Gui.PasteQuickType )
+usermessage.Hook( "pcmod_quicktype", PCMod.Gui.ClipboardPaste )
 
 
 // ---------------------------------------------------------------------------------------------------------

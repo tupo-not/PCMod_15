@@ -84,7 +84,7 @@ hookThink()
 assertEq( #fires, n, "capture disabled blocks input" )
 
 -- Quick Type is now clipboard-based: the pcmod_quicktype usermessage pastes
--- GetClipboardText() into the focused device instead of opening a text window.
+-- the system clipboard into the focused device instead of opening a text window.
 function istable( v ) return type( v ) == "table" end
 local umHooks = {}
 usermessage = { Hook = function( name, fn ) umHooks[ name ] = fn end }
@@ -98,7 +98,7 @@ PCMod = { Msg = function() end, Warning = function() end, Gui = { Notify = funct
 dofile( "cl_keyboard.lua" )
 
 assertTrue( umHooks[ "pcmod_quicktype" ] != nil, "pcmod_quicktype usermessage is hooked" )
-assertTrue( PCMod.Gui.PasteQuickType != nil, "clipboard paste handler exists" )
+assertTrue( PCMod.Gui.ClipboardPaste != nil, "clipboard paste handler exists" )
 assertTrue( PCMod.Gui.ShowQuickType == nil, "old manual typing window is gone" )
 
 local pasted = {}
@@ -118,5 +118,21 @@ umHooks[ "pcmod_quicktype" ]()
 assertEq( #pasted, 1, "empty clipboard pastes nothing" )
 assertEq( #notifyLog, nNot + 1, "empty clipboard notifies the player" )
 assertTrue( string.find( notifyLog[ #notifyLog ].msg, "Clipboard is empty", 1, true ) != nil, "empty-clipboard notification message" )
+
+-- fallback: clipboard module API instead of the GetClipboardText global
+GetClipboardText = nil
+clipboard = { GetText = function() return "from clipboard module" end }
+umHooks[ "pcmod_quicktype" ]()
+assertEq( pasted[ #pasted ], "from clipboard module", "clipboard.GetText fallback works" )
+
+-- no clipboard API at all (the in-game error on record): no crash, just a notice
+clipboard = nil
+local nNot2 = #notifyLog
+local nPast = #pasted
+local crashed = not pcall( umHooks[ "pcmod_quicktype" ] )
+assertTrue( not crashed, "missing clipboard API does not raise a Lua error" )
+assertEq( #pasted, nPast, "nothing pasted without a clipboard API" )
+assertEq( #notifyLog, nNot2 + 1, "player is notified that clipboard is unavailable" )
+assertTrue( string.find( notifyLog[ #notifyLog ].msg, "not available", 1, true ) != nil, "unavailable-clipboard message" )
 
 print("KEYBOARD TESTS PASSED")
