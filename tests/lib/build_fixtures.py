@@ -69,6 +69,7 @@ FIXTURES = {
     "pcmod_alarmz.lua": "pcmod/programs/pr_alarmz.lua",
     "pcmod_alarmz_ui.lua": "pcmod/ssdevices/dev_win_alarmz.lua",
     "pcmod_sv_alarmz.lua": "pcmod/sv_alarmz.lua",
+    "pcmod_cl_alarmz.lua": "pcmod/cl_alarmz.lua",
 }
 
 # Additional sources that only need a syntax check.

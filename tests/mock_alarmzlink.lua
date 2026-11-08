@@ -248,4 +248,157 @@ readq = { "begin", 11, 0, "" }
 netHandlers[ "pcmod_alarmz_req" ]( 0, plyA )
 assertTrue( lastStateFor( 11, "STEAM_A" ) != nil, "net 'begin' produces a state message" )
 
+-- =============================================================================
+-- client side: cl_alarmz.lua (overlay + E-key flow)
+-- =============================================================================
+
+net.ReadBool = function() return table.remove( readq, 1 ) end
+local clSent = {}
+net.SendToServer = function() table.insert( clSent, cur ) cur = nil end
+
+local clNotifies = {}
+local clLabels = {}
+PCMod.Gui = {
+	CamLocked = false,
+	Notify = function( msg, err ) table.insert( clNotifies, { msg = msg, err = err } ) end,
+	DrawLabel = function( x, y, font, lines ) table.insert( clLabels, lines ) end,
+}
+
+function Color( r, g, b, a ) return { r = r, g = g, b = b, a = a or 255 } end
+function ScrW() return 1600 end
+function ScrH() return 900 end
+
+local clTrace = { Entity = nil, HitPos = nil }
+local clPly = {
+	GetEyeTrace = function() return clTrace end,
+	GetShootPos = function() return V( 0, 0, 0 ) end,
+}
+function LocalPlayer() return clPly end
+
+local function mockPanel( title )
+	local p = { _valid = true, title = title, _val = "" }
+	function p:IsValid() return self._valid end
+	function p:Remove() self._valid = false end
+	function p:GetValue() return self._val end
+	function p:SetValue( v ) self._val = v end
+	function p:GetWide() return 300 end
+	function p:GetTall() return 120 end
+	return setmetatable( p, { __index = function( t, k ) return function() end end } )
+end
+local createdWins = {}
+vgui = {
+	CreateWindow = function( w, h, title ) local win = mockPanel( title ) table.insert( createdWins, win ) return win end,
+	Create = function( cls ) return mockPanel( cls ) end,
+}
+
+dofile( "pcmod_cl_alarmz.lua" )
+
+-- overlay text content
+cam11.GetActive = function() return true end
+local lines = PCMod.AlarmzCL.OverlayLines( 11, cam11, nil )
+assertEq( lines[ 1 ], "RT Camera #11", "overlay shows camera id" )
+assertEq( lines[ 2 ], "Status: ONLINE", "overlay shows status" )
+assertEq( lines[ 3 ], "[E] Connect", "open camera offers connect" )
+lines = PCMod.AlarmzCL.OverlayLines( 11, cam11, { hasPass = false, isOwner = true, links = { [ 31 ] = true } } )
+assertTrue( string.find( lines[ 3 ], "Linked to PC #31", 1, true ) != nil, "overlay lists link" )
+assertEq( lines[ 4 ], "[E] Disconnect", "linked camera offers disconnect" )
+lines = PCMod.AlarmzCL.OverlayLines( 11, cam11, { hasPass = true, isOwner = false, links = {} } )
+assertTrue( string.find( lines[ 3 ], "Locked", 1, true ) != nil, "locked camera marked" )
+assertEq( lines[ 4 ], "[E] Enter password", "locked camera asks for password" )
+lines = PCMod.AlarmzCL.OverlayLines( 11, cam11, { hasPass = true, isOwner = true, links = {} } )
+assertEq( lines[ 4 ], "[E] Connect (owner)", "owner connects without password" )
+
+-- flow decision
+assertEq( PCMod.AlarmzCL.DecideFlow( { hasPass = true, isOwner = false } ), "pass", "locked+stranger -> password" )
+assertEq( PCMod.AlarmzCL.DecideFlow( { hasPass = true, isOwner = true } ), "pick", "locked+owner -> pick" )
+assertEq( PCMod.AlarmzCL.DecideFlow( { hasPass = false, isOwner = false } ), "pick", "open -> pick" )
+
+-- aiming alone does NOT connect: Think only tracks + asks for state
+clTrace.Entity = cam11
+clTrace.HitPos = { ToScreen = function() return { x = 100, y = 100 } end }
+hooks[ "Think:PCMod.AlarmzCL.Track" ]()
+assertEq( PCMod.AlarmzCL.Target, 11, "aiming at camera sets target" )
+assertEq( clSent[ #clSent ].fields[ 1 ], "state", "aiming only requests state, no connect" )
+clTrace.Entity = nil
+hooks[ "Think:PCMod.AlarmzCL.Track" ]()
+assertEq( PCMod.AlarmzCL.Target, 0, "looking away clears target" )
+
+-- E on camera sends begin and is consumed (blocks ENT:Use)
+clTrace.Entity = cam11
+hooks[ "Think:PCMod.AlarmzCL.Track" ]()
+clSent = {}
+local consumed = hooks[ "PlayerBindPress:PCMod.AlarmzCL.Use" ]( clPly, "+use" )
+assertEq( consumed, true, "E on camera is consumed by Alarmz (ENT:Use blocked)" )
+assertEq( clSent[ #clSent ].fields[ 1 ], "begin", "E sends begin" )
+assertEq( PCMod.AlarmzCL.PendingBegin, 11, "begin pending" )
+-- E elsewhere (not aiming at a camera) is not consumed
+clTrace.Entity = nil
+hooks[ "Think:PCMod.AlarmzCL.Track" ]()
+assertTrue( hooks[ "PlayerBindPress:PCMod.AlarmzCL.Use" ]( clPly, "+use" ) == nil, "E elsewhere passes through" )
+
+-- server answers state (no password) -> pick mode
+readq = { 11, false, true, 0 }
+netHandlers[ "pcmod_alarmz_state" ]()
+assertEq( PCMod.AlarmzCL.PickCam, 11, "state without password enters monitor-pick mode" )
+
+-- E in pick mode on a screen sends connect; E off-screen cancels
+local monEnt = MakeEnt( 21, "pcmod_monitor", { IsPCMod = true, IsScreen = true, pos = V( 100, 0, 0 ) } )
+clTrace.Entity = monEnt
+clSent = {}
+consumed = hooks[ "PlayerBindPress:PCMod.AlarmzCL.Use" ]( clPly, "+use" )
+assertEq( consumed, true, "E in pick mode consumed" )
+assertEq( clSent[ #clSent ].fields[ 1 ], "connect", "pick on screen sends connect" )
+assertEq( clSent[ #clSent ].fields[ 2 ], 11, "connect carries camera" )
+assertEq( clSent[ #clSent ].fields[ 3 ], 21, "connect carries screen" )
+clTrace.Entity = nil
+hooks[ "PlayerBindPress:PCMod.AlarmzCL.Use" ]( clPly, "+use" )
+assertEq( PCMod.AlarmzCL.PickCam, 0, "E off-screen cancels the pick" )
+
+-- result ok on connect: notify + leave pick mode
+PCMod.AlarmzCL.PickCam = 11
+readq = { true, "Camera #11 connected to PC #31", 11, false }
+netHandlers[ "pcmod_alarmz_result" ]()
+assertEq( PCMod.AlarmzCL.PickCam, 0, "successful connect leaves pick mode" )
+assertEq( clNotifies[ #clNotifies ].msg, "Camera #11 connected to PC #31", "success notification shown" )
+assertEq( clNotifies[ #clNotifies ].err, false, "success is not an error" )
+
+-- wrong password: result fail on auth reopens window with error
+PCMod.AlarmzCL.LastAction = "auth"
+createdWins = {}
+readq = { false, "Wrong camera password", 11, false }
+netHandlers[ "pcmod_alarmz_result" ]()
+assertTrue( #createdWins > 0, "password window reopened after wrong password" )
+assertTrue( PCMod.AlarmzCL.PassErr ~= nil, "error label stored" )
+
+-- locked camera: state with hasPass -> password window opens instead of pick
+PCMod.AlarmzCL.PendingBegin = 11
+createdWins = {}
+readq = { 11, true, false, 0 }
+netHandlers[ "pcmod_alarmz_state" ]()
+assertEq( PCMod.AlarmzCL.PickCam, 0, "locked camera does not enter pick mode" )
+assertTrue( #createdWins > 0, "password window opened for locked camera" )
+assertTrue( string.find( createdWins[ #createdWins ].title, "password required", 1, true ) != nil, "auth window title" )
+
+-- first connect by owner: result with canSetPass opens the set-password offer
+readq = { true, "Camera #11 connected to PC #31", 11, true }
+netHandlers[ "pcmod_alarmz_result" ]()
+assertTrue( #createdWins > 0, "set-password offer opened after first connect" )
+assertTrue( string.find( createdWins[ #createdWins ].title, "set password", 1, true ) != nil, "setpass window title" )
+
+-- E on a linked camera sends disconnect
+PCMod.AlarmzCL.PickCam = 0
+PCMod.AlarmzCL.Target = 11
+PCMod.AlarmzCL.States[ 11 ] = { hasPass = false, isOwner = true, links = { [ 31 ] = true } }
+clSent = {}
+hooks[ "PlayerBindPress:PCMod.AlarmzCL.Use" ]( clPly, "+use" )
+assertEq( clSent[ #clSent ].fields[ 1 ], "disconnect", "E on linked camera disconnects" )
+
+-- overlay drawing uses the PCMod label style
+clLabels = {}
+clTrace.Entity = cam11
+clTrace.HitPos = { ToScreen = function() return { x = 100, y = 100 } end }
+hooks[ "HUDPaint:PCMod.AlarmzCL.Overlay" ]()
+assertTrue( #clLabels > 0, "overlay drawn when aiming at camera" )
+assertEq( clLabels[ 1 ][ 1 ], "RT Camera #11", "overlay first line is the camera id" )
+
 print( "ALL ALARMZ LINK TESTS PASSED" )

@@ -100,6 +100,7 @@ AddCSLuaFile( "pcmod/cl_camera.lua" ) -- Camera control file
 AddCSLuaFile( "pcmod/cl_input.lua" ) -- Input capture control file
 AddCSLuaFile( "pcmod/cl_sselements.lua" ) -- SS device elements control file
 AddCSLuaFile( "pcmod/cl_ui_widgets.lua" ) -- Shared widget contract
+AddCSLuaFile( "pcmod/cl_alarmz.lua" ) -- Alarmz camera connect overlay (client)
 AddCSLuaFile( "pcmod/sh_ui_layout.lua" ) -- Pure layout primitives
 AddCSLuaFile( "pcmod/sh_window.lua" ) -- Shared window geometry
 

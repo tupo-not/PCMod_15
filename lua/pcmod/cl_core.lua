@@ -59,6 +59,7 @@ if (!PCMod_NoInclude) then
 	include( "pcmod/cl_camera.lua" ) -- Camera control file
 	include( "pcmod/cl_keyboard.lua" ) -- Keyboard control file
 	include( "pcmod/cl_sselements.lua" ) -- ScreenSpace elements control file
+	include( "pcmod/cl_alarmz.lua" ) -- Alarmz camera connect overlay
 
 end
 

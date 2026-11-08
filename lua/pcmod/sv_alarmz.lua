@@ -164,6 +164,21 @@ function PCMod.Alarmz.CheckPass( entry, pass )
 	return (PCMod.Alarmz.Hash( entry.salt, pass ) == entry.hash)
 end
 
+// "auth": password-only check (client asks before entering monitor-pick mode)
+function PCMod.Alarmz.Auth( ply, camIdx, pass )
+	local entry = PCMod.Alarmz.CamEntry( camIdx )
+	if ((!IsValid( ply )) || (!entry) || (!PCMod.Alarmz.CamEnt( camIdx ))) then return end
+	if (!PCMod.Alarmz.InRange( ply, PCMod.Alarmz.CamEnt( camIdx ) )) then
+		PCMod.Alarmz.SendResult( ply, false, "Camera too far away", camIdx, false )
+		return
+	end
+	if (PCMod.Alarmz.CheckPass( entry, pass )) then
+		PCMod.Alarmz.SendResult( ply, true, "Password accepted", camIdx, false )
+	else
+		PCMod.Alarmz.SendResult( ply, false, "Wrong camera password", camIdx, false )
+	end
+end
+
 // "connect": link the camera to the PC behind the aimed screen.
 function PCMod.Alarmz.Connect( ply, camIdx, monIdx, pass )
 	local cam = PCMod.Alarmz.CamEnt( camIdx )
@@ -199,7 +214,9 @@ function PCMod.Alarmz.Connect( ply, camIdx, monIdx, pass )
 	entry.links[ pcIdx ] = true
 	PCMod.Alarmz.PushLinksToPC( pcIdx )
 	PCMod.Alarmz.PushCamState( camIdx )
-	PCMod.Alarmz.SendResult( ply, true, "Camera #" .. camIdx .. " connected to PC #" .. pcIdx, camIdx, false )
+	// The first connector may set a password right after connecting
+	local canSetPass = ((entry.ownerID == ply:SteamID()) && (entry.hash == nil))
+	PCMod.Alarmz.SendResult( ply, true, "Camera #" .. camIdx .. " connected to PC #" .. pcIdx, camIdx, canSetPass )
 end
 
 // "disconnect": unlink the camera from a screen's PC. monIdx == 0 picks the first link.
@@ -263,6 +280,8 @@ net.Receive( "pcmod_alarmz_req", function( len, ply )
 	local pass = net.ReadString()
 	if (action == "begin") then
 		PCMod.Alarmz.Begin( ply, camIdx )
+	elseif (action == "auth") then
+		PCMod.Alarmz.Auth( ply, camIdx, pass )
 	elseif (action == "connect") then
 		PCMod.Alarmz.Connect( ply, camIdx, monIdx, pass )
 	elseif (action == "disconnect") then
