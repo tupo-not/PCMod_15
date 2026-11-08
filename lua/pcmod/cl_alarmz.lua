@@ -35,6 +35,12 @@ function PCMod.AlarmzCL.IsScreenEnt( ent )
 	return (IsValid( ent ) && ent.IsPCMod && (ent.IsScreen == true))
 end
 
+// The overlay and its keys are active only while the camera link tool is held.
+function PCMod.AlarmzCL.HoldingTool()
+	local wep = LocalPlayer():GetActiveWeapon()
+	return (IsValid( wep ) && (wep:GetClass() == "gmod_tool") && (wep.Mode == "pc_camlink"))
+end
+
 function PCMod.AlarmzCL.InRange( ent )
 	if (!IsValid( ent )) then return false end
 	local r = PCMod.AlarmzCL.OverlayRange()
@@ -138,6 +144,7 @@ end )
 // several PCs at once); [RMB] on a linked camera disconnects it.
 function PCMod.AlarmzCL.OnUse( bnd )
 	if (PCMod.Gui.CamLocked) then return false end
+	if (!PCMod.AlarmzCL.HoldingTool()) then return false end
 	if (bnd == "+attack2") then
 		if (PCMod.AlarmzCL.Target != 0) then
 			local state = PCMod.AlarmzCL.States[ PCMod.AlarmzCL.Target ]
@@ -179,6 +186,12 @@ end )
 // --- target tracking + overlay ---------------------------------------------------------------------------
 
 hook.Add( "Think", "PCMod.AlarmzCL.Track", function()
+	if (!PCMod.AlarmzCL.HoldingTool()) then
+		// tool not in hand: no overlay, cancel any pending pick
+		PCMod.AlarmzCL.Target = 0
+		PCMod.AlarmzCL.PickCam = 0
+		return
+	end
 	local tr = LocalPlayer():GetEyeTrace()
 	local t = 0
 	if (PCMod.AlarmzCL.IsCam( tr.Entity ) && PCMod.AlarmzCL.InRange( tr.Entity )) then
@@ -192,6 +205,7 @@ end )
 
 local function DrawOverlay()
 	if (PCMod.Gui.CamLocked) then return end
+	if (!PCMod.AlarmzCL.HoldingTool()) then return end
 	local tr = LocalPlayer():GetEyeTrace()
 	if (PCMod.AlarmzCL.PickCam != 0) then
 		// monitor-pick mode: hint at the crosshair, plus the aimed screen's label

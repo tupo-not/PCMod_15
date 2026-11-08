@@ -294,9 +294,11 @@ function ScrW() return 1600 end
 function ScrH() return 900 end
 
 local clTrace = { Entity = nil, HitPos = nil }
+local clWeapon = nil
 local clPly = {
 	GetEyeTrace = function() return clTrace end,
 	GetShootPos = function() return V( 0, 0, 0 ) end,
+	GetActiveWeapon = function() return clWeapon end,
 }
 function LocalPlayer() return clPly end
 
@@ -317,6 +319,10 @@ vgui = {
 }
 
 dofile( "pcmod_cl_alarmz.lua" )
+
+-- hold the camera link tool by default in tests
+clWeapon = { _valid = true, GetClass = function() return "gmod_tool" end, Mode = "pc_camlink" }
+assertTrue( PCMod.AlarmzCL.HoldingTool(), "tool held" )
 
 -- overlay text content
 cam11.GetActive = function() return true end
@@ -468,5 +474,27 @@ hooks[ "HUDPaint:PCMod.AlarmzCL.Overlay" ]()
 assertEq( #clLabels, 0, "overlay not drawn beyond the range (draw-time gate)" )
 assertEq( PCMod.AlarmzCL.Target, 0, "target cleared at draw time when out of range" )
 clPly.GetShootPos = function() return V( 0, 0, 0 ) end
+
+-- overlay is gated on holding the pc_camlink tool
+clWeapon = nil
+assertTrue( PCMod.AlarmzCL.HoldingTool() == false, "no weapon -> not holding tool" )
+PCMod.AlarmzCL.Target = 11
+PCMod.AlarmzCL.PickCam = 11
+clTrace.Entity = cam11
+hooks[ "Think:PCMod.AlarmzCL.Track" ]()
+assertEq( PCMod.AlarmzCL.Target, 0, "no tool: tracking disabled" )
+assertEq( PCMod.AlarmzCL.PickCam, 0, "no tool: pending pick cancelled" )
+clLabels = {}
+hooks[ "HUDPaint:PCMod.AlarmzCL.Overlay" ]()
+assertEq( #clLabels, 0, "no tool: overlay not drawn" )
+assertTrue( hooks[ "PlayerBindPress:PCMod.AlarmzCL.Use" ]( clPly, "+use" ) == nil, "no tool: E passes through" )
+clWeapon = { _valid = true, GetClass = function() return "gmod_tool" end, Mode = "pcwire" }
+assertTrue( PCMod.AlarmzCL.HoldingTool() == false, "other tool -> overlay stays off" )
+clWeapon = { _valid = true, GetClass = function() return "gmod_tool" end, Mode = "pc_camlink" }
+assertTrue( PCMod.AlarmzCL.HoldingTool(), "pc_camlink held -> overlay on" )
+clTrace.Entity = cam11
+hooks[ "Think:PCMod.AlarmzCL.Track" ]()
+assertEq( PCMod.AlarmzCL.Target, 11, "tool held: camera targeted again" )
+clTrace.Entity = nil
 
 print( "ALL ALARMZ LINK TESTS PASSED" )

@@ -74,6 +74,7 @@ FIXTURES = {
 
 # Additional sources that only need a syntax check.
 CHECK_ONLY = [
+    "weapons/gmod_tool/stools/pc_camlink.lua",
     "pcmod/cl_gui.lua",
     "pcmod/cl_camera.lua",
     "pcmod/sh_beam.lua",
