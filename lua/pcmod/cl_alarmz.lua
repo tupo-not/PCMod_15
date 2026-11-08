@@ -190,7 +190,7 @@ local function DrawOverlay()
 		// monitor-pick mode: hint at the crosshair, plus the aimed screen's label
 		local lines = { "Connect camera #" .. PCMod.AlarmzCL.PickCam, "Aim at a PCMod screen and press [E]", "[E] again (off screen) to cancel" }
 		PCMod.Gui.DrawLabel( ScrW() * 0.5, ScrH() * 0.62, "ScoreboardText", lines, 10, Color( 50, 50, 50, 200 ), Color( 255, 255, 255, 255 ) )
-		if (PCMod.AlarmzCL.IsScreenEnt( tr.Entity )) then
+		if (PCMod.AlarmzCL.IsScreenEnt( tr.Entity ) && PCMod.AlarmzCL.InRange( tr.Entity )) then
 			local spos = tr.HitPos:ToScreen()
 			PCMod.Gui.DrawLabel( spos.x, spos.y, "ScoreboardText", { "PCMod Screen #" .. tr.Entity:EntIndex(), "[E] Connect camera here" }, 10, Color( 50, 50, 50, 200 ), Color( 86, 214, 196, 255 ) )
 		end
@@ -198,10 +198,15 @@ local function DrawOverlay()
 	end
 	if (PCMod.AlarmzCL.Target != 0) then
 		local ent = ents.GetByIndex( PCMod.AlarmzCL.Target )
-		if (PCMod.AlarmzCL.IsCam( ent )) then
+		// Range is enforced here too (every frame, at draw time): even if the
+		// Think tracker is a frame behind, the overlay can never render beyond
+		// cfg.AlarmzOverlayRange.
+		if (PCMod.AlarmzCL.IsCam( ent ) && PCMod.AlarmzCL.InRange( ent )) then
 			local spos = tr.HitPos:ToScreen()
 			local lines = PCMod.AlarmzCL.OverlayLines( PCMod.AlarmzCL.Target, ent, PCMod.AlarmzCL.States[ PCMod.AlarmzCL.Target ] )
 			PCMod.Gui.DrawLabel( spos.x, spos.y, "ScoreboardText", lines, 10, Color( 50, 50, 50, 200 ), Color( 255, 255, 255, 255 ) )
+		else
+			PCMod.AlarmzCL.Target = 0
 		end
 	end
 end
