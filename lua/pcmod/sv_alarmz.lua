@@ -45,7 +45,7 @@ end
 
 function PCMod.Alarmz.EnsureCam( camIdx )
 	if (!PCMod.Alarmz.Cams[ camIdx ]) then
-		PCMod.Alarmz.Cams[ camIdx ] = { salt = nil, hash = nil, ownerID = nil, links = {} }
+		PCMod.Alarmz.Cams[ camIdx ] = { salt = nil, hash = nil, ownerID = nil, links = {}, authed = {} }
 	end
 	return PCMod.Alarmz.Cams[ camIdx ]
 end
@@ -164,6 +164,15 @@ function PCMod.Alarmz.CheckPass( entry, pass )
 	return (PCMod.Alarmz.Hash( entry.salt, pass ) == entry.hash)
 end
 
+// A player may skip the password when the camera is open, when they are the
+// first-connector owner, or when they already passed "auth" for this camera
+// this session (so the later "connect" is not rejected with Wrong password).
+function PCMod.Alarmz.CanBypassPass( entry, ply )
+	if (!entry.hash) then return true end
+	if (entry.ownerID == ply:SteamID()) then return true end
+	return (entry.authed && entry.authed[ ply:SteamID() ] == true)
+end
+
 // "auth": password-only check (client asks before entering monitor-pick mode)
 function PCMod.Alarmz.Auth( ply, camIdx, pass )
 	local entry = PCMod.Alarmz.CamEntry( camIdx )
@@ -173,6 +182,7 @@ function PCMod.Alarmz.Auth( ply, camIdx, pass )
 		return
 	end
 	if (PCMod.Alarmz.CheckPass( entry, pass )) then
+		entry.authed[ ply:SteamID() ] = true
 		PCMod.Alarmz.SendResult( ply, true, "Password accepted", camIdx, false )
 	else
 		PCMod.Alarmz.SendResult( ply, false, "Wrong camera password", camIdx, false )
@@ -202,7 +212,7 @@ function PCMod.Alarmz.Connect( ply, camIdx, monIdx, pass )
 		return
 	end
 	local entry = PCMod.Alarmz.EnsureCam( camIdx )
-	if (!PCMod.Alarmz.CheckPass( entry, pass )) then
+	if ((!PCMod.Alarmz.CanBypassPass( entry, ply )) && (!PCMod.Alarmz.CheckPass( entry, pass ))) then
 		PCMod.Alarmz.SendResult( ply, false, "Wrong camera password", camIdx, false )
 		return
 	end
@@ -266,6 +276,7 @@ function PCMod.Alarmz.SetPass( ply, camIdx, pass )
 	end
 	entry.salt = PCMod.Alarmz.NewSalt()
 	entry.hash = PCMod.Alarmz.Hash( entry.salt, pass )
+	entry.authed = {} -- password changed: previous auths no longer apply
 	PCMod.Alarmz.PushCamState( camIdx )
 	PCMod.Alarmz.SendResult( ply, true, "Camera #" .. camIdx .. " password set", camIdx, false )
 end

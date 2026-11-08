@@ -168,6 +168,27 @@ assertEq( lastResult()[ 1 ], true, "correct password connects" )
 assertTrue( entry.links[ 32 ] == true, "link to PC 32 recorded" )
 assertEq( prog32.DeviceData.Cams[ 1 ], 11, "alarmz window of PC 32 got the camera" )
 
+-- 6b. a successful auth is remembered: the later connect with an empty pass
+-- must NOT fail with "Wrong password"
+PCMod.Alarmz.Auth( plyB, 11, "secret" )
+assertEq( lastResult()[ 1 ], true, "auth accepted" )
+local pc33, prog33 = MakePC( 33 )
+pc33._pos = V( 300, 0, 0 )
+local mon25 = MakeEnt( 25, "pcmod_monitor", { IsPCMod = true, IsScreen = true, pos = V( 300, 10, 0 ),
+	ports = { { Type = "vga", Connected = true, ConEnt = pc33, RemotePort = 1 } } } )
+Ents[ 25 ] = mon25
+PCMod.Alarmz.Connect( plyB, 11, 25, "" )
+assertEq( lastResult()[ 1 ], true, "connect after auth is not rejected" )
+assertTrue( entry.links[ 33 ] == true, "authed connect linked" )
+-- owner bypasses the password entirely
+local pc34, prog34 = MakePC( 34 )
+pc34._pos = V( 400, 0, 0 )
+local mon26 = MakeEnt( 26, "pcmod_monitor", { IsPCMod = true, IsScreen = true, pos = V( 400, 10, 0 ),
+	ports = { { Type = "vga", Connected = true, ConEnt = pc34, RemotePort = 1 } } } )
+Ents[ 26 ] = mon26
+PCMod.Alarmz.Connect( plyA, 11, 26, "" )
+assertEq( lastResult()[ 1 ], true, "owner connects with empty pass despite password" )
+
 -- 7. non-owner cannot change or remove the password
 PCMod.Alarmz.SetPass( plyB, 11, "hacked" )
 assertEq( lastResult()[ 1 ], false, "non-owner cannot set password" )
@@ -182,10 +203,14 @@ assertTrue( PCMod.Alarmz.CheckPass( entry, "secret" ) == true, "owner offline: c
 assertTrue( PCMod.Alarmz.CheckPass( entry, "wrong" ) == false, "owner offline: wrong pass still rejected" )
 plyA._valid = true
 
--- 9. owner changes the password; old one stops working, new one works
+-- 9. owner changes the password; old one stops working, new one works,
+--    and previous auths are invalidated
 PCMod.Alarmz.SetPass( plyA, 11, "newpass" )
 assertTrue( PCMod.Alarmz.CheckPass( entry, "secret" ) == false, "old password invalid after change" )
 assertTrue( PCMod.Alarmz.CheckPass( entry, "newpass" ) == true, "new password valid after change" )
+assertTrue( entry.authed[ "STEAM_B" ] == nil, "auth invalidated on password change" )
+PCMod.Alarmz.Connect( plyB, 11, 26, "" ) -- mon26->pc34 is linked to owner A now; use fresh pc? just check bypass fails
+assertEq( lastResult()[ 1 ], false, "stranger without pass rejected after change" )
 
 -- 10. owner removes the password -> camera open again
 PCMod.Alarmz.SetPass( plyA, 11, "" )
@@ -423,5 +448,16 @@ PCMod.Cfg = { AlarmzOverlayRange = 100 }
 assertEq( PCMod.AlarmzCL.OverlayRange(), 100, "cfg override respected" )
 PCMod.Cfg = { AlarmzOverlayRange = 512 }
 clTrace.Entity = nil
+
+-- draw-time range gate: even with Target set, nothing is drawn beyond the range
+PCMod.AlarmzCL.Target = 11
+clPly.GetShootPos = function() return V( 99999, 0, 0 ) end -- far away
+clLabels = {}
+clTrace.Entity = cam11
+clTrace.HitPos = { ToScreen = function() return { x = 100, y = 100 } end }
+hooks[ "HUDPaint:PCMod.AlarmzCL.Overlay" ]()
+assertEq( #clLabels, 0, "overlay not drawn beyond the range (draw-time gate)" )
+assertEq( PCMod.AlarmzCL.Target, 0, "target cleared at draw time when out of range" )
+clPly.GetShootPos = function() return V( 0, 0, 0 ) end
 
 print( "ALL ALARMZ LINK TESTS PASSED" )
