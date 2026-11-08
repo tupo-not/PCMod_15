@@ -14,8 +14,12 @@ TOOL.ConfigName		= ""
 
 if (CLIENT) then
 	language.Add( "tool.pc_camlink.name", "Camera Link" )
-	language.Add( "tool.pc_camlink.desc", "Connect Wiremod RT cameras to PCMod screens (shows in Alarmz)" )
-	language.Add( "tool.pc_camlink.0", "Hold the tool to see the camera overlay. LMB/E on a camera: connect. LMB on a screen while picking: confirm. RMB on a linked camera: disconnect." )
+	language.Add( "tool.pc_camlink.desc", "Connect Wiremod RT cameras to PCMod screens so they show up in the Alarmz program. Hold the tool to see the camera overlay." )
+	language.Add( "tool.pc_camlink.0", "1) Hold this tool and look at a Wiremod RT camera - an overlay shows its ID and status." )
+	language.Add( "tool.pc_camlink.1", "2) LMB or E on the camera - start connecting (a locked camera asks for its password first)." )
+	language.Add( "tool.pc_camlink.2", "3) Aim at a PCMod screen and press LMB or E - the camera is linked and appears in Alarmz on that PC. One camera can be linked to several PCs." )
+	language.Add( "tool.pc_camlink.3", "4) RMB on a linked camera (overlay) - disconnect it." )
+	language.Add( "tool.pc_camlink.4", "The first player to connect a camera may set a password for it; only that player can change or remove it." )
 end
 
 function TOOL:LeftClick( trace )
