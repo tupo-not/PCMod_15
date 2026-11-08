@@ -77,6 +77,7 @@ PCMod.Msg( "Loading PCMod Core..." )
 // ---------------------------------------------------------------------------------------------------------
 
 include( "pcmod/sv_wiring.lua" ) -- Wiring control
+include( "pcmod/sv_alarmz.lua" ) -- Alarmz camera<->PC links and camera passwords
 include( "pcmod/sv_network.lua" ) -- Networking
 include( "pcmod/sv_drivers.lua" ) -- Drivers
 include( "pcmod/sv_rp.lua" ) -- RP control
