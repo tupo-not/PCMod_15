@@ -453,6 +453,16 @@ function DEV:Tick()
 	self.LastTick = CurTime()
 	self.LastFrame = PCMod.SDraw.CFrame
 	if ((CurTime() - (self.LastScan or 0)) >= SCAN_INTERVAL) then self:ScanCameras() end
+	// A camera that is no longer linked to this PC stops being watched at once
+	// (checked every frame, not only on scan) - otherwise the video would keep
+	// playing after a disconnect until something else was selected.
+	if ((self.SelEnt != 0) && istable( self.Cams ) && (!table.HasValue( self.Cams, self.SelEnt ))) then
+		local old = self:GetCam( self.SelEnt )
+		if (old && old.SetIsObserved && old.IsObserved) then old:SetIsObserved( false ) end
+		self.SelEnt = 0
+		self.SelEntValid = false
+		self:RunProgCommand( "alarmz", "selectcam", 0 )
+	end
 	// Keep the selected camera observed: Wiremod itself drops the observation
 	// when a camera is switched off, so re-assert it here (SetIsObserved is
 	// idempotent and only creates the RT while it is not observed yet).

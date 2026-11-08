@@ -449,6 +449,15 @@ Now = 117
 dev:ScanCameras()
 assertEq( #dev.Listboxes.lstCams.Order, 3, "re-linking restores the rows" )
 
+-- unlinking the currently watched camera stops its video immediately
+assertEq( dev.SelEnt, 12, "cam 12 is being watched" )
+dev.Cams = { 11, 13 }
+Now = 118
+dev:Tick()
+assertTrue( cam12.IsObserved == false, "unlinked camera is unobserved at once" )
+assertEq( dev.SelEnt, 0, "selection cleared on unlink" )
+dev.Cams = { 11, 12, 13 }
+
 -- Selecting a camera that does not exist client-side: alert, no selection.
 dev:SelectCam( 99 )
 assertEq( dev.SelEnt, 0, "invalid camera not selected" )
