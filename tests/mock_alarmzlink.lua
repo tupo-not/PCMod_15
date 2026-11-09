@@ -501,7 +501,11 @@ clTrace.Entity = nil
 -- dot notation; a colon definition got CPanel=nil -> Lua error on tool select)
 CLIENT = true
 TOOL = {}
-language = { Add = function() end }
+local langStore = {}
+language = {
+	Add = function( k, v ) langStore[ string.lower( k ) ] = v end,
+	GetPhrase = function( k ) return langStore[ string.lower( k ) ] or "" end,
+}
 game = { SinglePlayer = function() return true end }
 function IsFirstTimePredicted() return true end
 dofile( "pc_camlink.lua" )
@@ -510,10 +514,10 @@ assertEq( TOOL.Tab, "PCmod", "tool tab" )
 local cpCalls = {}
 local cpMock = { AddControl = function( self, kind, opts ) table.insert( cpCalls, { kind = kind, opts = opts } ) end }
 TOOL.BuildCPanel( cpMock ) -- dot call, exactly how the spawnmenu does it
-assertEq( cpCalls[ 1 ].kind, "Header", "cpanel header first" )
-assertTrue( string.find( cpCalls[ 1 ].opts.Description, "pc_camlink_desc", 1, true ) != nil, "header shows the description" )
-local helpCount = 0
-for _, c in ipairs( cpCalls ) do if (c.kind == "Help") then helpCount = helpCount + 1 end end
-assertEq( helpCount, 5, "five usage-step help lines in the cpanel" )
+assertEq( #cpCalls, 1, "single Header control (no 'Help' control - it does not exist in this build)" )
+assertEq( cpCalls[ 1 ].kind, "Header", "cpanel header" )
+assertTrue( string.find( cpCalls[ 1 ].opts.Description, "Alarmz", 1, true ) != nil, "header description present" )
+assertTrue( string.find( cpCalls[ 1 ].opts.Description, "password", 1, true ) != nil, "usage steps incl. password note in description" )
+assertTrue( string.find( cpCalls[ 1 ].opts.Description, "1)", 1, true ) != nil and string.find( cpCalls[ 1 ].opts.Description, "4)", 1, true ) != nil, "all steps 1-4 in description" )
 
 print( "ALL ALARMZ LINK TESTS PASSED" )

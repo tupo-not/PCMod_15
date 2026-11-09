@@ -23,13 +23,16 @@ if (CLIENT) then
 
 	// BuildCPanel must use DOT notation (not TOOL:BuildCPanel) - the spawnmenu
 	// calls it with dot notation, so a colon definition would get CPanel=nil.
+	// Note: the "Help" vgui control does not exist in this GMod build, so all
+	// text goes into the Header's multi-line Description (like other PCMod tools).
 	function TOOL.BuildCPanel( CPanel )
-		CPanel:AddControl( "Header", { Text = "#Tool_pc_camlink_name", Description = "#Tool_pc_camlink_desc" } )
-		CPanel:AddControl( "Help", { Text = "#tool.pc_camlink.0" } )
-		CPanel:AddControl( "Help", { Text = "#tool.pc_camlink.1" } )
-		CPanel:AddControl( "Help", { Text = "#tool.pc_camlink.2" } )
-		CPanel:AddControl( "Help", { Text = "#tool.pc_camlink.3" } )
-		CPanel:AddControl( "Help", { Text = "#tool.pc_camlink.4" } )
+		local desc = language.GetPhrase( "tool.pc_camlink.desc" ) or ""
+		local steps = {}
+		for i = 0, 4 do
+			local p = language.GetPhrase( "tool.pc_camlink." .. i )
+			if (p && p != "") then table.insert( steps, p ) end
+		end
+		CPanel:AddControl( "Header", { Text = "#Tool_pc_camlink_name", Description = desc .. "\n\n" .. table.concat( steps, "\n" ) } )
 	end
 end
 
