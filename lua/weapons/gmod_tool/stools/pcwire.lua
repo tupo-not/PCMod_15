@@ -131,9 +131,15 @@ if (CLIENT) then
 	TOOL.AimedEnt = nil
 	TOOL.Previewing = false
 
-	// Human-readable name for a port type.
-	local function PortName( typ )
-		if (!typ) then return "?" end
+	// Human-readable name for a port (or a raw type string). Custom port names
+	// such as the backbone's "MGMNT" take precedence over the type label.
+	local function PortName( port )
+		if (!port) then return "?" end
+		if (type( port ) == "table") then
+			if (port.Name && (port.Name != "")) then return port.Name end
+			return PortName( port.Type )
+		end
+		local typ = port
 		for _, wt in ipairs( PCMod.Cfg.WireTypes or {} ) do
 			if (wt.Name == typ) then return wt.ExtName or wt.Name end
 		end
@@ -238,7 +244,7 @@ if (CLIENT) then
 		local p1 = (self.Ent1 && self:GetPorts( self.Ent1 )) and self:GetPorts( self.Ent1 )[ self.Port1 ]
 		if (!p1) then self:Reset() return false end
 		if (p1.Type != prt.Type) then
-			PCMod.Notice( "Cannot wire: " .. tostring( PortName( p1.Type ) ) .. " and " .. tostring( PortName( prt.Type ) ) .. " don't match" )
+			PCMod.Notice( "Cannot wire: " .. tostring( PortName( p1 ) ) .. " and " .. tostring( PortName( prt ) ) .. " don't match" )
 			return true
 		end
 		// Network ports are pure L2 and may link to their own kind: a direct
@@ -246,7 +252,7 @@ if (CLIENT) then
 		local sameKind = (ent:GetClass() == self.Ent1:GetClass())
 		local netLink = (p1.Type == "network")
 		if (sameKind && (!CanSameType( p1.Type )) && (!netLink)) then
-			PCMod.Notice( "Cannot wire: " .. tostring( PortName( p1.Type ) ) .. " ports can't link to their own kind" )
+			PCMod.Notice( "Cannot wire: " .. tostring( PortName( p1 ) ) .. " ports can't link to their own kind" )
 			return true
 		end
 
@@ -354,7 +360,7 @@ if (CLIENT) then
 
 		for i, p in ipairs( ports ) do
 			local yy = y + 24 + ((i - 1) * th)
-			local typeName = PortName( p.Type )
+			local typeName = PortName( p )
 			local txt = tostring( i ) .. ": " .. typeName
 			local col = Color( 255, 255, 255 )
 			if (p.Connected) then

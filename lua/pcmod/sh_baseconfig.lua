@@ -77,10 +77,23 @@ cfg.WirelessRange = 2048 -- How far away can a wireless router reach? (0 = Unlim
 cfg.WirelessInfo = true -- Should we draw wireless links when looking at a wireless router?
 cfg.WirelessInfoDrawCol = Color( 255, 0, 0, 255 )
 
-// LAN DHCP. Every router owns a private, isolated LAN inside 192.168.0.0/16,
-// overlapping with every other router (a LAN knows nothing about upstream).
-// These are the DEFAULTS for new routers; each router can change its netmask
-// (16-32) and network/host pool from its web page.
+// LAN DHCP. Every router owns a private, isolated LAN, overlapping with every
+// other router (a LAN knows nothing about upstream). These are the DEFAULTS
+// for new routers; each router can change its netmask (16-32), network and
+// host pool from its web page.
+//
+// Address plan (server-configurable):
+//   BackboneFirstOctet - first octet of backbone/WAN addresses. The backbone
+//                        uses <octet>.<hi>.<lo>.<host>/24.
+//   LanBlocks          - prefixes a LAN may be placed in. Each entry is either
+//                        "10.0.0.0/8" or { "10.0.0.0", 8 }.
+// Keep the backbone octet outside the LAN blocks (the defaults do: 100.x).
+cfg.BackboneFirstOctet = 100
+cfg.LanBlocks = {
+	"10.0.0.0/8",
+	"172.16.0.0/12",
+	"192.168.0.0/16",
+}
 cfg.LanNetmask = 24
 cfg.DHCPStart = 2   -- first host id in the pool (id 1 is the gateway)
 cfg.DHCPEnd = 254   -- last host id (up to 2^(32-mask)-2 when the mask is shorter)

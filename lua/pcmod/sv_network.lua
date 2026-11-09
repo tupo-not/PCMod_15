@@ -155,7 +155,6 @@ function PCMod.Network.RegisterRouter( ent )
 	local back = ""
 	local rtr = {}
 	local id
-	rtr.LAN = {}
 	rtr.Ent = ent
 	rtr.EntID = ent:EntIndex()
 	rtr.IsBackbone = false
@@ -177,10 +176,10 @@ function PCMod.Network.RegisterRouter( ent )
 		rtr.Ent:SetBSubnet( id )
 		rtr.Ent:SetBIP( 0 )
 	else
-		// A LAN router owns a private, isolated LAN inside 192.168.0.0/16. It
-		// does not consume a globally-unique subnet: every router's LAN can
-		// overlap with every other router's, and the LAN knows nothing about
-		// the wider network.
+		// A LAN router owns a private, isolated LAN inside RFC1918. It does not
+		// consume a globally-unique subnet: every router's LAN can overlap with
+		// every other router's, and the LAN knows nothing about the wider
+		// network.
 		rtr.Ent:SetSubnet( 0 )
 		rtr.Ent:SetIP( 1 )
 	end
@@ -197,11 +196,6 @@ function PCMod.Network.UnRegisterRouter( ent )
 	local res = PCMod.Network.FindSubByEnt( ent )
 	if (!res) then return end
 
-	for i = 1, 10 do
-		if (PCMod.Network.Backbones[ res ].LAN[ i ]) then
-			PCMod.Network.UnRegisterPC( PCMod.Network.Backbones[ res ].LAN[ i ].Ent, res, true )
-		end
-	end
 	PCMod.Network.Backbones[ res ] = nil
 	PCMod.Network.Availible.Back[ res ] = true
 
@@ -235,51 +229,6 @@ function PCMod.Network.FindSubByEnt( ent )
 		if (PCMod.Network.Backbones[ i ] && PCMod.Network.Backbones[ i ].EntID == EntID) then return i end
 	end
 	return false
-end
-
-// ---------------------------------------------------------------------------------------------------------
-// RegisterPC - Registers a LAN router onto a backbone (assigns its 10.x WAN
-// /32 NAT address). LAN PCs get their private lease from the router instead.
-// ---------------------------------------------------------------------------------------------------------
-function PCMod.Network.RegisterPC( ent, subnet )
-	local pc = {}
-	pc.Ent = ent
-	pc.EntID = ent:EntIndex()
-	local tmp = PCMod.Network.Backbones[ subnet ]
-	if (!tmp) then return "invalid" end
-	for _, v in pairs( tmp.LAN ) do
-		if (v.EntID == pc.EntID) then
-			PCMod.Msg( "Router "..ent:EntIndex().." is already registered to backbone", true )
-			return "exists"
-		end
-	end
-	for i = 1, 10 do
-		if (!tmp.LAN[ i ]) then
-			tmp.LAN[ i ] = pc
-			pc.Ent:SetBSubnet( subnet )
-			pc.Ent:SetBIP( i )
-			PCMod.Msg( "Registered router "..ent:EntIndex().." to backbone and aquired ip "..PCMod.IPv4.BackboneAddress( subnet, i + 1 ), true )
-			return "assigned"
-		end
-	end
-	return "full"
-end
-
-// ---------------------------------------------------------------------------------------------------------
-// UnRegisterPC - Removes a LAN router from a backbone
-// ---------------------------------------------------------------------------------------------------------
-function PCMod.Network.UnRegisterPC( ent, subnet )
-	local tmp = PCMod.Network.Backbones[ subnet ]
-	if (!tmp) then return end
-	for i = 1, 10 do
-		if (tmp.LAN[ i ] && tmp.LAN[ i ].EntID == ent:EntIndex()) then
-			tmp.LAN[ i ] = nil
-			ent:SetBSubnet( false )
-			ent:SetBIP( false )
-			PCMod.Msg( "Unregistered router "..ent:EntIndex().." from backbone and released ip "..PCMod.IPv4.BackboneAddress( subnet, i + 1 ), true )
-			return
-		end
-	end
 end
 
 // ---------------------------------------------------------------------------------------------------------

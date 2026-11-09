@@ -17,6 +17,7 @@ function PCMod.DHCPServer.Cfg( router )
 	local c = router:GetCfg()
 	if (!istable( c.Leases )) then c.Leases = {} end
 	if (!istable( c.LanStaticLeases )) then c.LanStaticLeases = {} end
+	if (!istable( c.MgmtStaticLeases )) then c.MgmtStaticLeases = {} end
 	if (!istable( c.StaticLeases )) then c.StaticLeases = {} end
 	return c
 end
@@ -26,6 +27,9 @@ function PCMod.DHCPServer.ScopeForSide( router, side )
 		if (router:IsBackbone()) then return "wan" end
 		return nil
 	end
+	// A LAN router serves its private LAN; a backbone's LAN-side port is its
+	// MGMNT port, which serves .2-.11 of the backbone's own /24.
+	if (router:IsBackbone()) then return "mgmt" end
 	if (PCMod.IsLanRouterClass && PCMod.IsLanRouterClass( router.Entity:GetClass() )) then return "lan" end
 	return nil
 end
@@ -33,6 +37,7 @@ end
 function PCMod.DHCPServer.StaticList( router, scope )
 	local c = PCMod.DHCPServer.Cfg( router )
 	if (scope == "wan") then return c.StaticLeases end
+	if (scope == "mgmt") then return c.MgmtStaticLeases end
 	return c.LanStaticLeases
 end
 
@@ -54,29 +59,32 @@ function PCMod.DHCPServer.StaticForMAC( router, scope, mac )
 	return nil
 end
 
-// Address for a host id in this scope.
+// Address for a host id in this scope. "wan" and "mgmt" both live in the
+// backbone's own /24; "lan" is the router's private RFC1918 subnet.
 function PCMod.DHCPServer.Address( router, scope, host )
-	if (scope == "wan") then
+	if ((scope == "wan") || (scope == "mgmt")) then
 		local bb = router.Entity:GetBSubnet()
 		if (!bb) then return nil end
 		return PCMod.IPv4.BackboneAddress( bb, host )
 	end
-	local addr = router:GetLanBase() + host
-	return "192.168." .. tostring( math.floor( addr / 256 ) ) .. "." .. tostring( addr % 256 )
+	return PCMod.IPv4.FromInt( router:GetLanBase() + host )
 end
 
 // Host id -> dotted address for a lease record.
 function PCMod.DHCPServer.HostForIP( router, scope, ip )
-	if (scope == "wan") then
+	if ((scope == "wan") || (scope == "mgmt")) then
 		local p = PCMod.IPv4.Parse( ip )
 		if ((!p) || (p.bb != router.Entity:GetBSubnet())) then return nil end
+		if ((scope == "mgmt") && ((p.host < 2) || (p.host > 11))) then return nil end
 		return p.host
 	end
-	local p = PCMod.IPv4.ParseLan( ip )
-	if (!p) then return nil end
+	local value = PCMod.IPv4.ToInt( ip )
+	if ((!value) || (!PCMod.IPv4.IsPrivate( value ))) then return nil end
 	local base = router:GetLanBase()
-	if (p.sub != math.floor( base / 256 )) then return nil end
-	return (p.sub * 256 + p.add) - base
+	local host = value - base
+	local size = (router.LanBlockSize && router:LanBlockSize()) or 65536
+	if ((host < 0) || (host >= size)) then return nil end
+	return host
 end
 
 // First/last host + a blocking set of statically reserved host ids.
@@ -86,13 +94,16 @@ function PCMod.DHCPServer.Pool( router, scope )
 	if (scope == "wan") then
 		start = math.Clamp( math.floor( tonumber( c.WanDHCPStart ) or 12 ), 12, 254 )
 		finish = math.Clamp( math.floor( tonumber( c.WanDHCPEnd ) or 254 ), start, 254 )
+	elseif (scope == "mgmt") then
+		// The MGMNT port always serves .2-.11 of the backbone /24.
+		start = math.Clamp( math.floor( tonumber( c.MgmtDHCPStart ) or 2 ), 2, 11 )
+		finish = math.Clamp( math.floor( tonumber( c.MgmtDHCPEnd ) or 11 ), start, 11 )
 	else
-		start = math.Clamp( math.floor( tonumber( c.DHCPStart ) or 2 ), 2, 254 )
-		finish = math.Clamp( math.floor( tonumber( c.DHCPEnd ) or 254 ), start, 254 )
-		if (router.GetLanBase && router.PoolMax) then
-			local max = router:PoolMax()
-			if (max) then finish = math.min( finish, max ) end
-		end
+		start = math.floor( tonumber( c.DHCPStart ) or 2 )
+		finish = math.floor( tonumber( c.DHCPEnd ) or 254 )
+		local max = (router.PoolMax && router:PoolMax()) or 254
+		start = math.Clamp( start, 2, max )
+		finish = math.Clamp( finish, start, max )
 	end
 	return start, finish, PCMod.DHCPServer.StaticHosts( router, scope )
 end
@@ -160,24 +171,17 @@ function PCMod.DHCPServer.Ensure( router )
 	end
 end
 
-// Handle a discover: reserve an offer and return its record. `port` is the
-// ingress port (0 = Wi-Fi), recorded so lease handling can tell a wired link
-// from an association without scanning the topology.
-function PCMod.DHCPServer.Offer( router, side, mac, xid, port )
-	mac = PCMod.Net.MACKey( mac )
-	if ((!mac) || (!xid)) then return nil end
-	local scope = PCMod.DHCPServer.ScopeForSide( router, side )
-	if (!scope) then return nil end
+// Acquire the record for a MAC: reuse the live one, honour a static
+// reservation, or allocate the next free host. Shared by the DORA offer and
+// the internal synchronous lease.
+function PCMod.DHCPServer.Acquire( router, scope, mac, port )
 	PCMod.DHCPServer.Ensure( router )
 	local c = PCMod.DHCPServer.Cfg( router )
 	local rec = c.Leases[ mac ]
 	if ((rec) && (rec.scope == scope)) then
-		rec.xid = xid
-		rec.offered = true
-		rec.expires = PCMod.Net.Now() + OfferTime()
-		if (port) then
+		if (port ~= nil) then
 			rec.port = port
-			if ((port != 0) && (scope == "lan")) then rec.wired = true end
+			if ((port != 0) && (scope ~= "wan")) then rec.wired = true end
 		end
 		return rec
 	end
@@ -194,12 +198,41 @@ function PCMod.DHCPServer.Offer( router, side, mac, xid, port )
 		bb = router.Entity:GetBSubnet(),
 		upbb = (ipd.UpBB or 0),
 		lanid = (ipd.LanID or 0),
-		expires = PCMod.Net.Now() + OfferTime(),
-		offered = true, xid = xid, static = (static != nil),
+		expires = 0,
+		offered = false, static = (static != nil),
 		port = port,
-		wired = ((scope == "lan") && port && (port != 0)) or false,
+		wired = ((scope ~= "wan") && port && (port != 0)) or false,
 	}
 	c.Leases[ mac ] = rec
+	return rec
+end
+
+// Handle a discover: reserve an offer and return its record. `port` is the
+// ingress port (0 = Wi-Fi), recorded so lease handling can tell a wired link
+// from an association without scanning the topology.
+function PCMod.DHCPServer.Offer( router, side, mac, xid, port )
+	mac = PCMod.Net.MACKey( mac )
+	if ((!mac) || (!xid)) then return nil end
+	local scope = PCMod.DHCPServer.ScopeForSide( router, side )
+	if (!scope) then return nil end
+	local rec = PCMod.DHCPServer.Acquire( router, scope, mac, port )
+	if (!rec) then return nil end
+	rec.xid = xid
+	rec.offered = true
+	rec.expires = PCMod.Net.Now() + OfferTime()
+	return rec
+end
+
+// Synchronous lease for internal callers (renumbering, control panel): no
+// DORA round trip, but the same allocator, reservations and expiry.
+function PCMod.DHCPServer.Lease( router, scope, mac, port )
+	mac = PCMod.Net.MACKey( mac )
+	if (!mac) then return nil end
+	if (((scope == "wan") || (scope == "mgmt")) && (!router:IsBackbone())) then return nil end
+	local rec = PCMod.DHCPServer.Acquire( router, scope, mac, port )
+	if (!rec) then return nil end
+	rec.offered = false
+	rec.expires = PCMod.Net.Now() + LeaseTime()
 	return rec
 end
 
@@ -224,6 +257,65 @@ function PCMod.DHCPServer.Release( router, mac )
 	return true
 end
 
+// Recompute every record's address after the LAN network moved. Addresses are
+// derived from the host id, so only the cached ip needs to change.
+function PCMod.DHCPServer.Readdress( router, scope )
+	local c = PCMod.DHCPServer.Cfg( router )
+	for _, rec in pairs( c.Leases ) do
+		if (rec.scope == scope) then
+			local ip = PCMod.DHCPServer.Address( router, scope, rec.host )
+			if (ip) then rec.ip = ip end
+			if (scope == "wan") then rec.bb = router.Entity:GetBSubnet() end
+		end
+	end
+end
+
+// Drop or move leases that no longer fit the pool after it shrank. Returns the
+// records that had to be dropped so the caller can clear their devices.
+function PCMod.DHCPServer.Reflow( router, scope )
+	local c = PCMod.DHCPServer.Cfg( router )
+	local start, finish, blocked = PCMod.DHCPServer.Pool( router, scope )
+	if (!start) then return {} end
+	local move = {}
+	for mac, rec in pairs( c.Leases ) do
+		if ((rec.scope == scope) && (!rec.static) && ((rec.host < start) || (rec.host > finish))) then
+			move[ #move + 1 ] = mac
+		end
+	end
+	table.sort( move )
+	local dropped = {}
+	for _, mac in ipairs( move ) do
+		local rec = c.Leases[ mac ]
+		c.Leases[ mac ] = nil
+		local host
+		for h = start, finish do
+			if ((!blocked[ h ]) && (!PCMod.DHCPServer.FindHost( router, scope, h ))) then
+				host = h
+				break
+			end
+		end
+		if (host) then
+			rec.host = host
+			rec.ip = PCMod.DHCPServer.Address( router, scope, host )
+			c.Leases[ mac ] = rec
+		else
+			dropped[ #dropped + 1 ] = { mac = mac, rec = rec }
+		end
+	end
+	return dropped
+end
+
+// Drop every lease that arrived on a port (its modem/switch was unplugged).
+function PCMod.DHCPServer.ReleasePort( router, scope, port )
+	if (!port) then return end
+	local c = PCMod.DHCPServer.Cfg( router )
+	local gone = {}
+	for mac, rec in pairs( c.Leases ) do
+		if ((rec.scope == scope) && (rec.port == port)) then gone[ #gone + 1 ] = mac end
+	end
+	for _, mac in ipairs( gone ) do c.Leases[ mac ] = nil end
+end
+
 // The configuration table carried in offer/ack. Every client receives the
 // whole context; hosts use the address, routers additionally use upbb/lanid
 // for their LAN /64. DHCP never asks what kind of device it is.
@@ -238,7 +330,7 @@ function PCMod.DHCPServer.Config( router, rec )
 		// station can never be applied to the wrong machine.
 		mac = rec.mac,
 	}
-	if (rec.scope == "wan") then
+	if ((rec.scope == "wan") || (rec.scope == "mgmt")) then
 		cfg.bb = rec.bb or router.Entity:GetBSubnet()
 		cfg.host = rec.host
 		cfg.upbb = cfg.bb
@@ -272,21 +364,24 @@ function PCMod.DHCPServer.AddStatic( router, scope, ip, mac )
 	if (!mac) then return false, "Invalid MAC address" end
 	ip = string.Trim( tostring( ip or "" ) )
 	local host, full
-	if (scope == "wan") then
+	if ((scope == "wan") || (scope == "mgmt")) then
 		if (!router:IsBackbone()) then return false, "Only a backbone router can reserve backbone leases" end
 		local p = PCMod.IPv4.Parse( ip )
 		if ((!p) || (p.bb != router.Entity:GetBSubnet())) then return false, "IP must be inside this backbone's /24" end
-		if ((p.host < 12) || (p.host > 254)) then return false, "Reserved host range is 12-254" end
+		local lo, hi = 12, 254
+		if (scope == "mgmt") then lo, hi = 2, 11 end
+		if ((p.host < lo) || (p.host > hi)) then return false, "Reserved host range is " .. tostring( lo ) .. "-" .. tostring( hi ) end
 		host = p.host
 		full = PCMod.IPv4.BackboneAddress( p.bb, p.host )
 	else
 		local p = PCMod.IPv4.ParseLan( ip )
-		if (!p) then return false, "IP must be a private 192.168.x.y address" end
+		if (!p) then return false, "IP must be an RFC1918 LAN address" end
 		local base = router:GetLanBase()
-		if (p.sub != math.floor( base / 256 )) then return false, "IP must be inside this router's LAN" end
-		host = (p.sub * 256 + p.add) - base
+		host = p.value - base
+		local size = (router.LanBlockSize && router:LanBlockSize()) or 65536
+		if ((host < 0) || (host >= size)) then return false, "IP must be inside this router's LAN" end
 		if ((host < 2) || (host > router:PoolMax())) then return false, "Reserved host range is 2..pool end" end
-		full = "192.168." .. tostring( p.sub ) .. "." .. tostring( p.add )
+		full = p.full
 	end
 	local list = PCMod.DHCPServer.StaticList( router, scope )
 	for i = #list, 1, -1 do

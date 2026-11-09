@@ -79,6 +79,16 @@ cfg.WirelessInfoDrawCol = Color( 255, 0, 0, 255 )
 // LAN DHCP: private, isolated address pool handed out by routers. These are
 // the defaults for new routers; each router's web page can override its
 // netmask (16-32) and network/host pool. See sh_baseconfig.lua.
+//
+// Address plan (server-configurable in sh_baseconfig / this file):
+//   BackboneFirstOctet - first octet of backbone addresses (default 100).
+//   LanBlocks          - RFC1918 prefixes a LAN may use.
+cfg.BackboneFirstOctet = 100
+cfg.LanBlocks = {
+	"10.0.0.0/8",
+	"172.16.0.0/12",
+	"192.168.0.0/16",
+}
 cfg.LanNetmask = 24
 cfg.DHCPStart = 2
 cfg.DHCPEnd = 254

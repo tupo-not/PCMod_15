@@ -404,7 +404,7 @@ function PCMod.IPv6.Hierarchy( addr )
 end
 
 // Build the emulated IPv6 address for an IPv4 address string. Only the backbone
-// (10.<hi>.<lo>.<host>) and loopback have a stateless mapping; a LAN's /64
+// (100.<hi>.<lo>.<host>) and loopback have a stateless mapping; a LAN's /64
 // depends on its upstream backbone, so LAN addresses are stored rather than
 // derived here.
 function PCMod.IPv6.FromIPv4( ip )
@@ -415,9 +415,9 @@ function PCMod.IPv6.FromIPv4( ip )
 	if ((!a) || (!b) || (!c) || (!d)) then return nil end
 	if ((a > 255) || (b > 255) || (c > 255) || (d > 255)) then return nil end
 	if ((a == 127) && (b == 0) && (c == 0) && (d == 1)) then return "::1" end
-	if (a == 10) then
-		// 10.<hi>.<lo>.<host> is a /32 within the 16-bit backbone <bb> (hi*256+lo),
-		// mirroring the backbone host fd00:<bb>::<host>.
+	if (a == PCMod.IPv4.BackboneOctet()) then
+		// <octet>.<hi>.<lo>.<host> is a /32 within the 16-bit backbone <bb>
+		// (hi*256+lo), mirroring the backbone host fd00:<bb>::<host>.
 		return PCMod.IPv6.Format( { 0xfd00, (b * 256) + c, 0, 0, 0, 0, 0, d } )
 	end
 	// Any other IPv4 address is represented in the standard mapped form.
@@ -447,12 +447,13 @@ function PCMod.IPv6.ToIPv4( addr )
 		local subnet = g[4]
 		if ((g[5] == 0) && (g[6] == 0) && (g[7] == 0)) then
 			if ((g[3] == 0) && (subnet == 0)) then
-				// Backbone host fd00:<bb>::<iid> -> 10.<hi>.<lo>.<iid>
+				// Backbone host fd00:<bb>::<iid> -> <octet>.<hi>.<lo>.<iid>
 				if ((g[8] >= 1) && (g[8] <= 255)) then
-					return string.format( "10.%d.%d.%d", math.floor( bb / 256 ), bb % 256, g[8] )
+					return string.format( "%d.%d.%d.%d", PCMod.IPv4.BackboneOctet(), math.floor( bb / 256 ), bb % 256, g[8] )
 				end
 			elseif ((g[3] == 0) && (subnet >= 1) && (subnet <= 255) && (g[8] <= 255)) then
-				// LAN host fd00:<bb>:0:<subnet>::<iid> -> 192.168.<subnet>.<iid>
+				// Placeholder LAN identity: the real RFC1918 base is only known
+				// by the router that owns the LAN (which resolves it by prefix).
 				return string.format( "192.168.%d.%d", subnet, g[8] )
 			end
 		end
@@ -646,17 +647,126 @@ end
 
 // ---------------------------------------------------------------------------------------------------------
 // IPv4 hierarchical addressing (mirrors PCMod.IPv6):
-//   * the whole internet is one private /8:       10.0.0.0/8
-//   * each backbone router owns one /16 block:     10.<hi>.<lo>.0/24
-//     (8 global bits + 16 backbone-id bits; hi and lo are the two octets of the
-//     16-bit backbone id seen in fd00:<bb>::/32)
-//   * each LAN router owns one /32 of that block: 10.<hi>.<lo>.<host>/32
-// The /32 is the router's public NAT address: its private LAN (192.168.x.x) is
-// hidden behind it, and 10.x traffic routes across the backbones so one router
-// can reach another router's /32 (source and/or destination NAT'ed at the edge).
-// The 192.168 address space stays LAN-local and overlapping; only 10.x routes.
+//   * the backbone lives in a configurable /8:    <BackboneFirstOctet>.0.0.0/8
+//   * each backbone router owns one /24:          <octet>.<hi>.<lo>.0/24
+//     (hi and lo are the two octets of the 16-bit backbone id seen in
+//     fd00:<bb>::/32)
+//   * each LAN router owns one /32 of that block: <octet>.<hi>.<lo>.<host>/32
+// The /32 is the router's public NAT address; its private LAN (any prefix inside
+// cfg.LanBlocks, RFC1918 by default) is hidden behind it. Only backbone traffic
+// routes across routers; LAN space stays local and overlapping.
 // ---------------------------------------------------------------------------------------------------------
 PCMod.IPv4 = PCMod.IPv4 or {}
+
+// Local clamp so this file stays loadable before GMod's math.Clamp exists
+// (the unit tests load sh_common very early).
+local function clamp( value, lo, hi )
+	value = tonumber( value ) or lo
+	if (value < lo) then return lo end
+	if (value > hi) then return hi end
+	return value
+end
+
+// --- 32-bit integer form -----------------------------------------------------
+function PCMod.IPv4.ToInt( addr )
+	if (type( addr ) != "string") then return nil end
+	local a, b, c, d = string.match( addr, "^(%d+)%.(%d+)%.(%d+)%.(%d+)$" )
+	if (!a) then return nil end
+	a, b, c, d = tonumber( a ), tonumber( b ), tonumber( c ), tonumber( d )
+	if ((!a) || (!b) || (!c) || (!d)) then return nil end
+	if ((a > 255) || (b > 255) || (c > 255) || (d > 255)) then return nil end
+	return (a * 16777216) + (b * 65536) + (c * 256) + d
+end
+
+function PCMod.IPv4.FromInt( n )
+	n = math.floor( tonumber( n ) or 0 )
+	n = ((n % 4294967296) + 4294967296) % 4294967296
+	local a = math.floor( n / 16777216 )
+	local b = math.floor( n / 65536 ) % 256
+	local c = math.floor( n / 256 ) % 256
+	local d = n % 256
+	return tostring( a ) .. "." .. tostring( b ) .. "." .. tostring( c ) .. "." .. tostring( d )
+end
+
+// Default RFC1918 space; the server can override it with cfg.LanBlocks.
+local DEFAULT_LAN_BLOCKS = {
+	{ "10.0.0.0", 8 },
+	{ "172.16.0.0", 12 },
+	{ "192.168.0.0", 16 },
+}
+
+// Parse one configured block: "10.0.0.0/8" or { "10.0.0.0", 8 }.
+local function ParseLanBlock( entry )
+	local addr, bits = entry, nil
+	if (type( entry ) == "table") then
+		addr, bits = entry[ 1 ], entry[ 2 ]
+	elseif (type( entry ) == "string") then
+		addr, bits = string.match( entry, "^%s*([^/]+)/?%s*(%d*)%s*$" )
+		bits = tonumber( bits )
+	end
+	local value = PCMod.IPv4.ToInt( addr )
+	if (!value) then return nil end
+	bits = clamp( math.floor( tonumber( bits ) or 0 ), 8, 32 )
+	return { base = value, bits = bits, name = PCMod.IPv4.FromInt( value ) .. "/" .. tostring( bits ) }
+end
+
+// Rebuild the LAN block table from cfg.LanBlocks. Called once at load; the
+// defaults are restored when the config is absent or empty.
+function PCMod.IPv4.RebuildPrivateBlocks()
+	local src = (PCMod.Cfg && PCMod.Cfg.LanBlocks) or DEFAULT_LAN_BLOCKS
+	local out = {}
+	for _, entry in ipairs( src ) do
+		local blk = ParseLanBlock( entry )
+		if (blk) then out[ #out + 1 ] = blk end
+	end
+	if (#out == 0) then
+		for _, entry in ipairs( DEFAULT_LAN_BLOCKS ) do
+			local blk = ParseLanBlock( entry )
+			if (blk) then out[ #out + 1 ] = blk end
+		end
+	end
+	PCMod.IPv4.PrivateBlocks = out
+	return out
+end
+
+PCMod.IPv4.PrivateBlocks = {}
+PCMod.IPv4.RebuildPrivateBlocks()
+
+// First octet of backbone/WAN addresses. Configurable so a server can move the
+// backbone out of the way of a LAN block it wants to use.
+function PCMod.IPv4.BackboneOctet()
+	return clamp( math.floor( tonumber( PCMod.Cfg && PCMod.Cfg.BackboneFirstOctet ) or 100 ), 1, 223 )
+end
+
+function PCMod.IPv4.PrivateBlock( value )
+	value = tonumber( value )
+	if (!value) then return nil end
+	for _, blk in ipairs( PCMod.IPv4.PrivateBlocks ) do
+		local size = 2 ^ (32 - blk.bits)
+		if ((value >= blk.base) && (value < (blk.base + size))) then return blk end
+	end
+	return nil
+end
+
+function PCMod.IPv4.IsPrivate( addr )
+	local v = (type( addr ) == "number") and addr or PCMod.IPv4.ToInt( addr )
+	return (v != nil) && (PCMod.IPv4.PrivateBlock( v ) != nil)
+end
+
+// Align a value to `bits` and keep the resulting subnet inside one RFC1918
+// block. Returns the aligned base and effective bits, or nil when not private.
+function PCMod.IPv4.ClampPrivate( value, bits )
+	value = math.floor( tonumber( value ) or 0 )
+	bits = clamp( math.floor( tonumber( bits ) or 24 ), 8, 32 )
+	local blk = PCMod.IPv4.PrivateBlock( value )
+	if (!blk) then return nil end
+	if (bits < blk.bits) then bits = blk.bits end
+	local size = 2 ^ (32 - bits)
+	local base = math.floor( value / size ) * size
+	local blockSize = 2 ^ (32 - blk.bits)
+	if ((base < blk.base) || ((base + size) > (blk.base + blockSize))) then base = blk.base end
+	return base, bits
+end
 
 // Split a 16-bit backbone id into its two octets (high, low).
 function PCMod.IPv4.BackboneOctets( bb )
@@ -664,48 +774,50 @@ function PCMod.IPv4.BackboneOctets( bb )
 	return math.floor( n / 256 ), n % 256
 end
 
-// The IPv4 block of one backbone: 10.<hi>.<lo>.0/24.
+// The IPv4 block of one backbone: <octet>.<hi>.<lo>.0/24.
 function PCMod.IPv4.BackbonePrefix( bb )
 	local hi, lo = PCMod.IPv4.BackboneOctets( bb )
-	return "10." .. tostring( hi ) .. "." .. tostring( lo ) .. ".0/24"
+	return tostring( PCMod.IPv4.BackboneOctet() ) .. "." .. tostring( hi ) .. "." .. tostring( lo ) .. ".0/24"
 end
 
-// A single /32 within backbone bb: 10.<hi>.<lo>.<host>. host 1 is the backbone
-// router itself (gateway); attached LAN routers get host 2, 3, ...
+// A single /32 within backbone bb: <octet>.<hi>.<lo>.<host>. host 1 is the
+// backbone router itself (gateway); attached LAN routers get host 2, 3, ...
 function PCMod.IPv4.BackboneAddress( bb, host )
 	local hi, lo = PCMod.IPv4.BackboneOctets( bb )
 	host = tonumber( host ) or 1
 	if (host < 1) then host = 1 end
-	return "10." .. tostring( hi ) .. "." .. tostring( lo ) .. "." .. tostring( host )
+	return tostring( PCMod.IPv4.BackboneOctet() ) .. "." .. tostring( hi ) .. "." .. tostring( lo ) .. "." .. tostring( host )
 end
 
-// Parse a 10.x backbone IPv4 into { bb = 16-bit backbone id, host = 4th octet }.
-// Returns nil for any address not in 10.0.0.0/8.
+// Parse a backbone IPv4 into { bb = 16-bit backbone id, host = 4th octet }.
+// Returns nil for any address outside the configured backbone /8.
 function PCMod.IPv4.Parse( addr )
 	if (type( addr ) != "string") then return nil end
 	local a, b, c, d = string.match( addr, "^(%d+)%.(%d+)%.(%d+)%.(%d+)$" )
 	if (!a) then return nil end
 	a, b, c, d = tonumber( a ), tonumber( b ), tonumber( c ), tonumber( d )
 	if ((!a) || (!b) || (!c) || (!d)) then return nil end
-	if (a != 10) then return nil end
+	if (a != PCMod.IPv4.BackboneOctet()) then return nil end
 	return { bb = (b * 256) + c, host = d }
 end
 
-// True when addr is in the backbone 10.0.0.0/8 space (routable across backbones).
+// True when addr is in the configured backbone /8 (routable across backbones).
 function PCMod.IPv4.IsBackbone( addr )
 	return (PCMod.IPv4.Parse( addr ) != nil)
 end
 
-// Parse a private LAN IPv4 (192.168.c.d) into { sub = c, add = d }.
-// Host id 0 is the network address and 255 is broadcast, so d runs 1-254.
+// Parse an RFC1918 LAN IPv4 (10/8, 172.16/12 or 192.168/16) into its octets,
+// 32-bit value and the legacy sub/add pair (third/fourth octet). Returns nil
+// for anything outside RFC1918.
 function PCMod.IPv4.ParseLan( addr )
-	if (type( addr ) != "string") then return nil end
-	local a, b, c, d = string.match( addr, "^(%d+)%.(%d+)%.(%d+)%.(%d+)$" )
-	if (!a) then return nil end
-	a, b, c, d = tonumber( a ), tonumber( b ), tonumber( c ), tonumber( d )
-	if ((!a) || (!b) || (!c) || (!d)) then return nil end
-	if ((a != 192) || (b != 168) || (c < 0) || (c > 255) || (d < 1) || (d > 254)) then return nil end
-	return { sub = c, add = d, full = "192.168." .. c .. "." .. d }
+	local value = PCMod.IPv4.ToInt( addr )
+	if (!value) then return nil end
+	if (!PCMod.IPv4.PrivateBlock( value )) then return nil end
+	local a = math.floor( value / 16777216 )
+	local b = math.floor( value / 65536 ) % 256
+	local c = math.floor( value / 256 ) % 256
+	local d = value % 256
+	return { a = a, b = b, c = c, d = d, sub = c, add = d, value = value, full = PCMod.IPv4.FromInt( value ) }
 end
 
 // True when two private LAN addresses live in the same subnet for `bits`.
@@ -714,12 +826,9 @@ end
 function PCMod.IPv4.SameLan( a, b, bits )
 	local pa, pb = PCMod.IPv4.ParseLan( a ), PCMod.IPv4.ParseLan( b )
 	if ((!pa) || (!pb)) then return false end
-	bits = math.Clamp( math.floor( tonumber( bits ) or 24 ), 16, 32 )
-	if (bits <= 16) then return true end
+	bits = clamp( math.floor( tonumber( bits ) or 16 ), 8, 32 )
 	local m = 2 ^ (32 - bits)
-	local va = (pa.sub * 256) + pa.add
-	local vb = (pb.sub * 256) + pb.add
-	return (math.floor( va / m ) == math.floor( vb / m ))
+	return (math.floor( pa.value / m ) == math.floor( pb.value / m ))
 end
 
 // Netmask text ("255.255.255.0", "/24" or "24") -> prefix bits (0-32), or nil.

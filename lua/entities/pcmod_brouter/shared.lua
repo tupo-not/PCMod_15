@@ -23,7 +23,8 @@ function ENT:Setup( setupdata )
 	if (!setupdata) then setupdata = self.DefaultSetupData end -- Ensure we have setup data
 	local dt = self:Data() -- Get our data
 	
-	// Create our ports
+	// Create our ports. The first ten are fibre backbone links; the last is a
+	// dedicated Ethernet management port (MGMNT) used to reach the web panel.
 	local pts = {}
 	table.insert( pts, self:CreatePort( "optic" ) )
 	table.insert( pts, self:CreatePort( "optic" ) )
@@ -35,6 +36,10 @@ function ENT:Setup( setupdata )
 	table.insert( pts, self:CreatePort( "optic" ) )
 	table.insert( pts, self:CreatePort( "optic" ) )
 	table.insert( pts, self:CreatePort( "optic" ) )
+	local mgmt = self:CreatePort( "network" )
+	mgmt.Name = "MGMNT"
+	mgmt.Management = true
+	table.insert( pts, mgmt )
 	dt.Ports = pts
 	
 	// Install the main driver

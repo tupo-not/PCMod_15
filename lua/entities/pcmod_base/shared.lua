@@ -158,7 +158,7 @@ if (SERVER) then
 			tmp.Ent = self
 			tmp.IP = {}
 			// Every interface address is one plain dotted-quad IPv4 string.
-			// LAN is the private 192.168.x.y address; WAN is the 10.x backbone
+			// LAN is a private RFC1918 address; WAN is a backbone address.
 			// address of a router. PCs normally only have LAN.
 			tmp.IP.LAN = false
 			tmp.IP.WAN = false
@@ -174,7 +174,7 @@ if (SERVER) then
 			// EntIndex of the router that handed out the primary DHCP lease.
 			tmp.IP.Router = false
 			// Secondary LAN addresses: leases from other routers this device is
-			// also linked to. Each entry is { IPv4 = "192.168.c.d", Router = ... }.
+			// also linked to. Each entry is { IPv4 = "10.20.0.5", Router = ... }.
 			tmp.IP.Extra = {}
 			tmp.Memory = {}
 			tmp.Ports = {}
@@ -394,8 +394,8 @@ if (SERVER) then
 	
 		// -----------------------------------------------------------------------------------------------------
 		// IPv4 addressing. Every interface is stored as one plain dotted quad:
-		//   IP.LAN  - private LAN address (192.168.x.y)
-		//   IP.WAN  - routed WAN/backbone address (10.x.x.x)
+		//   IP.LAN  - private LAN address (any RFC1918 block)
+		//   IP.WAN  - routed WAN/backbone address (100.x.x.x by default)
 		// Subnet/host numbers are derived from the string; there are no separate
 		// LAN vs backbone address types.
 		// -----------------------------------------------------------------------------------------------------
@@ -545,15 +545,17 @@ if (SERVER) then
 			return true
 		end
 
-		// Compatibility helpers used by the DHCP core: update one octet of the
-		// current LAN address, keeping the other.
+		// Legacy helpers: update the third/fourth octet of the current LAN
+		// address, preserving the RFC1918 network the device already has.
 		function ENT:SetSubnet( subnet )
 			local ip = self:Data().IP
 			if ((subnet == false) || (subnet == nil)) then
 				ip.LAN = false
 			else
 				local p = ParseLanAddress( ip.LAN )
-				ip.LAN = "192.168." .. tostring( subnet ) .. "." .. tostring( (p and p.add) or 1 )
+				local a, b = 192, 168
+				if (p) then a, b = p.a, p.b end
+				ip.LAN = tostring( a ) .. "." .. tostring( b ) .. "." .. tostring( subnet ) .. "." .. tostring( (p and p.add) or 1 )
 			end
 			self:SetIPText()
 		end
@@ -564,13 +566,15 @@ if (SERVER) then
 				data.LAN = false
 			else
 				local p = ParseLanAddress( data.LAN )
-				data.LAN = "192.168." .. tostring( (p and p.sub) or 0 ) .. "." .. tostring( ip )
+				local a, b, c = 192, 168, 0
+				if (p) then a, b, c = p.a, p.b, p.c end
+				data.LAN = tostring( a ) .. "." .. tostring( b ) .. "." .. tostring( c ) .. "." .. tostring( ip )
 			end
 			self:SetIPText()
 		end
 
-		// Configure a static LAN IP (192.168.x.y). Pass "" or false to clear it and
-		// fall back to DHCP. Returns false on a malformed/out-of-range address.
+		// Configure a static LAN IP (any RFC1918 address). Pass "" or false to
+		// clear it and fall back to DHCP. Returns false on a malformed address.
 		function ENT:SetStaticIP( addr )
 			local ip = self:Data().IP
 			if (type( addr ) == "string") then
@@ -874,10 +878,11 @@ if (SERVER) then
 			// included): source from the exact address that was contacted so
 			// the reply goes back out on the same identity.
 			if (dest && self:IsAddressedTo( dest )) then return dest end
-			// Pick the routable source: IPv6 for IPv6 destinations, otherwise
-			// the plain IPv4 address (LAN first, WAN for a backbone-only device).
+			// Pick the routable source: IPv6 for IPv6 destinations (LAN /64
+			// first, then the backbone /32 identity), otherwise the plain IPv4
+			// address (LAN first, WAN for a backbone-only device).
 			if (dest && PCMod.IPv6.IsIPv6( dest )) then
-				return self:GetIPv6() or self:GetFullIP() or self:GetFullBIP()
+				return self:GetIPv6() or self:GetBIPv6() or self:GetFullIP() or self:GetFullBIP()
 			end
 			return self:GetFullIP() or self:GetFullBIP()
 		end

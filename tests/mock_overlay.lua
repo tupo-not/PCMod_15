@@ -113,7 +113,7 @@ router:SetIP( 1 )
 router:SetBSubnet( 3 )
 router:SetBIP( 0 )
 assertList( router:GetOverlayAddresses(), {
-	"192.168.0.1", "fd00:3:0:5::1", "10.0.3.1", "fd00:3::1",
+	"192.168.0.1", "fd00:3:0:5::1", "100.0.3.1", "fd00:3::1",
 }, "LAN router overlay" )
 
 -- A backbone router has no LAN: its primary NW address is the WAN IPv4, so
@@ -122,14 +122,14 @@ assertList( router:GetOverlayAddresses(), {
 local brouter = newEnt()
 brouter:SetBSubnet( 3 )
 brouter:SetBIP( 0 )
-assertList( brouter:GetOverlayAddresses(), { "10.0.3.1", "fd00:3::1" }, "backbone router overlay" )
+assertList( brouter:GetOverlayAddresses(), { "100.0.3.1", "fd00:3::1" }, "backbone router overlay" )
 
 -- A WAN-only PC (behind a modem) behaves the same way.
 local wanpc = newEnt()
 wanpc:SetLanAddress( false )
 wanpc:SetBSubnet( 4 )
 wanpc:SetBIP( 5 )
-assertList( wanpc:GetOverlayAddresses(), { "10.0.4.6", "fd00:4::6" }, "WAN-only overlay" )
+assertList( wanpc:GetOverlayAddresses(), { "100.0.4.6", "fd00:4::6" }, "WAN-only overlay" )
 
 -- DrawInfo puts the heading first, then the interface addresses, and still
 -- flags hardware failures.
@@ -140,6 +140,6 @@ PCMod.Gui = {
 }
 brouter.PrintName = "Backbone Router"
 brouter:DrawInfo( { x = 0, y = 0 } )
-assertList( lines, { "Backbone Router", "10.0.3.1", "fd00:3::1" }, "backbone router DrawInfo" )
+assertList( lines, { "Backbone Router", "100.0.3.1", "fd00:3::1" }, "backbone router DrawInfo" )
 
 print( "ALL OVERLAY TESTS PASSED" )

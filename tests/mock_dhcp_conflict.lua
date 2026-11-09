@@ -38,7 +38,8 @@ function rent:Data() return cfgData end
 function rent:PushData() return 2 end
 local router = { Entity = rent, NPorts = { 1 }, OPorts = {} }
 function router:GetCfg() return cfgData.RouterCfg end
-function router:GetLanBase() return 5 * 256 end
+local function lanBase( octet ) return (192 * 16777216) + (168 * 65536) + (octet * 256) end
+function router:GetLanBase() return lanBase( 5 ) end
 function router:IsBackbone() return false end
 function router:InterfaceIP() return "192.168.5.1" end
 

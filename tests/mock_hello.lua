@@ -53,7 +53,6 @@ CurTime = function() return NOW end
 timer = { Simple = function() end }
 
 dofile( "pcmod_sh_common.lua" )
-dofile( "pcmod_sh_dhcp.lua" )
 dofile( "pcmod_sh_netproto.lua" )
 dofile( "pcmod_sh_routing.lua" )
 dofile( "pcmod_drv_router.lua" )

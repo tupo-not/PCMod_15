@@ -43,6 +43,7 @@ TESTS=(
     mock_files_ui
     mock_open_ui
     mock_ipv6
+    mock_ndp
     mock_entity_ipv6
     mock_overlay
     mock_entity_sounds

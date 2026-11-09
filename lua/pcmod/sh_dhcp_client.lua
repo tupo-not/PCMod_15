@@ -76,8 +76,14 @@ function PCMod.DHCPClient.ApplyHost( ent, cfg )
 	local data = ent.Data && ent:Data()
 	local ipdata = data && data.IP
 	if (!ipdata) then return false end
-	if (ipdata.Static) then return false end
-	if (cfg.scope == "wan") then
+	if (ipdata.Static) then
+		// A manually configured address wins, but the device still learns the
+		// upstream backbone and LAN /64 it belongs to.
+		if ((cfg.upbb != nil) && ent.SetUpBB) then ent:SetUpBB( cfg.upbb ) end
+		if ((cfg.lanid != nil) && ent.SetLanID) then ent:SetLanID( cfg.lanid ) end
+		return true
+	end
+	if ((cfg.scope == "wan") || (cfg.scope == "mgmt")) then
 		// The DHCP answer carries the full interface configuration, so show the
 		// same netmask/gateway a static setup would.
 		if (cfg.netmask) then ipdata.Mask = cfg.netmask end
@@ -119,13 +125,61 @@ function PCMod.DHCPClient.ApplyHost( ent, cfg )
 	if (cfg.gateway) then ipdata.Gateway = cfg.gateway end
 	if (cfg.upbb != nil && ent.SetUpBB) then ent:SetUpBB( cfg.upbb ) end
 	if (cfg.lanid != nil && ent.SetLanID) then ent:SetLanID( cfg.lanid ) end
-	ent:SetSubnet( p.sub )
-	ent:SetIP( p.add )
+	if (ent.SetLanAddress) then
+		ent:SetLanAddress( p.full, cfg.upbb, cfg.lanid )
+	else
+		ent:SetSubnet( p.sub )
+		ent:SetIP( p.add )
+	end
 	// A private lease is the primary identity now; drop a backbone address the
 	// machine carried from an earlier segment so overlays don't show both.
 	if (ent.SetBSubnet) then ent:SetBSubnet( false ) end
 	if (ent.SetBIP) then ent:SetBIP( false ) end
 	ipdata.Router = cfg.server
+	return true
+end
+
+// Remove a lease's address from the device. The primary is cleared only when
+// this router owns it; a secondary is removed from the extra list. A static
+// address is configured, not leased, and is left alone.
+function PCMod.DHCPClient.ReleaseHost( ent, scope, rec, server )
+	if ((!ent) || (!rec)) then return false end
+	local ipdata = ent.Data && ent:Data() && ent:Data().IP
+	if ((scope == "wan") || (scope == "mgmt")) then
+		if (ent.GetBSubnet && (ent:GetBSubnet() == rec.bb)) then
+			if (ent.SetBSubnet) then ent:SetBSubnet( false ) end
+			if (ent.SetBIP) then ent:SetBIP( false ) end
+		end
+		if (ipdata && (ipdata.Router == server)) then ipdata.Router = false end
+		return true
+	end
+	if (ipdata && ipdata.Static) then return false end
+	local mine = false
+	if (ipdata) then
+		if (ipdata.Router == server) then
+			mine = true
+		elseif ((ipdata.Router == nil) || (ipdata.Router == false)) then
+			mine = (ipdata.LAN == rec.ip)
+		end
+	end
+	if (mine) then
+		if (ent.SetLanAddress) then
+			ent:SetLanAddress( false )
+		else
+			if (ent.SetSubnet) then ent:SetSubnet( false ) end
+			if (ent.SetIP) then ent:SetIP( false ) end
+		end
+		if (ipdata) then ipdata.Router = false end
+	elseif (ent.ReleaseExtraIP && rec.ip) then
+		ent:ReleaseExtraIP( rec.ip )
+	else
+		if (ent.SetLanAddress) then
+			ent:SetLanAddress( false )
+		else
+			if (ent.SetSubnet) then ent:SetSubnet( false ) end
+			if (ent.SetIP) then ent:SetIP( false ) end
+		end
+	end
 	return true
 end
 

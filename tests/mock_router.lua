@@ -46,17 +46,24 @@ timer = { Simple = function() end }
 PCMod.Cfg = { MaxNetworkPid = 500, MaxNetworkPass = 10, WirelessRange = 0 }
 PCMod.Network = { Packets = {} }
 PCMod.DeriveDriver = function() return {} end
+PCMod.MAC = {
+	BROADCAST = "FF:FF:FF:FF:FF:FF",
+	Normalize = function( mac )
+		if (type( mac ) ~= "string") then return nil end
+		return string.upper( mac )
+	end,
+}
 math.Clamp = function( v, a, b ) if (v < a) then return a end if (v > b) then return b end return v end
 CurTime = function() return 0 end
 function istable( v ) return type( v ) == "table" end
 function table.Count( t ) local n = 0 for _ in pairs( t ) do n = n + 1 end return n end
 
 dofile( "pcmod_sh_common.lua" )
-dofile( "pcmod_sh_dhcp.lua" )
 dofile( "pcmod_sh_netproto.lua" )
 dofile( "pcmod_sh_dhcp_server.lua" )
 dofile( "pcmod_sh_dhcp_client.lua" )
 dofile( "pcmod_sh_arp.lua" )
+dofile( "pcmod_sh_ndp.lua" )
 dofile( "pcmod_sh_routing.lua" )
 dofile( "pcmod_drv_router.lua" )
 
@@ -102,13 +109,17 @@ assertTrue( not r.IsIPv6, "IPv4 target" )
 assertTrue( r.LAN, "IPv4 LAN target" )
 assertTrue( not r.OnLinkLAN, "IPv4 does not use on-link drop" )
 
-r = DRV:ClassifyDestination( "10.0.3.2" )
+r = DRV:ClassifyDestination( "100.0.3.2" )
 assertTrue( r.Backbone, "IPv4 backbone target" )
 assertTrue( not r.OnLinkBackbone, "IPv4 backbone is not on-link" )
 
 r = DRV:ClassifyDestination( "192.168.10.5" )
 assertTrue( r.LAN, "192.168 with a 10 octet is LAN, not backbone" )
 assertTrue( not r.Backbone, "192.168.10.5 is not backbone" )
+
+r = DRV:ClassifyDestination( "10.20.30.40" )
+assertTrue( r.LAN, "RFC1918 10/8 is LAN, not backbone" )
+assertTrue( not r.Backbone, "10/8 is not backbone" )
 
 assertTrue( DRV:HasIPv6Subnet( "fd00:3:0:5::3" ), "HasIPv6Subnet own LAN" )
 assertTrue( DRV:HasIPv6Subnet( "fd00:3:0:6::3" ), "HasIPv6Subnet sibling in same /32" )
@@ -425,8 +436,11 @@ local bent = {}
 function bent:GetClass() return "pcmod_brouter" end
 function bent:Ports() return { [ 1 ] = bport } end
 function bent:GetBSubnet() return 7 end
+function bent:GetFullIP() return "100.0.7.1" end
+function bent:GetIPv6() return false end
+function bent:GetIPv6Prefix() return false end
 function bent:GetMAC() return "AA:BB:CC:DD:EE:07" end
-function bent:GetFullBIP() return "10.0.7.1" end
+function bent:GetFullBIP() return "100.0.7.1" end
 function bent:PushData() end
 local bdata = { RouterCfg = {} }
 function bent:Data() return bdata end
@@ -438,14 +452,14 @@ bdrv.Neighbors = {}
 bdrv.Leases = {}
 bdrv.BLeases = {}
 bdrv.BLeasePort = {}
--- DHCP is role-blind: every client on a backbone port gets a 10.x lease from
--- the same pool, whether it is a PC or a router.
+-- DHCP is role-blind: every client on a backbone port gets a backbone lease
+-- from the same pool, whether it is a PC or a router.
 function bent:EntIndex() return 70 end
 bdrv:GetCfg()
 local c1 = "AA:BB:CC:DD:EE:01"
 local rec = PCMod.DHCPServer.Offer( bdrv, "wan", c1, 101 )
 assertTrue( rec != nil, "backbone offers a lease" )
-assertEq( rec.ip, "10.0.7.12", "first backbone host is .12" )
+assertEq( rec.ip, "100.0.7.12", "first backbone host is .12" )
 local cfg = PCMod.DHCPServer.Config( bdrv, rec )
 assertEq( cfg.scope, "wan", "offer scope" )
 assertEq( cfg.bb, 7, "offer carries the backbone id" )
@@ -459,28 +473,28 @@ assertTrue( PCMod.DHCPServer.Find( bdrv, "lan", c1 ) == nil, "scopes stay separa
 -- device-type branch in DHCP.
 local c2 = "AA:BB:CC:DD:EE:02"
 local rec2 = PCMod.DHCPServer.Offer( bdrv, "wan", c2, 102 )
-assertEq( rec2.ip, "10.0.7.13", "second host is .13" )
+assertEq( rec2.ip, "100.0.7.13", "second host is .13" )
 assertTrue( bdrv.Children == nil or bdrv.Children[60] == nil, "router role is not stored in DHCP" )
 
 -- Releasing frees the address for the next client.
 PCMod.DHCPServer.Release( bdrv, c1 )
 local rec3 = PCMod.DHCPServer.Offer( bdrv, "wan", "AA:BB:CC:DD:EE:03", 103 )
-assertEq( rec3.ip, "10.0.7.12", "released host is reused" )
+assertEq( rec3.ip, "100.0.7.12", "released host is reused" )
 PCMod.DHCPServer.Release( bdrv, "AA:BB:CC:DD:EE:03" )
 PCMod.DHCPServer.Release( bdrv, c2 )
 
 -- Static backbone DHCP reservations (IP <-> MAC).
-assertTrue( bdrv:AddStaticLease( "10.0.7.12", "AA:BB:CC:DD:EE:12" ), "static lease accepted" )
+assertTrue( bdrv:AddStaticLease( "100.0.7.12", "AA:BB:CC:DD:EE:12" ), "static lease accepted" )
 assertEq( #bdrv:StaticLeases(), 1, "static lease stored" )
-assertTrue( not bdrv:AddStaticLease( "10.0.8.20", "AA:BB:CC:DD:EE:20" ), "lease outside the /24 rejected" )
-assertTrue( not bdrv:AddStaticLease( "10.0.7.5", "AA:BB:CC:DD:EE:05" ), "host reserved for a LAN router rejected" )
-assertTrue( not bdrv:AddStaticLease( "10.0.7.20", "nope" ), "bad MAC rejected" )
+assertTrue( not bdrv:AddStaticLease( "100.0.8.20", "AA:BB:CC:DD:EE:20" ), "lease outside the /24 rejected" )
+assertTrue( not bdrv:AddStaticLease( "100.0.7.5", "AA:BB:CC:DD:EE:05" ), "host reserved for the MGMNT port rejected" )
+assertTrue( not bdrv:AddStaticLease( "100.0.7.20", "nope" ), "bad MAC rejected" )
 
 -- The dynamic pool skips the reserved host; the reserved MAC gets it.
 local dyn = PCMod.DHCPServer.Offer( bdrv, "wan", "AA:BB:CC:DD:EE:99", 104 )
-assertEq( dyn.ip, "10.0.7.13", "dynamic lease skips the pinned host 12" )
+assertEq( dyn.ip, "100.0.7.13", "dynamic lease skips the pinned host 12" )
 local pin = PCMod.DHCPServer.Offer( bdrv, "wan", "AA:BB:CC:DD:EE:12", 105 )
-assertEq( pin.ip, "10.0.7.12", "pinned MAC takes its reserved host" )
+assertEq( pin.ip, "100.0.7.12", "pinned MAC takes its reserved host" )
 assertEq( select( 1, bdrv:DHCPPool( "wan" ) ), 12, "unified WAN pool start" )
 assertTrue( bdrv:DeleteStaticLease( 1 ), "static lease deleted" )
 assertEq( #bdrv:StaticLeases(), 0, "static lease list is empty" )
@@ -491,11 +505,81 @@ PCMod.DHCPServer.Release( bdrv, "AA:BB:CC:DD:EE:12" )
 local html = bdrv:PageStaticLeases()
 assertTrue( string.find( html, 'name="sip"', 1, true ) ~= nil, "static lease page has an IP field" )
 assertTrue( string.find( html, 'name="smac"', 1, true ) ~= nil, "static lease page has a MAC field" )
-bdrv:ApplyWebQuery( "?sip=10.0.7.30&smac=AA:BB:CC:DD:EE:30" )
+bdrv:ApplyWebQuery( "?sip=100.0.7.30&smac=AA:BB:CC:DD:EE:30" )
 assertEq( #bdrv:StaticLeases(), 1, "web query adds a static lease" )
-assertEq( bdrv:StaticLeases()[ 1 ].ip, "10.0.7.30", "web query stores the pinned IP" )
+assertEq( bdrv:StaticLeases()[ 1 ].ip, "100.0.7.30", "web query stores the pinned IP" )
 bdrv:ApplyWebQuery( "?dellease=1" )
 assertEq( #bdrv:StaticLeases(), 0, "web query deletes a static lease" )
+
+-- MGMNT port: an isolated management segment using hosts .2-.11 of the
+-- backbone's own /24, with the router's web panel at its .1 address.
+assertEq( bdrv:InterfaceIP( "wan" ), "100.0.7.1", "backbone fibre interface answers as .1" )
+assertEq( bdrv:InterfaceIP( "lan" ), "100.0.7.1", "backbone MGMNT interface answers as .1" )
+assertEq( PCMod.DHCPServer.HostForIP( bdrv, "mgmt", "100.0.7.2" ), 2, "management host .2 maps to host id 2" )
+assertTrue( PCMod.DHCPServer.HostForIP( bdrv, "mgmt", "100.0.7.12" ) == nil, "hosts outside .2-.11 are not management leases" )
+local mstart, mfinish = bdrv:DHCPPool( "mgmt" )
+assertEq( mstart, 2, "management pool starts at .2" )
+assertEq( mfinish, 11, "management pool ends at .11" )
+assertEq( PCMod.DHCPServer.ScopeForSide( bdrv, "lan" ), "mgmt", "backbone serves management on its MGMNT port" )
+local mrec = PCMod.DHCPServer.Offer( bdrv, "lan", "AA:BB:CC:DD:EE:40", 201, 11 )
+assertTrue( mrec != nil, "management DHCP offers a lease" )
+assertEq( mrec.ip, "100.0.7.2", "first management host is .2 of the backbone /24" )
+assertEq( mrec.scope, "mgmt", "management lease uses the mgmt scope" )
+local mcfg = PCMod.DHCPServer.Config( bdrv, mrec )
+assertEq( mcfg.gateway, "100.0.7.1", "management gateway is the backbone address" )
+assertEq( mcfg.scope, "mgmt", "management config carries the mgmt scope" )
+assertEq( mcfg.maskbits, 24, "management mask" )
+assertEq( mcfg.bb, 7, "management config carries the backbone id" )
+PCMod.DHCPServer.Release( bdrv, "AA:BB:CC:DD:EE:40" )
+
+-- The backbone web panel has no Wi-Fi or firewall/port-forwarding sections;
+-- its LAN page is the management page.
+local bnav = bdrv:WebNav( "" )
+assertTrue( string.find( bnav, "Management", 1, true ) ~= nil, "backbone nav has a Management link" )
+assertTrue( string.find( bnav, "Wi-Fi", 1, true ) == nil, "backbone nav has no Wi-Fi link" )
+assertTrue( string.find( bnav, "Firewall", 1, true ) == nil, "backbone nav has no Firewall link" )
+local mgmtpage = bdrv:GetWebPage( "/lan" )
+assertTrue( string.find( mgmtpage, "Management", 1, true ) ~= nil, "backbone LAN page is titled Management" )
+assertTrue( string.find( mgmtpage, "MGMNT", 1, true ) ~= nil, "management page labels the MGMNT port" )
+assertTrue( string.find( bdrv:GetWebPage( "/wifi" ), "Wi-Fi", 1, true ) == nil, "backbone /wifi falls back without Wi-Fi UI" )
+assertTrue( string.find( bdrv:GetWebPage( "/firewall" ), "Port forwarding", 1, true ) == nil, "backbone /firewall falls back without port forwarding" )
+local bhome = bdrv:GetWebPage( "" )
+assertTrue( string.find( bhome, "MGMNT DHCP pool", 1, true ) ~= nil, "backbone home shows the management pool" )
+assertTrue( string.find( bhome, "Wi-Fi:", 1, true ) == nil, "backbone home has no Wi-Fi status" )
+assertTrue( string.find( bhome, "Firewall:", 1, true ) == nil, "backbone home has no firewall status" )
+
+-- Default backbone OS rule: the control plane is management-only. MGMNT hosts
+-- (.1-.11) may open the panel; backbone pool hosts (.12-.254) are blocked.
+assertTrue( bdrv:BackboneWebAllowed( "100.0.7.1" ), "the backbone itself may open its panel" )
+assertTrue( bdrv:BackboneWebAllowed( "100.0.7.2" ), "first MGMNT host may open the panel" )
+assertTrue( bdrv:BackboneWebAllowed( "100.0.7.11" ), "last MGMNT host may open the panel" )
+assertTrue( not bdrv:BackboneWebAllowed( "100.0.7.12" ), "first backbone pool host is blocked from the panel" )
+assertTrue( not bdrv:BackboneWebAllowed( "100.0.7.254" ), "last backbone pool host is blocked from the panel" )
+assertTrue( bdrv:BackboneWebAllowed( "fd00:7::2" ), "MGMNT IPv6 may open the panel" )
+assertTrue( not bdrv:BackboneWebAllowed( "fd00:7::c" ), "backbone pool IPv6 is blocked from the panel" )
+assertTrue( not bdrv:BackboneWebAllowed( "fd00:0:0:1::5" ), "LAN IPv6 sources are blocked from the panel" )
+assertTrue( bdrv:BackboneWebAllowed( "::1" ), "loopback may open the panel" )
+assertTrue( not bdrv:BackboneWebAllowed( "10.0.0.5" ), "LAN sources cannot open the backbone panel" )
+local mgmtpage2 = bdrv:GetWebPage( "/lan" )
+assertTrue( string.find( mgmtpage2, "blocked from this panel", 1, true ) ~= nil, "management page documents the web guard" )
+
+-- IPv6 delivery resolves the neighbor with NDP (no IPv4 reconstruction).
+local ndpPushed = {}
+local ndpEnt = {}
+function ndpEnt:PushData( port, data ) ndpPushed[ #ndpPushed + 1 ] = { port = port, data = data } end
+function ndpEnt:GetMAC() return "AA:BB:CC:DD:EE:10" end
+local ndpDrv = {}
+for k, v in pairs( DRV ) do ndpDrv[ k ] = v end
+ndpDrv.Entity = ndpEnt
+ndpDrv.ArpCache = {}
+ndpDrv.NdpCache = {}
+PCMod.NDP.Learn( ndpDrv, "fd00:7::c", "AA:BB:CC:DD:EE:0C", 1 )
+local ndpPacket = { Dest = "fd00:7::c" }
+ndpDrv:DeliverOnInterface( 601, ndpPacket, 0, { 1 }, "wan" )
+assertEq( #ndpPushed, 1, "IPv6 delivery resolves the neighbor once" )
+assertEq( ndpPushed[ 1 ].port, 1, "IPv6 delivery uses the learned port" )
+assertEq( ndpPushed[ 1 ].data[ 1 ], "deliver", "IPv6 delivery forwards the packet" )
+assertEq( ndpPacket.DestMAC, "AA:BB:CC:DD:EE:0C", "IPv6 delivery sets the neighbor MAC" )
 
 -- Ethernet WAN: a flagged network port is a WAN port, not a LAN port.
 local eports = {
@@ -545,7 +629,7 @@ dofile( "pcmod_drv_router.lua" )
 PCMod.Cfg.DefaultTTL = 64
 local ingressData = {
 	IP = { UpBB = 3, LanID = 5 },
-	RouterCfg = { Firewall = false, FirewallRules = {} },
+	RouterCfg = { Firewall = false, FirewallRules = {}, LanBase = (10 * 16777216) + (20 * 65536), LanNetmask = 24 },
 }
 local ingressEnt = {}
 local ingressMem = {}
@@ -557,14 +641,14 @@ function ingressEnt:GetIPv6Prefix() return "fd00:3:0:5::/64" end
 function ingressEnt:GetIPv6() return "fd00:3:0:5::1" end
 function ingressEnt:GetBIPv6Prefix() return "fd00:3::/32" end
 function ingressEnt:GetBIPv6() return "fd00:3::6" end
-function ingressEnt:GetFullIP() return "192.168.5.1" end
-function ingressEnt:GetLanIPv4() return "192.168.5.1" end
-function ingressEnt:GetFullBIP() return "10.0.3.5" end
-function ingressEnt:GetSubnet() return 5 end
+function ingressEnt:GetFullIP() return "10.20.0.1" end
+function ingressEnt:GetLanIPv4() return "10.20.0.1" end
+function ingressEnt:GetFullBIP() return "100.0.3.5" end
+function ingressEnt:GetSubnet() return 0 end
 function ingressEnt:GetBSubnet() return 3 end
-function ingressEnt:GetSourceAddress() return "192.168.5.1" end
+function ingressEnt:GetSourceAddress() return "10.20.0.1" end
 function ingressEnt:IsAddressedTo( a )
-	return (a == "fd00:3:0:5::1") || (a == "fd00:3::6") || (a == "192.168.5.1") || (a == "10.0.3.5")
+	return (a == "fd00:3:0:5::1") || (a == "fd00:3::6") || (a == "10.20.0.1") || (a == "100.0.3.5")
 end
 local pushed = {}
 function ingressEnt:PushData( port, data )
@@ -579,10 +663,10 @@ ingress.V6Flows = {}
 ingress.LAN = {}
 ingress.NPorts = { 1, 2, 3, 4 }
 ingress.OPorts = { 5 }
--- Last-hop resolution is ARP; seed the cache for the LAN host the firewall
--- tests deliver to (fd00:3:0:5::2 maps to 192.168.5.2).
-ingress.ArpCache = {
-	[ "192.168.5.2" ] = { ip = "192.168.5.2", mac = "AA:BB:CC:DD:EE:02", port = 1, time = 0 },
+-- Last-hop resolution uses NDP for IPv6; seed the neighbor cache for the LAN
+-- host the firewall tests deliver to.
+ingress.NdpCache = {
+	[ "fd00:3:0:5::2" ] = { ip = "fd00:3:0:5::2", mac = "AA:BB:CC:DD:EE:02", port = 1, time = 0 },
 }
 function ingress:HasPC( a ) if (a == "fd00:3:0:5::2") then return 1 end return false end
 function ingress:DeliverToWirelessClient() return false end
@@ -619,11 +703,11 @@ assertTrue( not webCalled, "LAN-side web UI is not served over WAN IPv6" )
 
 -- Private IPv4 and mapped IPv4 forms of the LAN gateway are not a bypass.
 webCalled = false
-got = runPacket( 421, "10.0.4.9", "192.168.5.1", 80, "wan", { "http", "/" } )
+got = runPacket( 421, "100.0.4.9", "10.20.0.1", 80, "wan", { "http", "/" } )
 assertEq( #got, 0, "LAN IPv4 gateway is not exposed to the WAN" )
 assertTrue( not webCalled, "private IPv4 admin page is not served over the WAN" )
 webCalled = false
-got = runPacket( 422, "fd00:4::9", "::ffff:192.168.5.1", 80, "wan", { "http", "/" } )
+got = runPacket( 422, "fd00:4::9", "::ffff:10.20.0.1", 80, "wan", { "http", "/" } )
 assertEq( #got, 0, "mapped IPv4 LAN gateway is not exposed to the WAN" )
 assertTrue( not webCalled, "mapped LAN admin page is not served over the WAN" )
 
@@ -640,7 +724,7 @@ assertEq( #pingReplies, 1, "router WAN address still answers pings" )
 
 pushed = {}
 PCMod.Network.Packets[ 423 ] = {
-	Source = "fd00:4::9", Dest = "10.0.3.5", Port = 0,
+	Source = "fd00:4::9", Dest = "100.0.3.5", Port = 0,
 	Body = { "netPing", "hk" }, TTL = 64, Delivered = false,
 }
 ingress:ProcessPacket( 423, nil, "wan" )

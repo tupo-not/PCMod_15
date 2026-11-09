@@ -630,7 +630,7 @@ if (SERVER) then
 		tmp.EntID = ent:EntIndex()
 		local cnt
 		for cnt=1, #ports do
-			table.insert( tmp, { ports[ cnt ].Type, ports[ cnt ].Connected } )
+			table.insert( tmp, { ports[ cnt ].Type, ports[ cnt ].Connected, ports[ cnt ].Name } )
 		end
 		local str = PCMod.TableToString( tmp )
 		--PrintTable(tmp);
@@ -711,7 +711,7 @@ if (CLIENT) then
 		local cnt
 		for k, v in pairs( tbl ) do
 			
-			tmp[ tonumber( k ) ] = { Type=v[1], Connected=v[2] }
+			tmp[ tonumber( k ) ] = { Type=v[1], Connected=v[2], Name=v[3] }
 		end
 		PCMod.PortData[ entid ] = tmp
 		

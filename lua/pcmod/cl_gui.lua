@@ -325,9 +325,11 @@ function PCMod.Gui.AskForPort( entid, filter, cstatus )
 			
 				// Increase the counter, build the display string
 				cnt = cnt + 1
-				local vt = v.Type
-				for _, pt in pairs( PCMod.Cfg.WireTypes ) do
-					if (pt.Name == v.Type) then vt = pt.ExtName end
+				local vt = (v.Name && (v.Name != "")) and v.Name or v.Type
+				if (!(v.Name && (v.Name != ""))) then
+					for _, pt in pairs( PCMod.Cfg.WireTypes ) do
+						if (pt.Name == v.Type) then vt = pt.ExtName end
+					end
 				end
 				local str = tostring( k ) .. " - " .. vt
 			

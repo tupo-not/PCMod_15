@@ -315,7 +315,7 @@ function PROG:DoCommand( com, args )
 			applied = (self.Entity:SetStaticIP( addr ) == true)
 		end
 		if (!applied) then
-			self.DeviceData.IPError = "Invalid static IP - use 192.168.x.y"
+			self.DeviceData.IPError = "Invalid static IP - use 10.x, 172.16-31.x or 192.168.x"
 		else
 			self.DeviceData.IPError = ""
 		end

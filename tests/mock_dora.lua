@@ -53,11 +53,11 @@ CurTime = function() return 0 end
 timer = { Simple = function() end }
 
 dofile( "pcmod_sh_common.lua" )
-dofile( "pcmod_sh_dhcp.lua" )
 dofile( "pcmod_sh_netproto.lua" )
 dofile( "pcmod_sh_dhcp_server.lua" )
 dofile( "pcmod_sh_dhcp_client.lua" )
 dofile( "pcmod_sh_arp.lua" )
+dofile( "pcmod_sh_ndp.lua" )
 dofile( "pcmod_sh_l2.lua" )
 dofile( "pcmod_sh_routing.lua" )
 dofile( "pcmod_drv_router.lua" )
@@ -120,9 +120,9 @@ local backbone = mkNode( "AA:BB:CC:00:00:04", 1, { "AA:BB:CC:00:00:14" } )
 function backbone:GetClass() return "pcmod_brouter" end
 function backbone:Data() return routerData end
 function backbone:GetBSubnet() return 7 end
-function backbone:GetFullBIP() return "10.0.7.1" end
+function backbone:GetFullBIP() return "100.0.7.1" end
 function backbone:GetFullIP() return false end
-function backbone:GetSourceAddress() return "10.0.7.1" end
+function backbone:GetSourceAddress() return "100.0.7.1" end
 
 connect( laptop, 1, switch, 1 )
 connect( switch, 2, modem, 1 )
@@ -190,7 +190,7 @@ PCMod.DHCPClient.Start( owner, {
 assertEq( sent, 2, "discover and request were sent" )
 assertTrue( owner.LastDHCP != nil, "host completed DORA" )
 assertEq( owner.LastDHCP.scope, "wan", "backbone answers with a WAN lease" )
-assertEq( owner.LastDHCP.address, "10.0.7.12", "laptop gets a 10.x host address" )
+assertEq( owner.LastDHCP.address, "100.0.7.12", "laptop gets a backbone host address" )
 assertEq( hostData.IP.WanBB, 7, "WAN lease records the backbone id" )
 assertEq( hostData.IP.WanHost, 11, "WAN lease records the zero-based host" )
 assertTrue( hostData.IP.LAN == false, "laptop has no private LAN address" )
@@ -223,7 +223,7 @@ PCMod.DHCPClient.Start( owner2, {
 	apply = function( cfg ) PCMod.DHCPClient.ApplyHost( laptop2, cfg ) end,
 } )
 assertTrue( owner2.LastDHCP != nil, "second host completed DORA" )
-assertEq( owner2.LastDHCP.address, "10.0.7.13", "second host gets the next free address" )
+assertEq( owner2.LastDHCP.address, "100.0.7.13", "second host gets the next free address" )
 assertTrue( owner2.LastDHCP.address ~= owner.LastDHCP.address, "two hosts never share an address" )
 
 -- Replacing a device on the same switch port must not reuse a still-active
@@ -262,7 +262,7 @@ PCMod.DHCPClient.Start( owner3, {
 	apply = function( cfg ) PCMod.DHCPClient.ApplyHost( tower, cfg ) end,
 } )
 assertTrue( owner3.LastDHCP != nil, "replacement host completed DORA" )
-assertEq( owner3.LastDHCP.address, "10.0.7.14", "replacement host gets a fresh address, not the old lease" )
+assertEq( owner3.LastDHCP.address, "100.0.7.14", "replacement host gets a fresh address, not the old lease" )
 
 
 -- The switch and modem stay pure L2: MAC learning only, no IP/DHCP state.
@@ -278,9 +278,9 @@ PCMod.DHCPServer.Release( rdrv, laptop:GetMAC() )
 assertTrue( PCMod.DHCPServer.Find( rdrv, "wan", laptop:GetMAC() ) == nil, "release dropped the lease" )
 
 -- Static reservations still win over the dynamic pool.
-assertTrue( rdrv:AddStaticLease( "10.0.7.30", "AA:BB:CC:00:00:99" ), "static reservation accepted" )
+assertTrue( rdrv:AddStaticLease( "100.0.7.30", "AA:BB:CC:00:00:99" ), "static reservation accepted" )
 local rec = PCMod.DHCPServer.Offer( rdrv, "wan", "AA:BB:CC:00:00:99", 9001 )
-assertEq( rec.ip, "10.0.7.30", "reserved MAC gets its static address" )
+assertEq( rec.ip, "100.0.7.30", "reserved MAC gets its static address" )
 assertTrue( rdrv:DeleteStaticLease( 1 ), "reservation deleted" )
 PCMod.DHCPServer.Release( rdrv, "AA:BB:CC:00:00:99" )
 

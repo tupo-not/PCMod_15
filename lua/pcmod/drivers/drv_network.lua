@@ -78,7 +78,7 @@ end
 
 // Broadcast a DHCP discover. The first router whose port the request arrives
 // on answers with the address for that interface (LAN router -> private
-// address, backbone router -> 10.x host). Retries cover a cable that was
+// address, backbone router -> backbone host). Retries cover a cable that was
 // plugged in before the rest of the segment was ready.
 function DRV:DHCPDiscover( retries )
 	retries = retries or 3
@@ -142,6 +142,9 @@ function DRV:DataRecieved( port, data )
 		end
 		if (PCMod.Net.IsARP( app )) then
 			return self:HandleARP( port, app, data[4] or {} )
+		end
+		if (PCMod.Net.IsNDP( app ) && PCMod.NDP) then
+			return PCMod.NDP.Handle( self, port, app, data[4] or {} )
 		end
 		local body = data[2]
 		local macs = data[4] or {}

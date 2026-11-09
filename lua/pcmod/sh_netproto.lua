@@ -15,6 +15,8 @@ PCMod.Net.BroadcastIP = "255.255.255.255"
 PCMod.Net.LeaseTime = 3600
 PCMod.Net.LeaseOfferTime = 30
 PCMod.Net.ArpTime = 60
+// Neighbor cache lifetime for IPv6 (NDP).
+PCMod.Net.NdpTime = 60
 
 // Real time, so leases survive a map restart instead of rebasing on CurTime().
 function PCMod.Net.Now()
@@ -57,6 +59,19 @@ function PCMod.Net.ARPReply( targetIP, sourceIP, sourceMAC )
 	return { "arp", "reply", targetIP, sourceIP, sourceMAC }
 end
 
+// IPv6 neighbor discovery. A solicitation asks who owns `target`; the owner
+// answers with an advertisement carrying its MAC. Destinations are multicast
+// addresses, but the frame is flooded at L2 like an ARP broadcast.
+PCMod.Net.NDPAllNodes = "ff02::1"
+
+function PCMod.Net.NDPSolicit( targetIP, sourceIP, sourceMAC )
+	return { "ndp", "solicit", targetIP, sourceIP, sourceMAC }
+end
+
+function PCMod.Net.NDPAdvertise( targetIP, sourceIP, sourceMAC )
+	return { "ndp", "advertise", targetIP, sourceIP, sourceMAC }
+end
+
 function PCMod.Net.Hello( bb, ip, mac, dv, prefixes )
 	return { "hello", bb, ip, mac, dv or {}, prefixes or {} }
 end
@@ -67,6 +82,10 @@ end
 
 function PCMod.Net.IsARP( body )
 	return (istable( body ) && (body[1] == "arp"))
+end
+
+function PCMod.Net.IsNDP( body )
+	return (istable( body ) && (body[1] == "ndp"))
 end
 
 function PCMod.Net.IsHello( body )
