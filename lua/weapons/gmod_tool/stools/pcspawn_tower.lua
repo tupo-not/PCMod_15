@@ -67,7 +67,7 @@ if (CLIENT) then
 							Models = list.Get( "mdls_pcspawn_tower" ) } )
 							
 		// OS select
-		panel:AddControl( "ComboBox", { Label = "Operating System:",
+		panel:AddControl( "ComboBox", { Label = "OS Type:",
 							ConVar = "pcspawn_tower_os",
 							Category = "pcmod",
 							Options = {

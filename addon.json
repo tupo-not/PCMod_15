@@ -1,0 +1,11 @@
+{
+   "name":      		"PCMod",
+   "title":      		"PCMod - Personal Computer",
+   "version":      		"1.5.1",
+   "author":      		"sanazt & NAAIN",
+   "description":  	"PCMod - A complete computer system for Garry's Mod, allowing you to play games, browse the web, chat, and more within the game.",
+   "url":     		"https://github.com/tupo-not/PCMod_15",
+   "type"		:	"entity",
+   "tags"		:	[ "fun", "cartoon" ],
+   "ignore"	:["tests/*", ".git/*", "*.md", "*.txt"]
+}
