@@ -44,6 +44,9 @@ TESTS=(
     mock_open_ui
     mock_ipv6
     mock_ndp
+    mock_portanchors
+    mock_multinic
+    mock_multihome
     mock_entity_ipv6
     mock_overlay
     mock_entity_sounds

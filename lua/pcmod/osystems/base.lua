@@ -429,6 +429,13 @@ function OS:GetExtraAddresses()
 	return {}
 end
 
+// Addresses of every network interface (one entry per Ethernet port / Wi-Fi
+// link), so the control panel can show a second adapter on the same host.
+function OS:GetInterfaces()
+	if (self:Network().GetInterfaces) then return self:Network():GetInterfaces() end
+	return {}
+end
+
 // Emulated IPv6 address of this machine (see PCMod.IPv6 in sh_common.lua).
 function OS:GetIPv6()
 	return self:Network():GetIPv6()

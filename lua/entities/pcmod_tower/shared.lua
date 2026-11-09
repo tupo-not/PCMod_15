@@ -29,10 +29,12 @@ function ENT:Setup( setupdata )
 	// Patch the use event to turnon and turnoff
 	self:AddEHook( "patch", "toggleon", "use" )
 	
-	// Create our ports
+	// Create our ports. Two Ethernet adapters mirror the physical eth 1/eth 2
+	// sockets so the tower can sit on two segments at once.
 	local pts = {}
 	table.insert( pts, self:CreatePort( "vga" ) )
 	table.insert( pts, self:CreatePort( "ps2" ) )
+	table.insert( pts, self:CreatePort( "network" ) )
 	table.insert( pts, self:CreatePort( "network" ) )
 	table.insert( pts, self:CreatePort( "usb" ) )
 	table.insert( pts, self:CreatePort( "usb" ) )

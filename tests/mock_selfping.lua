@@ -6,6 +6,7 @@ PCMod = {
 	DeriveDriver = function() return {} end,
 	IPv6 = {
 		IsLoopback = function( a ) return (a == "127.0.0.1") || (a == "::1") end,
+		IsIPv6 = function( a ) return (type( a ) == "string") && (string.find( a, ":", 1, true ) != nil) end,
 	},
 }
 SERVER = true

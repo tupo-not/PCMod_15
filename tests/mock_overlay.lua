@@ -142,4 +142,47 @@ brouter.PrintName = "Backbone Router"
 brouter:DrawInfo( { x = 0, y = 0 } )
 assertList( lines, { "Backbone Router", "100.0.3.1", "fd00:3::1" }, "backbone router DrawInfo" )
 
+-- A machine with two adapters lists each interface, even when both share the
+-- same DHCP address, so the second Ethernet port is visible.
+PCMod.StringToTable = function()
+	return {
+		{ Port = 3, IPv4 = "192.168.0.2", IPv6 = "fd00:3:0:5::2", Kind = "lan" },
+		{ Port = 4, IPv4 = "192.168.0.2", IPv6 = "fd00:3:0:5::2", Kind = "lan" },
+	}
+end
+local multinic = newEnt()
+multinic:SetNWString( "IP.Ifaces", "serialised" )
+assertList( multinic:GetOverlayAddresses(), {
+	"eth 1: 192.168.0.2", "eth 1: fd00:3:0:5::2",
+	"eth 2: 192.168.0.2", "eth 2: fd00:3:0:5::2",
+}, "multi-NIC overlay lists both adapters" )
+
+-- Interfaces are not classified by role: both adapters are just eth 1/eth 2.
+PCMod.StringToTable = function()
+	return {
+		{ Port = 3, IPv4 = "192.168.0.2", IPv6 = "fd00:3:0:5::2", Kind = "lan" },
+		{ Port = 4, IPv4 = "100.0.7.12", IPv6 = "fd00:7::12", Kind = "wan" },
+	}
+end
+local dual = newEnt()
+dual:SetNWString( "IP.Ifaces", "serialised" )
+assertList( dual:GetOverlayAddresses(), {
+	"eth 1: 192.168.0.2", "eth 1: fd00:3:0:5::2",
+	"eth 2: 100.0.7.12", "eth 2: fd00:7::12",
+}, "interfaces have no LAN/WAN role labels" )
+
+-- Port 0 is the wireless link and still gets a distinct name.
+PCMod.StringToTable = function()
+	return {
+		{ Port = 0, IPv4 = "192.168.0.3", IPv6 = "fd00:3:0:5::3", Kind = "lan" },
+		{ Port = 1, IPv4 = "192.168.0.2", IPv6 = "fd00:3:0:5::2", Kind = "lan" },
+	}
+end
+local wifi = newEnt()
+wifi:SetNWString( "IP.Ifaces", "serialised" )
+assertList( wifi:GetOverlayAddresses(), {
+	"wifi: 192.168.0.3", "wifi: fd00:3:0:5::3",
+	"eth 1: 192.168.0.2", "eth 1: fd00:3:0:5::2",
+}, "wireless link is named separately" )
+
 print( "ALL OVERLAY TESTS PASSED" )

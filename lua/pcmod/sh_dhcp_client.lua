@@ -71,7 +71,9 @@ end
 
 // Apply a DHCP offer to a normal host. Keeps the existing primary/secondary
 // multi-homing model: a lease from a different router becomes a secondary.
-function PCMod.DHCPClient.ApplyHost( ent, cfg )
+// `keep` is set for machines with more than one interface, where a LAN lease
+// and a WAN/backbone lease must coexist instead of replacing each other.
+function PCMod.DHCPClient.ApplyHost( ent, cfg, keep )
 	if ((!ent) || (!cfg) || (!cfg.ip)) then return false end
 	local data = ent.Data && ent:Data()
 	local ipdata = data && data.IP
@@ -85,16 +87,21 @@ function PCMod.DHCPClient.ApplyHost( ent, cfg )
 	end
 	if ((cfg.scope == "wan") || (cfg.scope == "mgmt")) then
 		// The DHCP answer carries the full interface configuration, so show the
-		// same netmask/gateway a static setup would.
-		if (cfg.netmask) then ipdata.Mask = cfg.netmask end
-		if (cfg.maskbits) then ipdata.MaskBits = cfg.maskbits end
-		if (cfg.gateway) then ipdata.Gateway = cfg.gateway end
-		if (ent.SetLanAddress) then ent:SetLanAddress( false ) end
-		if (cfg.upbb != nil && ent.SetUpBB) then ent:SetUpBB( cfg.upbb ) end
-		if (cfg.lanid != nil && ent.SetLanID) then ent:SetLanID( cfg.lanid ) end
+		// same netmask/gateway a static setup would. On a multi-homed host the
+		// LAN lease owns those fields, so only apply them when this machine has
+		// no LAN identity yet.
+		local keepLan = keep && ipdata.LAN && (ipdata.LAN != false)
+		if (!keepLan) then
+			if (cfg.netmask) then ipdata.Mask = cfg.netmask end
+			if (cfg.maskbits) then ipdata.MaskBits = cfg.maskbits end
+			if (cfg.gateway) then ipdata.Gateway = cfg.gateway end
+			if (ent.SetLanAddress) then ent:SetLanAddress( false ) end
+			if (cfg.upbb != nil && ent.SetUpBB) then ent:SetUpBB( cfg.upbb ) end
+			if (cfg.lanid != nil && ent.SetLanID) then ent:SetLanID( cfg.lanid ) end
+			ipdata.Router = cfg.server
+		end
 		if (ent.SetBSubnet) then ent:SetBSubnet( cfg.bb ) end
 		if (ent.SetBIP) then ent:SetBIP( math.max( 0, (tonumber( cfg.host ) or 1) - 1 ) ) end
-		ipdata.Router = cfg.server
 		return true
 	end
 	local p = PCMod.IPv4.ParseLan( cfg.ip )
@@ -111,7 +118,7 @@ function PCMod.DHCPClient.ApplyHost( ent, cfg )
 		local oent = odata && odata.Ent
 		if ((!odata) || (oent && oent.IsValid && (!oent:IsValid()))) then ownerGone = true end
 	end
-	if (primary && owner && (owner != cfg.server) && (!sameLan) && (!ownerGone)) then
+	if (primary && owner && (owner != cfg.server) && (keep || (!sameLan)) && (!ownerGone)) then
 		if (ent.AddExtraIP) then
 			ent:AddExtraIP( cfg.ip, cfg.upbb or 0, cfg.lanid or 0, cfg.server )
 		end
@@ -133,8 +140,11 @@ function PCMod.DHCPClient.ApplyHost( ent, cfg )
 	end
 	// A private lease is the primary identity now; drop a backbone address the
 	// machine carried from an earlier segment so overlays don't show both.
-	if (ent.SetBSubnet) then ent:SetBSubnet( false ) end
-	if (ent.SetBIP) then ent:SetBIP( false ) end
+	// Multi-interface hosts keep the WAN identity of their other adapter.
+	if (!keep) then
+		if (ent.SetBSubnet) then ent:SetBSubnet( false ) end
+		if (ent.SetBIP) then ent:SetBIP( false ) end
+	end
 	ipdata.Router = cfg.server
 	return true
 end

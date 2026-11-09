@@ -49,7 +49,8 @@ function PROG:RefreshNetwork()
 		Prefix = v6prefix,
 		Gateway = v6gw,
 		LinkLocal = v6ll,
-		Extras = (os.GetExtraAddresses && os:GetExtraAddresses()) or {}
+		Extras = (os.GetExtraAddresses && os:GetExtraAddresses()) or {},
+		Interfaces = (os.GetInterfaces && os:GetInterfaces()) or {}
 	}
 	self.DeviceData.IPNote = ""
 	self:RefreshWireless()
@@ -229,7 +230,9 @@ function PROG:ConnectWireless( entIndex, pass )
 		// like a cable: ask, and the router serving this link answers.
 		net.LastDHCP = nil
 		net:DHCPDiscover()
-		net.WirelessIPv4 = (net.LastDHCP != nil)
+		// Wi-Fi has its own interface state; report that lease, not any wired one.
+		local wctx = net.DHCPByPort && net.DHCPByPort[ 0 ]
+		net.WirelessIPv4 = (wctx && (wctx.LastDHCP != nil)) or ((!wctx) && (net.LastDHCP != nil))
 	else
 		// Older clients/routers without DHCP still report the association result.
 		if (reg == "assigned") then net.WirelessIPv4 = true end

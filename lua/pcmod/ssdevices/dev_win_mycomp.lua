@@ -257,9 +257,26 @@ function DEV:BuildNetworkInfo()
 	self:AddListboxItem( "lstNetInfo", "prefix", "IPv6 Subnet: " .. NetValue( net.Prefix ) )
 	self:AddListboxItem( "lstNetInfo", "gateway", "IPv6 Gateway: " .. NetValue( net.Gateway ) )
 	self:AddListboxItem( "lstNetInfo", "linklocal", "Link-Local: " .. NetValue( net.LinkLocal ) )
-	// Secondary addresses from other routers (multi-homed devices).
-	for i, a in ipairs( net.Extras or {} ) do
-		self:AddListboxItem( "lstNetInfo", "alt" .. i, "Alt IPv4: " .. NetValue( a.IPv4 ) .. "  (" .. NetValue( a.IPv6 ) .. ")" )
+	// Secondary addresses from other routers (multi-homed devices), unless the
+	// per-interface list below already covers them.
+	local ifaces = net.Interfaces or {}
+	if (#ifaces == 0) then
+		for i, a in ipairs( net.Extras or {} ) do
+			self:AddListboxItem( "lstNetInfo", "alt" .. i, "Alt IPv4: " .. NetValue( a.IPv4 ) .. "  (" .. NetValue( a.IPv6 ) .. ")" )
+		end
+	end
+	// One row per adapter. Both Ethernet ports are just interfaces; there is no
+	// LAN/WAN role distinction.
+	local eth = 0
+	for i, a in ipairs( ifaces ) do
+		local label
+		if (a.Port == 0) then
+			label = "wifi"
+		else
+			eth = eth + 1
+			label = "eth " .. tostring( eth )
+		end
+		self:AddListboxItem( "lstNetInfo", "iface" .. i, label .. ": " .. NetValue( a.IPv4 ) .. "  (" .. NetValue( a.IPv6 ) .. ")" )
 	end
 end
 

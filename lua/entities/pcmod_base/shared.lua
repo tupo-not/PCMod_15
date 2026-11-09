@@ -525,6 +525,56 @@ if (SERVER) then
 			return out
 		end
 
+		// -----------------------------------------------------------------------------------------------------
+		// Per-interface addresses (one entry per Ethernet port / Wi-Fi link).
+		// The primary and WAN fields above stay as the routable identities; this
+		// list lets the UI show every adapter, including two NICs on the same
+		// subnet that share one address.
+		// -----------------------------------------------------------------------------------------------------
+
+		function ENT:Interfaces()
+			local ip = self:Data().IP
+			ip.Interfaces = ip.Interfaces or {}
+			return ip.Interfaces
+		end
+
+		function ENT:SetInterface( port, info )
+			if ((!port) || (!info)) then return end
+			self:Interfaces()[ port ] = info
+			self:UpdateInterfaceText()
+		end
+
+		function ENT:ClearInterface( port )
+			local list = self:Interfaces()
+			if (list[ port ]) then
+				list[ port ] = nil
+				self:UpdateInterfaceText()
+			end
+		end
+
+		function ENT:ClearInterfaces()
+			self:Data().IP.Interfaces = {}
+			self:UpdateInterfaceText()
+		end
+
+		function ENT:GetInterfaceList()
+			local out = {}
+			for port, info in pairs( self:Interfaces() ) do
+				out[ #out + 1 ] = {
+					Port = port,
+					IPv4 = info.IPv4,
+					IPv6 = info.IPv6,
+					Kind = info.Kind,
+				}
+			end
+			table.sort( out, function( a, b ) return (a.Port < b.Port) end )
+			return out
+		end
+
+		function ENT:UpdateInterfaceText()
+			self:SetNWString( "IP.Ifaces", PCMod.TableToString( self:GetInterfaceList() ) )
+		end
+
 		// Set the LAN IPv4 from a dotted quad. This is the one address PCs and
 		// router LAN interfaces use.
 		function ENT:SetLanAddress( addr, upbb, lanid )
@@ -1842,6 +1892,30 @@ if (CLIENT) then
 			if ((!addr) || (addr == "")) then return end
 			if (table.HasValue( txt, addr )) then return end
 			table.insert( txt, addr )
+		end
+		// Multi-homed hosts (two Ethernet adapters, or cable + Wi-Fi) publish
+		// one address per interface. Label them so the second adapter is
+		// visible even when both NICs share the same DHCP address.
+		local ifstr = self.GetNWString && self:GetNWString( "IP.Ifaces" )
+		if ((ifstr) && (ifstr != "") && PCMod.StringToTable) then
+			local list = PCMod.StringToTable( ifstr ) or {}
+			if (#list > 1) then
+				// Every adapter is just an interface: eth 1, eth 2, ... (port 0
+				// is the wireless link). No LAN/WAN role labels.
+				local eth = 0
+				for _, info in ipairs( list ) do
+					local label
+					if (info.Port == 0) then
+						label = "wifi"
+					else
+						eth = eth + 1
+						label = "eth " .. tostring( eth )
+					end
+					if (info.IPv4 && (info.IPv4 != "")) then add( label .. ": " .. info.IPv4 ) end
+					if (info.IPv6 && (info.IPv6 != "")) then add( label .. ": " .. info.IPv6 ) end
+				end
+				return txt
+			end
 		end
 		local primary = self:GetNWString( "IP" )
 		local primary6 = self:GetNWString( "IPv6" )
