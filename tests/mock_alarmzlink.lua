@@ -497,4 +497,23 @@ hooks[ "Think:PCMod.AlarmzCL.Track" ]()
 assertEq( PCMod.AlarmzCL.Target, 11, "tool held: camera targeted again" )
 clTrace.Entity = nil
 
+-- pc_camlink stool: BuildCPanel must be DOT-defined (spawnmenu calls it with
+-- dot notation; a colon definition got CPanel=nil -> Lua error on tool select)
+CLIENT = true
+TOOL = {}
+language = { Add = function() end }
+game = { SinglePlayer = function() return true end }
+function IsFirstTimePredicted() return true end
+dofile( "pc_camlink.lua" )
+assertTrue( type( TOOL.BuildCPanel ) == "function", "TOOL.BuildCPanel exists" )
+assertEq( TOOL.Tab, "PCmod", "tool tab" )
+local cpCalls = {}
+local cpMock = { AddControl = function( self, kind, opts ) table.insert( cpCalls, { kind = kind, opts = opts } ) end }
+TOOL.BuildCPanel( cpMock ) -- dot call, exactly how the spawnmenu does it
+assertEq( cpCalls[ 1 ].kind, "Header", "cpanel header first" )
+assertTrue( string.find( cpCalls[ 1 ].opts.Description, "pc_camlink_desc", 1, true ) != nil, "header shows the description" )
+local helpCount = 0
+for _, c in ipairs( cpCalls ) do if (c.kind == "Help") then helpCount = helpCount + 1 end end
+assertEq( helpCount, 5, "five usage-step help lines in the cpanel" )
+
 print( "ALL ALARMZ LINK TESTS PASSED" )

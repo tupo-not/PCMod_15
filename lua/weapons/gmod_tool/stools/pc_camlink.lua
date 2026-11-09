@@ -21,7 +21,9 @@ if (CLIENT) then
 	language.Add( "tool.pc_camlink.3", "4) RMB on a linked camera (overlay) - disconnect it." )
 	language.Add( "tool.pc_camlink.4", "The first player to connect a camera may set a password for it; only that player can change or remove it." )
 
-	function TOOL:BuildCPanel( CPanel )
+	// BuildCPanel must use DOT notation (not TOOL:BuildCPanel) - the spawnmenu
+	// calls it with dot notation, so a colon definition would get CPanel=nil.
+	function TOOL.BuildCPanel( CPanel )
 		CPanel:AddControl( "Header", { Text = "#Tool_pc_camlink_name", Description = "#Tool_pc_camlink_desc" } )
 		CPanel:AddControl( "Help", { Text = "#tool.pc_camlink.0" } )
 		CPanel:AddControl( "Help", { Text = "#tool.pc_camlink.1" } )

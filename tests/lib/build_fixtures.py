@@ -70,11 +70,11 @@ FIXTURES = {
     "pcmod_alarmz_ui.lua": "pcmod/ssdevices/dev_win_alarmz.lua",
     "pcmod_sv_alarmz.lua": "pcmod/sv_alarmz.lua",
     "pcmod_cl_alarmz.lua": "pcmod/cl_alarmz.lua",
+    "pc_camlink.lua": "weapons/gmod_tool/stools/pc_camlink.lua",
 }
 
 # Additional sources that only need a syntax check.
 CHECK_ONLY = [
-    "weapons/gmod_tool/stools/pc_camlink.lua",
     "pcmod/cl_gui.lua",
     "pcmod/cl_camera.lua",
     "pcmod/sh_beam.lua",
