@@ -33,6 +33,7 @@ if (!PCMod_NoInclude) then
 	include( "pcmod/sh_ndp.lua" ) -- IPv6 neighbor discovery
 	include( "pcmod/sh_l2.lua" ) -- Pure L2 bridge algorithm
 	include( "pcmod/sh_routing.lua" ) -- Broadcast hello routing
+	include( "pcmod/sh_portanchors.lua" ) -- Hardcoded cable attachment points
 	include( "pcmod/sh_ui_layout.lua" ) -- Pure layout primitives
 	include( "pcmod/sh_window.lua" ) -- Shared window geometry
 	include( "pcmod/sh_logging.lua" ) -- Logging functions

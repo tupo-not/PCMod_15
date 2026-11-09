@@ -95,6 +95,13 @@ if (SERVER) then
 		local g = net.ReadUInt( 8 )
 		local b = net.ReadUInt( 8 )
 
+		// Snap both ends onto the models' hardcoded connector points (when the
+		// clicked spot is close enough) so the rope leaves from the socket.
+		if (PCMod.PortAnchors && PCMod.PortAnchors.Resolve) then
+			lpos1 = PCMod.PortAnchors.Resolve( ent1, port1, lpos1 )
+			lpos2 = PCMod.PortAnchors.Resolve( ent2, port2, lpos2 )
+		end
+
 		// Validate everything server-side (never trust the client).
 		if ((!IsValid( ent1 )) || (!IsValid( ent2 ))) then PCMod.Notice( "Cannot wire: invalid entity", ply ) return end
 		if ((!ent1.IsPCMod) || (!ent2.IsPCMod)) then PCMod.Notice( "Cannot wire: not a PCMod entity", ply ) return end
@@ -132,6 +139,15 @@ end
 // Client: interactive HUD-driven wiring tool.
 // ---------------------------------------------------------------------------------------------------------
 if (CLIENT) then
+
+	// Attachment point for port `index` on `ent` at local click position
+	// `lpos`. Uses the model's measured connector when known.
+	local function Attach( ent, index, lpos )
+		if (PCMod.PortAnchors && PCMod.PortAnchors.Resolve) then
+			return PCMod.PortAnchors.Resolve( ent, index, lpos )
+		end
+		return lpos
+	end
 
 	TOOL.Stage = 0          -- 0 = picking first port, 1 = picking second port
 	TOOL.SelIndex = 1       -- which port is highlighted in the HUD
@@ -236,7 +252,7 @@ if (CLIENT) then
 			self.Ent1 = ent
 			self.Port1 = self.SelIndex
 			self.Port1Type = ports[ self.Port1 ].Type
-			self.LPos1 = ent:WorldToLocal( trace.HitPos )
+			self.LPos1 = Attach( ent, self.Port1, ent:WorldToLocal( trace.HitPos ) )
 			self.Stage = 1
 			self.SelIndex = 1
 			self.AutoSelectDone = false
@@ -274,7 +290,7 @@ if (CLIENT) then
 			net.WriteEntity( ent )
 			net.WriteUInt( self.SelIndex, 8 )
 			net.WriteVector( self.LPos1 )
-			net.WriteVector( ent:WorldToLocal( trace.HitPos ) )
+			net.WriteVector( Attach( ent, self.SelIndex, ent:WorldToLocal( trace.HitPos ) ) )
 			net.WriteString( self:GetClientInfo( "material" ) )
 			net.WriteFloat( self:GetClientNumber( "width" ) )
 			net.WriteUInt( self:GetClientNumber( "r" ), 8 )
@@ -347,7 +363,11 @@ if (CLIENT) then
 			local start = self.Ent1:LocalToWorld( self.LPos1 )
 			local tr = util.GetPlayerTrace( self:GetOwner() )
 			tr.filter = { self:GetOwner() }
-			local aim = util.TraceLine( tr ).HitPos
+			local hit = util.TraceLine( tr )
+			local aim = hit.HitPos
+			if ((IsValid( hit.Entity )) && (hit.Entity.IsPCMod)) then
+				aim = hit.Entity:LocalToWorld( Attach( hit.Entity, self.SelIndex, hit.Entity:WorldToLocal( hit.HitPos ) ) )
+			end
 			render.SetMaterial( Material( self:GetClientInfo( "material" ) ) )
 			render.StartBeam( 2 )
 				render.AddBeam( start, width, 0, col )
