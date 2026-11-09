@@ -20,6 +20,15 @@ if (CLIENT) then
 	language.Add( "tool.pc_camlink.2", "3) Aim at a PCMod screen and press LMB or E - the camera is linked and appears in Alarmz on that PC. One camera can be linked to several PCs." )
 	language.Add( "tool.pc_camlink.3", "4) RMB on a linked camera (overlay) - disconnect it." )
 	language.Add( "tool.pc_camlink.4", "The first player to connect a camera may set a password for it; only that player can change or remove it." )
+
+	function TOOL:BuildCPanel( CPanel )
+		CPanel:AddControl( "Header", { Text = "#Tool_pc_camlink_name", Description = "#Tool_pc_camlink_desc" } )
+		CPanel:AddControl( "Help", { Text = "#tool.pc_camlink.0" } )
+		CPanel:AddControl( "Help", { Text = "#tool.pc_camlink.1" } )
+		CPanel:AddControl( "Help", { Text = "#tool.pc_camlink.2" } )
+		CPanel:AddControl( "Help", { Text = "#tool.pc_camlink.3" } )
+		CPanel:AddControl( "Help", { Text = "#tool.pc_camlink.4" } )
+	end
 end
 
 function TOOL:LeftClick( trace )
