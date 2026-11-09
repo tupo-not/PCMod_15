@@ -70,8 +70,13 @@ if (SERVER) then
 		if ((!IsValid( ent )) || (!ent.IsPCMod)) then return end
 		local prt = ent:Ports()[ port ]
 		if ((!prt) || (!prt.Connected)) then return end
+		local other = prt.ConEnt
 		if (PCMod.Wiring.UnlinkPort( ent, port )) then
 			PCMod.Notice( "Port disconnected", ply )
+			// Refresh both endpoints immediately so the tool's HUD drops the
+			// stale "connected" flag on this very step.
+			PC_BeamPorts( ent, ply )
+			if ((other) && (IsValid( other ))) then PC_BeamPorts( other, ply ) end
 		end
 	end )
 
@@ -113,6 +118,11 @@ if (SERVER) then
 		if (const || rope) then rps = { { const, rope } } end
 
 		PCMod.Wiring.LinkPorts( ent1, port1, ent2, port2, rps, nil )
+		// Both devices changed state; push the new link flags back to the
+		// player so the HUD is correct on the next step without waiting for an
+		// aim change.
+		PC_BeamPorts( ent1, ply )
+		PC_BeamPorts( ent2, ply )
 		PCMod.Notice( "Wiring complete", ply )
 	end )
 
@@ -232,6 +242,8 @@ if (CLIENT) then
 			self.AutoSelectDone = false
 			PCMod.Notice( "Port selected - aim at the second device and left-click" )
 			self:BeginPreview()
+			// Refresh the first device's link flags as the first wiring step.
+			self:RequestPorts( ent )
 			return true
 		end
 
@@ -270,7 +282,13 @@ if (CLIENT) then
 			net.WriteUInt( self:GetClientNumber( "b" ), 8 )
 		net.SendToServer()
 
+		// Finish this wiring step with fresh state for both devices. The server
+		// also re-beams them, but asking here keeps the HUD correct even if the
+		// player keeps aiming at the same entity.
+		local firstEnt = self.Ent1
 		self:Reset()
+		self:RequestPorts( firstEnt )
+		self:RequestPorts( ent )
 		return true
 	end
 
@@ -296,6 +314,14 @@ if (CLIENT) then
 			self.SelIndex = 1
 			self.AutoSelectDone = false
 			self:RequestPorts( ent )
+		end
+		// Keep the HUD's link state fresh while aiming at the same device.
+		// Links can change from the previous wiring step, another player, or
+		// the server, and the cached port data would otherwise stay stale.
+		local now = CurTime()
+		if ((IsValid( ent )) && (ent.IsPCMod) && (now >= (self.NextPortRefresh or 0))) then
+			self:RequestPorts( ent )
+			self.NextPortRefresh = now + 0.5
 		end
 		// Once the second device's ports arrive, auto-select the port whose type
 		// matches the first selection (so you don't have to scroll to find it).
