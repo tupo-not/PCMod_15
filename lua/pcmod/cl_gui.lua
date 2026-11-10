@@ -151,6 +151,12 @@ function PCMod.Gui.InitFonts()
 	//surface.CreateFont( "Tahoma", 20, 400, true, false, "pcmod_3d2d" )
 	surface.CreateFont("pcmod_3d2d", {font = 'Tahoma', size = size, weight = 400} )
 	surface.CreateFont("ScoreboardText", {font = 'Tahoma', size = size, weight = 400} )
+	// Mark a font as valid only if it actually measures - a rejected CreateFont
+	// must not end up in the registry (SetFont on it would spam warnings).
+	for _, f in ipairs( { "pcmod_3d2d", "ScoreboardText" } ) do
+		surface.SetFont( f )
+		if (surface.GetTextSize( "X" )) then PCMod.Gui.Fonts[ f ] = true end
+	end
 end
 hook.Add( "Initialize", "PCMod.Gui.InitFonts", PCMod.Gui.InitFonts )
 
@@ -280,25 +286,41 @@ usermessage.Hook( "pcmod_ppnot", function( um )
 	PCMod.Gui.PopupNotice( um:ReadString(), um:ReadString() )
 end )
 
+// Fonts known to be valid: engine defaults + everything PCMod registered via
+// InitFonts. Used to never call surface.SetFont with an invalid font (which
+// spams "'X' isn't a valid font" warnings).
+PCMod.Gui.Fonts = {
+	Default = true, DefaultBold = true, DefaultSmall = true,
+	DermaDefault = true, DermaDefaultBold = true, DermaLarge = true,
+	Marlett = true, Trebuchet18 = true, Trebuchet24 = true,
+}
+
+function PCMod.Gui.FontOK( font )
+	return (PCMod.Gui.Fonts[ font ] == true)
+end
+
 // ---------------------------------------------------------------------------------------------------------
 // DrawLabel - Draws a label containing a single or multiple strings
 // ---------------------------------------------------------------------------------------------------------
 function PCMod.Gui.DrawLabel( x, y, font, text, padding, bgcol, txtcol )
 	if (PCMod.Gui.CamLocked) then return end
 	if (!font) then font = "ScoreboardText" end
-	// Measure with the font we will actually draw with. If it is not registered
-	// (InitFonts never ran or the engine rejected the name), try to (re)create
-	// the fonts once, then fall back to DermaDefault - never error on a bad font.
-	surface.SetFont( font )
-	if (!surface.GetTextSize( "X" )) then
+	// Never SetFont an unregistered font (the engine warns "'X' isn't a valid
+	// font" and GetTextSize returns nil, which used to crash this function).
+	// If the font is unknown, run InitFonts once (e.g. the Initialize hook was
+	// missed); if it is still unknown, fall back to DermaDefault or skip.
+	if (!PCMod.Gui.FontOK( font )) then
 		if (PCMod.Gui.InitFonts) then PCMod.Gui.InitFonts() end
-		surface.SetFont( font )
-		if (!surface.GetTextSize( "X" )) then
+	end
+	if (!PCMod.Gui.FontOK( font )) then
+		if (PCMod.Gui.FontOK( "DermaDefault" )) then
 			font = "DermaDefault"
-			surface.SetFont( font )
-			if (!surface.GetTextSize( "X" )) then return end
+		else
+			return
 		end
 	end
+	surface.SetFont( font )
+	if (!surface.GetTextSize( "X" )) then return end
 	local tmp_w = {}
 	local tmp_h = {}
 	local cnt

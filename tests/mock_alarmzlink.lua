@@ -520,8 +520,9 @@ assertTrue( string.find( cpCalls[ 1 ].opts.Description, "Alarmz", 1, true ) != n
 assertTrue( string.find( cpCalls[ 1 ].opts.Description, "password", 1, true ) != nil, "usage steps incl. password note in description" )
 assertTrue( string.find( cpCalls[ 1 ].opts.Description, "1)", 1, true ) != nil and string.find( cpCalls[ 1 ].opts.Description, "4)", 1, true ) != nil, "all steps 1-4 in description" )
 
--- DrawLabel must never error on an unregistered font (laptop overlay bug):
--- lazy InitFonts, then DermaDefault fallback, then silent skip.
+-- DrawLabel must never error NOR warn ('X isn't a valid font') on an
+-- unregistered font (laptop overlay bug): registry check first, lazy InitFonts,
+-- then DermaDefault fallback.
 file = { Find = function() return {} end, Exists = function() return false end }
 concommand = { Add = function() end }
 usermessage = usermessage or { Hook = function() end }
@@ -532,36 +533,42 @@ PCMod.Warning = function() end
 gui = { MouseX = function() return 0 end, MouseY = function() return 0 end }
 function table.MaxVal( t ) local m = 0 for _, v in pairs( t ) do if (v > m) then m = v end end return m end
 function table.TotalVal( t ) local s = 0 for _, v in pairs( t ) do s = s + v end return s end
-local fonts = { DermaDefault = true }
+local fonts = { DermaDefault = true, Default = true } -- engine fonts only; ScoreboardText NOT created yet
+local fontWarnings = {}
 local curFont = nil
 local guiTexts = {}
 surface = {
 	CreateFont = function( name ) fonts[ name ] = true end,
-	SetFont = function( f ) curFont = f end,
+	SetFont = function( f ) if (!fonts[ f ]) then table.insert( fontWarnings, f ) end curFont = f end,
 	GetTextSize = function( t ) if (fonts[ curFont ]) then return #tostring( t ) * 6, 10 end return nil end,
 }
 draw = { RoundedBox = function() end, SimpleText = function( txt, font ) table.insert( guiTexts, { txt = txt, font = font } ) end }
 
 dofile( "pcmod_cl_gui.lua" )
 
--- font not registered yet (InitFonts never ran): lazy re-create fixes it, no error
-fonts[ "ScoreboardText" ] = nil
+-- font not registered yet (Initialize hook missed): lazy InitFonts registers it,
+-- no warning, draws with the requested font
+assertTrue( PCMod.Gui.Fonts[ "ScoreboardText" ] == nil, "ScoreboardText not registered before InitFonts" )
 guiTexts = {}
+fontWarnings = {}
 local ok1 = pcall( PCMod.Gui.DrawLabel, 100, 100, "ScoreboardText", { "Laptop" }, 10, Color( 50, 50, 50, 200 ), Color( 255, 255, 255, 255 ) )
 assertTrue( ok1, "DrawLabel does not error with unregistered font" )
-assertTrue( fonts[ "ScoreboardText" ] == true, "InitFonts ran lazily and registered the font" )
+assertTrue( PCMod.Gui.Fonts[ "ScoreboardText" ] == true, "lazy InitFonts registered the font" )
+assertEq( #fontWarnings, 0, "no 'isn't a valid font' warnings" )
 assertEq( guiTexts[ #guiTexts ].font, "ScoreboardText", "drew with the requested font after lazy init" )
 
--- engine rejects the name entirely: falls back to DermaDefault, still no error
+-- engine rejects CreateFont (font never becomes measurable): DermaDefault fallback, no crash
+surface.CreateFont = function() end -- simulate rejection
 fonts[ "ScoreboardText" ] = nil
-surface.CreateFont = function() end -- simulate engine rejecting CreateFont
+PCMod.Gui.Fonts[ "ScoreboardText" ] = nil
 guiTexts = {}
 local ok2 = pcall( PCMod.Gui.DrawLabel, 100, 100, "ScoreboardText", { "Laptop" }, 10, Color( 50, 50, 50, 200 ), Color( 255, 255, 255, 255 ) )
-assertTrue( ok2, "DrawLabel does not error when the font cannot be created" )
+assertTrue( ok2, "no error when the font cannot be created" )
 assertEq( guiTexts[ #guiTexts ].font, "DermaDefault", "fell back to DermaDefault" )
 
--- even DermaDefault missing: silent skip, no error
+-- even DermaDefault unmeasurable: silent skip, no error
 fonts[ "DermaDefault" ] = nil
+PCMod.Gui.Fonts[ "DermaDefault" ] = nil
 guiTexts = {}
 local ok3 = pcall( PCMod.Gui.DrawLabel, 100, 100, "ScoreboardText", { "Laptop" }, 10, Color( 50, 50, 50, 200 ), Color( 255, 255, 255, 255 ) )
 assertTrue( ok3, "DrawLabel never errors, even with no valid font at all" )
