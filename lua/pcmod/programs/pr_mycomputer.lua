@@ -14,7 +14,7 @@ PROG.DeviceLink = "window_mycomp"
 PROG.DeviceName = "window_mycomp"
 PROG.DeviceData = {}
 
-function PROG:RefreshNetwork()
+function PROG:RefreshNetwork( keepNote )
 	local os = self:GetOS()
 	if (!os) then return end
 	local ipv4 = os:GetIP()
@@ -52,8 +52,29 @@ function PROG:RefreshNetwork()
 		Extras = (os.GetExtraAddresses && os:GetExtraAddresses()) or {},
 		Interfaces = (os.GetInterfaces && os:GetInterfaces()) or {}
 	}
-	self.DeviceData.IPNote = ""
+	if (!keepNote) then self.DeviceData.IPNote = "" end
 	self:RefreshWireless()
+end
+
+// Friendly name of a wireless network: the router's configured SSID when it
+// has one, otherwise a class-based fallback.
+function PROG:WirelessName( ent, data )
+	data = data or ((ent && ent.Data && ent:Data()) or nil)
+	if (data) then
+		if (data.RouterCfg && data.RouterCfg.WireName) then return data.RouterCfg.WireName end
+		if (data.WireName) then return data.WireName end
+		local rdrv = data.Drivers && data.Drivers[ "webgr_router" ]
+		if (rdrv && rdrv.GetCfg) then
+			local cfg = rdrv:GetCfg()
+			if (cfg && cfg.WireName) then return cfg.WireName end
+		end
+	end
+	if ((ent) && (ent.GetClass)) then
+		local cls = ent:GetClass()
+		if (cls == "pcmod_erouter") then return "Router" end
+		if (cls == "pcmod_brouter") then return "Backbone Router" end
+	end
+	return "LAN Modem"
 end
 
 // Scan for wireless routers this computer could reach. The PC itself links to
@@ -82,6 +103,7 @@ function PROG:RefreshWireless()
 				local signal = 100
 				if (range > 0) then signal = math.max( 0, math.floor( (1 - (dist / range)) * 100 ) ) end
 				table.insert( out, {
+					Name = self:WirelessName( ent, data ),
 					Class = ent:GetClass(),
 					EntIndex = ent:EntIndex(),
 					Distance = dist,
@@ -90,7 +112,11 @@ function PROG:RefreshWireless()
 			end
 		end
 	end
-	table.sort( out, function( a, b ) return (a.Distance < b.Distance) end )
+	// Strongest signal first; the distance is only used to derive the signal.
+	table.sort( out, function( a, b )
+		if (a.Signal != b.Signal) then return a.Signal > b.Signal end
+		return tostring( a.Name ) < tostring( b.Name )
+	end )
 	self.DeviceData.Wireless = out
 	self:RefreshWifiStatus()
 end
@@ -159,21 +185,72 @@ function PROG:RenewNetwork()
 	if (net && net.WirelessEnt && net.WirelessEnt:IsValid()) then
 		local rdata = PCMod.Data[ net.WirelessEnt:EntIndex() ]
 		local rdrv = rdata && rdata.Drivers && rdata.Drivers[ "webgr_router" ]
-		net.WirelessIPv4 = (rdrv && rdrv.HasLease && rdrv:HasLease( self.Entity )) and true or false
+		if (net.DHCPByPort && net.DHCPByPort[ 0 ]) then
+			// Asynchronous Wi-Fi DHCP: let the live context drive the status.
+			net.WirelessIPv4 = nil
+		elseif (rdrv && rdrv.HasLeaseForMAC) then
+			local wmac = self.Entity.GetInterfaceMAC && self.Entity:GetInterfaceMAC( 0 )
+			net.WirelessIPv4 = (wmac && rdrv:HasLeaseForMAC( "lan", wmac )) and true or false
+		elseif (rdrv && rdrv.HasLease) then
+			net.WirelessIPv4 = rdrv:HasLease( self.Entity ) and true or false
+		end
 	end
 	self:RefreshNetwork()
 	self.DeviceData.IPNote = (renewed > 0) and "Address renewed." or "No DHCP answer."
 	self:UpdateSS()
 end
 
+// Cheap state fingerprint for asynchronous network changes (DHCP answers and
+// interface leases arrive on a timer now that link latency is emulated).
+function PROG:NetworkSignature()
+	local parts = {}
+	local net = self:GetNetworkDriver()
+	local wifi = net && net.WirelessEnt
+	if ((wifi) && (wifi:IsValid())) then
+		parts[ #parts + 1 ] = "w:" .. tostring( wifi:EntIndex() )
+		local wctx = net.DHCPByPort && net.DHCPByPort[ 0 ]
+		local lease = wctx && (wctx.Lease or wctx.LastDHCP)
+		parts[ #parts + 1 ] = tostring( lease && (lease.ip or lease.address) or "noip" )
+	else
+		parts[ #parts + 1 ] = "w:off"
+	end
+	local os = self:GetOS()
+	if (os) then
+		if (os.GetFullIP) then parts[ #parts + 1 ] = tostring( os:GetFullIP() ) end
+		for _, a in ipairs( (os.GetInterfaces && os:GetInterfaces()) or {} ) do
+			parts[ #parts + 1 ] = tostring( a.Port ) .. "=" .. tostring( a.IPv4 )
+		end
+	end
+	return table.concat( parts, "|" )
+end
+
+function PROG:Think()
+	if (!CurTime) then return end
+	local now = CurTime()
+	if (self.NextNetPoll && (now < self.NextNetPoll)) then return end
+	self.NextNetPoll = now + 0.25
+	local sig = self:NetworkSignature()
+	if (sig == self.NetSig) then return end
+	self.NetSig = sig
+	self:RefreshNetwork( true )
+	self:UpdateSS()
+end
+
 function PROG:RefreshWifiStatus()
 	local net = self:GetNetworkDriver()
 	if ((net) && (net.WirelessEnt) && (net.WirelessEnt:IsValid())) then
+		// A DHCP answer over Wi-Fi is asynchronous once link latency is
+		// emulated, so do not trust the snapshot taken at association time.
+		// Look at the Wi-Fi interface context itself.
+		local ipv4 = net.WirelessIPv4
+		local wctx = net.DHCPByPort && net.DHCPByPort[ 0 ]
+		if (wctx) then ipv4 = ((wctx.Lease != nil) || (wctx.LastDHCP != nil)) end
 		self.DeviceData.Wifi = {
 			Connected = true,
+			Name = self:WirelessName( net.WirelessEnt ),
 			EntIndex = net.WirelessEnt:EntIndex(),
 			Class = net.WirelessEnt:GetClass(),
-			NoIPv4 = (net.WirelessIPv4 == false)
+			NoIPv4 = (ipv4 == false)
 		}
 	else
 		self.DeviceData.Wifi = { Connected = false }
@@ -274,6 +351,7 @@ end
 function PROG:OnStart()
 	self:RefreshNetwork()
 	self:RefreshDevices()
+	self.NetSig = self:NetworkSignature()
 end
 
 function PROG:DoCommand( com, args )

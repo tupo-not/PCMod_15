@@ -45,6 +45,8 @@ TESTS=(
     mock_ipv6
     mock_ndp
     mock_portanchors
+    mock_latency
+    mock_ifacemac
     mock_multinic
     mock_multihome
     mock_entity_ipv6

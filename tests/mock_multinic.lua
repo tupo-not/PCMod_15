@@ -17,6 +17,14 @@ PCMod = {
 		Format = function( g )
 			return "fd00:" .. tostring( g[ 2 ] ) .. ":0:" .. tostring( g[ 4 ] ) .. "::" .. tostring( g[ 8 ] )
 		end,
+		LANPrefix = function( bb, sub )
+			return "fd00:" .. tostring( bb ) .. ":0:" .. tostring( sub ) .. "::/64"
+		end,
+		BackbonePrefix = function( bb )
+			return "fd00:" .. tostring( bb ) .. "::/32"
+		end,
+		Gateway = function( prefix ) return "gw:" .. tostring( prefix ) end,
+		LinkLocal = function( v6 ) return "ll:" .. tostring( v6 ) end,
 	},
 	IPv4 = {
 		SameLan = function( a, b, bits )
@@ -61,6 +69,7 @@ function ent:SendPacket( portid, dest, port, body, ttl, src )
 	sent = { portid = portid, dest = dest, src = src }
 	return 0
 end
+function ent:EnsureInterfaceMAC( port ) return "MAC" .. tostring( port ) end
 
 local drv = {}
 for k, v in pairs( DRV ) do drv[ k ] = v end
@@ -128,6 +137,19 @@ wifiSent = nil
 drv:SendPacket( "10.0.0.9", 0, { "payload" }, nil, nil, false )
 assertEq( sent.portid, 2, "wired reply leaves over its cable" )
 assertTrue( wifiSent == nil, "wired reply does not jump to Wi-Fi" )
+
+-- Every interface records its own full status, so the control panel can show
+-- a separate block per adapter instead of one shared set of fields.
+drv.DHCPByPort[ 1 ].Lease.netmask = "255.255.255.0"
+drv.DHCPByPort[ 1 ].Lease.gateway = "192.168.1.1"
+local info = drv:InterfaceInfo( 1, drv.DHCPByPort[ 1 ].Lease )
+assertEq( info.Port, 1, "interface record keeps its port" )
+assertEq( info.MAC, "MAC1", "interface record carries its own MAC" )
+assertEq( info.Mask, "255.255.255.0", "interface record carries the netmask" )
+assertEq( info.Gateway4, "192.168.1.1", "interface record carries the IPv4 gateway" )
+assertEq( info.IPv6Prefix, "fd00:1:0:1::/64", "interface record carries its /64" )
+assertEq( info.IPv6Gateway, "gw:fd00:1:0:1::/64", "interface record carries its IPv6 gateway" )
+assertTrue( string.find( info.IPv6LinkLocal, "ll:", 1, true ) == 1, "interface record carries a link-local address" )
 
 -- Losing one cable releases only that adapter's lease.
 local released = nil

@@ -36,6 +36,10 @@ function net:SendPacket( dest, port, body, ttl )
 	return true
 end
 
+-- Emulated link delays make wall-clock time the source of hop RTTs.
+local now = 0
+function CurTime() return now end
+
 local os = table.Copy( OS )
 os.TraceRouteData = {}
 os.Progs = {}
@@ -56,23 +60,26 @@ assertEq( sent[ 1 ].body[ 4 ], 1, "first probe carries TTL 1" )
 assertEq( sent[ 1 ].ttl, 1, "first probe is sent with TTL 1" )
 
 -- Hop 1 expired at the first router: record it and probe again with TTL 2.
+now = 0.012
 os:ProcessPacket( 0, { "netTraceHop", "os", 1, "192.168.5.1", "RTR", 1 }, { "192.168.5.1", 0 } )
 assertEq( #sent, 2, "a hop report triggers the next probe" )
 assertEq( sent[ 2 ].body[ 4 ], 2, "second probe carries TTL 2" )
 assertEq( sent[ 2 ].ttl, 2, "second probe is sent with TTL 2" )
 
 -- Hop 2 expired at the backbone router.
+now = 0.030
 os:ProcessPacket( 0, { "netTraceHop", "os", 1, "10.0.1.1", "BRTR", 2 }, { "10.0.1.1", 0 } )
 assertEq( #sent, 3, "second hop report triggers the third probe" )
 assertEq( sent[ 3 ].ttl, 3, "third probe is sent with TTL 3" )
 
 -- The destination is a router and answers as the final hop.
+now = 0.045
 os:ProcessPacket( 0, { "netTraceResponse", "os", 1, "Router" }, { "10.0.1.4", 0 } )
 assertTrue( done ~= nil, "destination response completes the trace" )
 assertEq( done.ip, "10.0.1.4", "trace reports the destination address" )
-assertEq( done.trace[ 1 ], "192.168.5.1 - RTR", "hop 1 result" )
-assertEq( done.trace[ 2 ], "10.0.1.1 - BRTR", "hop 2 result" )
-assertEq( done.trace[ 3 ], "10.0.1.4 - Router", "final hop result" )
+assertEq( done.trace[ 1 ], "192.168.5.1 - RTR  (12 ms)", "hop 1 result includes RTT" )
+assertEq( done.trace[ 2 ], "10.0.1.1 - BRTR  (18 ms)", "hop 2 result includes RTT" )
+assertEq( done.trace[ 3 ], "10.0.1.4 - Router  (15 ms)", "final hop result includes RTT" )
 assertTrue( os.TraceRouteData[ 1 ] == nil, "trace state released on completion" )
 assertEq( #sent, 3, "no probe is sent after the destination answers" )
 

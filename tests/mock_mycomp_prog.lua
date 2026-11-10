@@ -57,17 +57,17 @@ end
 local VecMT = { __sub = function() return { Length = function() return 120 end } end }
 local function Vec() return setmetatable( {}, VecMT ) end
 function ent:GetPos() return Vec() end
-local function makeWireless( idx, cls, wireless )
-    local o = { IsPCMod = true, Idx = idx, Cls = cls, Wl = wireless }
+local function makeWireless( idx, cls, wireless, name )
+    local o = { IsPCMod = true, Idx = idx, Cls = cls, Wl = wireless, WName = name }
     function o:IsValid() return true end
     function o:EntIndex() return self.Idx end
     function o:GetClass() return self.Cls end
-    function o:Data() return { IsWireless = self.Wl } end
+    function o:Data() return { IsWireless = self.Wl, WireName = self.WName } end
     function o:GetPos() return Vec() end
     return o
 end
 ents = {
-    FindInSphere = function() return { makeWireless( 11, "pcmod_router", true ), makeWireless( 12, "pcmod_router", false ), makeWireless( 13, "pcmod_router", true ) } end,
+    FindInSphere = function() return { makeWireless( 11, "pcmod_router", true, "Alpha" ), makeWireless( 12, "pcmod_router", false ), makeWireless( 13, "pcmod_router", true, "Beta" ) } end,
     FindByClass = function() return {} end,
 }
 
@@ -95,7 +95,7 @@ local wifi = { IsPCMod = true }
 function wifi:IsValid() return true end
 function wifi:EntIndex() return 50 end
 function wifi:GetClass() return "pcmod_router" end
-function wifi:Data() return { IsWireless = true, WirePass = "123" } end
+function wifi:Data() return { IsWireless = true, WirePass = "123", WireName = "TestNet" } end
 ents.GetByIndex = function( idx ) if (idx == 50) then return wifi end return nil end
 
 local os = {}
@@ -146,6 +146,7 @@ assertEq( #prog.DeviceData.Dvs, 2, "only identified USB devices returned" )
 assertTrue( os.Refreshed, "USB data refreshed" )
 assertEq( #prog.DeviceData.Wireless, 2, "only wireless routers in range returned" )
 assertEq( prog.DeviceData.Wireless[ 1 ].Distance, 120, "wireless distance" )
+assertTrue( prog.DeviceData.Wireless[ 1 ].Name != nil, "wireless network carries a name" )
 assertEq( prog.DeviceData.Wireless[ 1 ].Signal, 88, "wireless signal percentage" )
 assertEq( prog.DeviceData.Wireless[ 1 ].Class, "pcmod_router", "wireless router class" )
 
@@ -156,8 +157,20 @@ assertTrue( netDrv.WirelessEnt == nil, "wrong password leaves no link" )
 prog:DoCommand( "connect_wifi", { "50", "123" } )
 assertTrue( prog.DeviceData.Wifi.Connected, "Wi-Fi connected" )
 assertEq( prog.DeviceData.Wifi.EntIndex, 50, "Wi-Fi router index" )
+assertEq( prog.DeviceData.Wifi.Name, "TestNet", "Wi-Fi status shows the network name" )
 assertTrue( netDrv.WirelessEnt == wifi, "network driver holds the link" )
 assertTrue( routerDrv.Added == ent, "router recorded the wireless client" )
+
+-- A delayed DHCP answer must not leave the Wi-Fi status stuck on
+-- "IPv6 only": the live interface context wins over the association snapshot.
+netDrv.WirelessIPv4 = false
+netDrv.DHCPByPort = { [ 0 ] = { Lease = { ip = "192.168.1.9" } } }
+prog:RefreshWifiStatus()
+assertTrue( (not prog.DeviceData.Wifi.NoIPv4), "live Wi-Fi lease clears IPv6-only" )
+netDrv.DHCPByPort[ 0 ].Lease = nil
+prog:RefreshWifiStatus()
+assertTrue( prog.DeviceData.Wifi.NoIPv4, "no Wi-Fi lease remains IPv6-only" )
+netDrv.DHCPByPort = nil
 
 -- Manual DHCP renew reaches the router without relinking, and the Wi-Fi status
 -- reflects whether a lease is still held.

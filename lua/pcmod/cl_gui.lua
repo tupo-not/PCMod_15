@@ -197,7 +197,13 @@ function PCMod.Gui.DrawWirelessLinks( ent )
 	local offs = 0
 	for _, v in pairs( elist ) do
 		if ((v) && (v:IsValid()) && (v.IsPCMod) && (v != ent)) then
-			if (v:GetGVar( "wireless" )) then
+			local wireless
+			if (v.GetWirelessSSID) then
+				wireless = (v:GetWirelessSSID() != nil)
+			elseif (v.GetGVar) then
+				wireless = (v:GetGVar( "wireless" ) == true)
+			end
+			if (wireless) then
 				local endpos = v:GetPos():ToScreen()
 				if (math.IsOnScreen( endpos )) then
 					surface.DrawLine( startpos.x, startpos.y, endpos.x, endpos.y )

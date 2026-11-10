@@ -248,6 +248,33 @@ function DEV:BuildNetworkInfo()
 	self:ClearListbox( "lstNetInfo" )
 	local net = self.Net
 	if (type( net ) != "table") then net = {} end
+	local ifaces = net.Interfaces or {}
+	if (#ifaces > 0) then
+		// Repeat the whole status block for every adapter, so a machine with
+		// two NICs never shows one interface's gateway or netmask under
+		// another interface's address.
+		local eth = 0
+		for i, a in ipairs( ifaces ) do
+			local label
+			if (a.Port == 0) then
+				label = "wifi"
+			else
+				eth = eth + 1
+				label = "eth " .. tostring( eth )
+			end
+			self:AddListboxItem( "lstNetInfo", "ifacehdr" .. i, "-- " .. label .. " --" )
+			self:AddListboxItem( "lstNetInfo", "ifacemac" .. i, "MAC: " .. NetValue( a.MAC ) )
+			self:AddListboxItem( "lstNetInfo", "ifaceipv4" .. i, "IPv4: " .. NetValue( a.IPv4 ) )
+			self:AddListboxItem( "lstNetInfo", "ifacenetmask" .. i, "Netmask: " .. NetValue( a.Mask ) )
+			self:AddListboxItem( "lstNetInfo", "ifacegw4" .. i, "IPv4 Gateway: " .. NetValue( a.Gateway4 ) )
+			self:AddListboxItem( "lstNetInfo", "ifaceipv6" .. i, "IPv6: " .. NetValue( a.IPv6 ) )
+			self:AddListboxItem( "lstNetInfo", "ifaceprefix" .. i, "IPv6 Subnet: " .. NetValue( a.IPv6Prefix ) )
+			self:AddListboxItem( "lstNetInfo", "ifacegw6" .. i, "IPv6 Gateway: " .. NetValue( a.IPv6Gateway ) )
+			self:AddListboxItem( "lstNetInfo", "ifacell" .. i, "Link-Local: " .. NetValue( a.IPv6LinkLocal ) )
+		end
+		return
+	end
+	// Fallback for older clients and devices without per-interface data.
 	self:AddListboxItem( "lstNetInfo", "mac", "MAC Address: " .. NetValue( net.MAC ) )
 	self:AddListboxItem( "lstNetInfo", "ipv4", "IPv4 Address: " .. NetValue( net.IPv4 ) )
 	self:AddListboxItem( "lstNetInfo", "static", "Static IP: " .. tostring( net.Static or "DHCP (auto)" ) )
@@ -258,25 +285,9 @@ function DEV:BuildNetworkInfo()
 	self:AddListboxItem( "lstNetInfo", "gateway", "IPv6 Gateway: " .. NetValue( net.Gateway ) )
 	self:AddListboxItem( "lstNetInfo", "linklocal", "Link-Local: " .. NetValue( net.LinkLocal ) )
 	// Secondary addresses from other routers (multi-homed devices), unless the
-	// per-interface list below already covers them.
-	local ifaces = net.Interfaces or {}
-	if (#ifaces == 0) then
-		for i, a in ipairs( net.Extras or {} ) do
-			self:AddListboxItem( "lstNetInfo", "alt" .. i, "Alt IPv4: " .. NetValue( a.IPv4 ) .. "  (" .. NetValue( a.IPv6 ) .. ")" )
-		end
-	end
-	// One row per adapter. Both Ethernet ports are just interfaces; there is no
-	// LAN/WAN role distinction.
-	local eth = 0
-	for i, a in ipairs( ifaces ) do
-		local label
-		if (a.Port == 0) then
-			label = "wifi"
-		else
-			eth = eth + 1
-			label = "eth " .. tostring( eth )
-		end
-		self:AddListboxItem( "lstNetInfo", "iface" .. i, label .. ": " .. NetValue( a.IPv4 ) .. "  (" .. NetValue( a.IPv6 ) .. ")" )
+	// per-interface list above already covers them.
+	for i, a in ipairs( net.Extras or {} ) do
+		self:AddListboxItem( "lstNetInfo", "alt" .. i, "Alt IPv4: " .. NetValue( a.IPv4 ) .. "  (" .. NetValue( a.IPv6 ) .. ")" )
 	end
 end
 
@@ -302,11 +313,14 @@ function DEV:BuildWireless()
 		if (w && w.EntIndex) then
 			count = count + 1
 			local key = tostring( w.EntIndex )
-			// Simplify the router class name into a friendly label.
-			local name = "LAN Modem"
-			if (w.Class == "pcmod_erouter") then name = "Router"
-			elseif (w.Class == "pcmod_brouter") then name = "Backbone Router" end
-			self:AddListboxItem( "lstWireless", key, name .. " #" .. key .. "  |  " .. tostring( w.Distance or 0 ) .. "m  |  Signal " .. tostring( w.Signal or 0 ) .. "%" )
+			local name = w.Name
+			if ((!name) || (name == "")) then
+				// Older payloads only carried the router class.
+				name = "LAN Modem"
+				if (w.Class == "pcmod_erouter") then name = "Router"
+				elseif (w.Class == "pcmod_brouter") then name = "Backbone Router" end
+			end
+			self:AddListboxItem( "lstWireless", key, tostring( name ) .. "  |  Signal " .. tostring( w.Signal or 0 ) .. "%" )
 		end
 	end
 	if (count == 0) then self:AddListboxItem( "lstWireless", "none", "No wireless networks in range." ) end
@@ -336,10 +350,13 @@ function DEV:Paint( x, y, w, h )
 		local wf = self.Wifi
 		local wstat = "Not connected."
 		if (wf && wf.Connected) then
-			local wname = "LAN Modem"
-			if (wf.Class == "pcmod_erouter") then wname = "Router"
-			elseif (wf.Class == "pcmod_brouter") then wname = "Backbone Router" end
-			wstat = "Connected to " .. wname .. " #" .. tostring( wf.EntIndex )
+			local wname = wf.Name
+			if ((!wname) || (wname == "")) then
+				wname = "LAN Modem"
+				if (wf.Class == "pcmod_erouter") then wname = "Router"
+				elseif (wf.Class == "pcmod_brouter") then wname = "Backbone Router" end
+			end
+			wstat = "Connected to " .. tostring( wname )
 			if (wf.NoIPv4) then wstat = wstat .. " (IPv6 only)" end
 		elseif (wf && wf.BadPass) then
 			wstat = "Incorrect password."

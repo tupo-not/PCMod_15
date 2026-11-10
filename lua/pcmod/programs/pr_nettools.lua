@@ -20,6 +20,19 @@ PROG.P_TimeOut = 0
 PROG.Tracing = false
 PROG.T_TimeOut = 0
 
+// Wall-clock seconds for RTT display; the mock suites do not provide CurTime.
+local function NowSeconds()
+	if (CurTime) then return CurTime() end
+	if (RealTime) then return RealTime() end
+	return 0
+end
+
+local function ElapsedMs( since )
+	local ms = math.floor( ((NowSeconds() - (since or 0)) * 1000) + 0.5 )
+	if (ms < 0) then ms = 0 end
+	return ms
+end
+
 function PROG:DoCommand( com, args )
 	if (com == "exit") then
 		self:GetOS():RunCommand( "sys_openprog mycomputer" )
@@ -100,6 +113,7 @@ function PROG:Ping( target )
 	self.DeviceData.Tg = ""
 	self:UpdateSS()
 	self.P_TimeOut = CurTime()+5
+	self.P_Sent = NowSeconds()
 	self.Pinging = true
 	self:GetOS():NetPing( target, "nettools" )
 end
@@ -119,11 +133,13 @@ end
 
 function PROG:PingSuccess( ip, tag )
 	if (!self.Pinging) then return end
+	local ms = ElapsedMs( self.P_Sent )
 	self.DeviceData.St = 20 -- Pinged succesfully!
 	self.DeviceData.IP = ip
-	self.DeviceData.Tg = tag
+	self.DeviceData.Tg = tostring( tag or "" ) .. "  |  RTT " .. tostring( ms ) .. " ms"
 	self:UpdateSS()
 	self.P_TimeOut = 0
+	self.P_Sent = nil
 	self.Pinging = false
 end
 
@@ -142,6 +158,7 @@ function PROG:Think()
 	if (self.Pinging) then
 		if (CurTime() > self.P_TimeOut) then
 			self.P_TimeOut = 0
+			self.P_Sent = nil
 			self.Pinging = false
 			self.DeviceData.St = 22 -- Timed out
 			self.DeviceData.IP = ""

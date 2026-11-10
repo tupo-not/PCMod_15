@@ -111,6 +111,19 @@ cfg.AdvancedMode = false -- Enable/disable advanced mode (Using a PC without cam
 
 cfg.MaxNetworkPass = 50 -- What's the maximum amount of routers a packet can pass through in one go?
 
+// Emulated link latency (milliseconds, one-way per link) and Wi-Fi loss.
+// Set NetLatency = false to disable the simulation entirely.
+cfg.NetLatency = true
+cfg.WiredLatency = 1 -- Ethernet cable latency per link
+cfg.OpticLatency = 1 -- Fibre link latency per link
+cfg.WirelessLatency = 12 -- Wi-Fi latency per link at the AP
+cfg.WirelessDistanceLatency = 25 -- extra Wi-Fi latency at the edge of range
+cfg.LatencyJitter = 1 -- +/- jitter for wired/fibre links
+cfg.WirelessJitter = 6 -- +/- jitter for Wi-Fi links near the AP
+cfg.WirelessDistanceJitter = 5 -- extra Wi-Fi jitter at the edge of range
+cfg.WirelessLoss = 0.02 -- Fraction of Wi-Fi frames dropped near the AP
+cfg.WirelessDistanceLoss = 0.10 -- extra Wi-Fi loss at the edge of range
+
 cfg.HighQuality = true -- Should the client use theme hooks? (3D form elements)
 
 cfg.WireTypes = {} -- Do not edit

@@ -149,10 +149,28 @@ function ent:GetSourceAddress() return "192.168.5.1" end
 function ent:SetSubnet( s ) routData.IP = routData.IP or {} routData.IP.Sub = s end
 function ent:SetIP( h ) routData.IP = routData.IP or {} routData.IP.Add = h end
 function ent:Data() return routData end
+local entNW = {}
+function ent:EntIndex() return 1 end
+function ent:SetNWString( k, v ) entNW[ k ] = v end
+function ent:GetNWString( k ) return entNW[ k ] or "" end
+function ent:SetGVar( k, v )
+	ent.GVars = ent.GVars or {}
+	ent.GVars[ k ] = v
+end
 PCMod.Cfg.DHCPStart = 2
 PCMod.Cfg.DHCPEnd = 250
 DRV.Wireless = true
 DRV.WirelessClients = { [10] = true, [11] = true }
+
+-- InstallDriver seeds RouterCfg before Setup knows the spawn options. The
+-- spawn setter must override that seed, or Wi-Fi silently stays off and the
+-- overlay loses its SSID line.
+routData.RouterCfg = { Wireless = false }
+DRV:SetWireless( true )
+assertEq( routData.RouterCfg.Wireless, true, "spawn wireless overrides a pre-seeded config" )
+assertTrue( (entNW.WifiSSID ~= nil) and (entNW.WifiSSID ~= ""), "spawn wireless publishes an overlay SSID" )
+routData.RouterCfg = nil
+DRV.Wireless = true
 local page = DRV:GetWebPage( "" )
 assertTrue( string.find( page, "<h1>WebGear Router</h1>", 1, true ) ~= nil, "home page has an h1 heading" )
 assertTrue( string.find( page, "192.168.5.1", 1, true ) ~= nil, "home page shows IPv4 LAN" )
@@ -162,7 +180,25 @@ assertTrue( string.find( page, "Status", 1, true ) ~= nil, "home page has a stat
 
 local wifipage = DRV:GetWebPage( "/wifi" )
 assertTrue( string.find( wifipage, "name=\"wpass\"", 1, true ) ~= nil, "wifi page has a password field" )
+assertTrue( string.find( wifipage, "name=\"wname\"", 1, true ) ~= nil, "wifi page has a name field" )
 assertTrue( string.find( wifipage, "Wireless", 1, true ) == nil, "wifi page uses Status not raw wireless" )
+assertTrue( routData.RouterCfg.WireName ~= nil, "wifi gets a default network name" )
+DRV:ApplyWebQuery( "?wname=HomeNet" )
+assertEq( routData.RouterCfg.WireName, "HomeNet", "custom wifi name applied" )
+wifipage = DRV:GetWebPage( "/wifi" )
+assertTrue( string.find( wifipage, "value=\"HomeNet\"", 1, true ) ~= nil, "wifi page shows the custom name" )
+DRV:ApplyWebQuery( "?wname=" )
+assertTrue( (routData.RouterCfg.WireName ~= nil) && (routData.RouterCfg.WireName ~= ""), "empty name restores the default" )
+
+-- The look-at overlay follows the web panel: an enabled router publishes its
+-- SSID, and renaming the network updates it immediately.
+assertEq( entNW.WifiSSID, routData.RouterCfg.WireName, "overlay SSID tracks the wifi name" )
+DRV:ApplyWebQuery( "?wireless=0" )
+assertEq( entNW.WifiSSID, "", "disabling wifi removes the overlay SSID" )
+assertEq( ent.GVars.wireless, false, "disabling wifi updates the legacy overlay flag" )
+DRV:ApplyWebQuery( "?wireless=1" )
+assertEq( entNW.WifiSSID, routData.RouterCfg.WireName, "enabling wifi publishes the overlay SSID" )
+assertEq( ent.GVars.wireless, true, "enabling wifi updates the legacy overlay flag" )
 
 local lanpage = DRV:GetWebPage( "/lan" )
 assertTrue( string.find( lanpage, "name=\"dhcpstart\"", 1, true ) ~= nil, "lan page has DHCP start field" )

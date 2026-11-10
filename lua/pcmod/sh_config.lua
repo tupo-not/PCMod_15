@@ -115,6 +115,19 @@ cfg.MaxNetworkPid = 500 -- Single source for this setting (AUDIT2 A-05, Round 19
 cfg.DefaultTTL = 64 -- Default IP TTL for new packets (routers decrement it once per hop)
 cfg.TraceMaxHops = 30 -- Maximum probe TTL a traceroute will send
 
+// Emulated link latency (milliseconds, one-way per link) and Wi-Fi loss.
+// Set NetLatency = false to disable the simulation entirely.
+cfg.NetLatency = true
+cfg.WiredLatency = 1 -- Ethernet cable latency per link
+cfg.OpticLatency = 1 -- Fibre link latency per link
+cfg.WirelessLatency = 12 -- Wi-Fi latency per link at the AP
+cfg.WirelessDistanceLatency = 25 -- extra Wi-Fi latency at the edge of range
+cfg.LatencyJitter = 1 -- +/- jitter for wired/fibre links
+cfg.WirelessJitter = 6 -- +/- jitter for Wi-Fi links near the AP
+cfg.WirelessDistanceJitter = 5 -- extra Wi-Fi jitter at the edge of range
+cfg.WirelessLoss = 0.02 -- Fraction of Wi-Fi frames dropped near the AP
+cfg.WirelessDistanceLoss = 0.10 -- extra Wi-Fi loss at the edge of range
+
 cfg.HighQuality = true -- Should the client use theme hooks? (3D form elements)
 
 cfg.WireTypes = {} -- Do not edit

@@ -114,13 +114,35 @@ end
 // Describe an interface lease for the UI: IPv4, matching IPv6, and family.
 function DRV:InterfaceInfo( port, cfg )
 	if ((!port) || (!cfg) || (!cfg.ip)) then return nil end
-	local info = { Port = port, IPv4 = cfg.ip, Kind = cfg.scope or "lan" }
+	local info = {
+		Port = port,
+		IPv4 = cfg.ip,
+		Kind = cfg.scope or "lan",
+		Mask = cfg.netmask,
+		MaskBits = cfg.maskbits,
+		Gateway4 = cfg.gateway,
+	}
+	if (self.Entity.EnsureInterfaceMAC) then
+		info.MAC = self.Entity:EnsureInterfaceMAC( port )
+	end
 	if ((cfg.scope == "wan") || (cfg.scope == "mgmt")) then
-		info.IPv6 = PCMod.IPv6.Format( { 0xfd00, cfg.bb or 0, 0, 0, 0, 0, 0, cfg.host or 0 } )
+		local bb = cfg.bb or 0
+		info.IPv6 = PCMod.IPv6.Format( { 0xfd00, bb, 0, 0, 0, 0, 0, cfg.host or 0 } )
+		if (PCMod.IPv6.BackbonePrefix) then
+			info.IPv6Prefix = PCMod.IPv6.BackbonePrefix( bb )
+			info.IPv6Gateway = PCMod.IPv6.Gateway( info.IPv6Prefix )
+		end
 	else
 		local p = PCMod.IPv4.ParseLan( cfg.ip )
 		local host = (p && (((p.sub or 0) * 256) + (p.add or 0))) or (cfg.host or 0)
 		info.IPv6 = PCMod.IPv6.Format( { 0xfd00, cfg.upbb or 0, 0, cfg.lanid or 0, 0, 0, 0, host } )
+		if (PCMod.IPv6.LANPrefix) then
+			info.IPv6Prefix = PCMod.IPv6.LANPrefix( cfg.upbb or 0, cfg.lanid or 0 )
+			info.IPv6Gateway = PCMod.IPv6.Gateway( info.IPv6Prefix )
+		end
+	end
+	if (PCMod.IPv6.LinkLocal && info.IPv6) then
+		info.IPv6LinkLocal = PCMod.IPv6.LinkLocal( info.IPv6 )
 	end
 	return info
 end
@@ -160,6 +182,7 @@ function DRV:ReleasePort( port )
 	ctx.DHCPState = nil
 	ctx.Lease = nil
 	ctx.LastDHCP = nil
+	if (port == 0) then self.WirelessIPv4 = nil end
 	if (self.Entity.ClearInterface) then self.Entity:ClearInterface( port ) end
 	local latest
 	for _, other in pairs( self.DHCPByPort ) do
@@ -238,6 +261,7 @@ function DRV:DHCPDiscover( port, retries )
 		end,
 		apply = function( cfg )
 			ctx.Lease = cfg
+			if (port == 0) then self.WirelessIPv4 = true end
 			PCMod.DHCPClient.ApplyHost( self.Entity, cfg, self:HasOtherInterface( port ) )
 			self:RecordInterface( port, cfg )
 		end,
@@ -268,7 +292,13 @@ function DRV:HandleARP( port, body, macs )
 		if (!self.Entity:IsAddressedTo( target )) then return true end
 		local myip = self.Entity:GetSourceAddress( target ) or self.Entity:GetFullIP()
 		if (!myip) then return true end
-		self.Entity:SendPacket( port, body[4] or "0.0.0.0", 0, PCMod.Net.ARPReply( target, myip, self.Entity:EnsureMAC() ), nil, myip )
+		local mac
+		if (self.Entity.EnsureInterfaceMAC) then
+			mac = self.Entity:EnsureInterfaceMAC( port )
+		elseif (self.Entity.EnsureMAC) then
+			mac = self.Entity:EnsureMAC()
+		end
+		self.Entity:SendPacket( port, body[4] or "0.0.0.0", 0, PCMod.Net.ARPReply( target, myip, mac ), nil, myip )
 		return true
 	end
 	return true
@@ -318,6 +348,24 @@ function DRV:DataRecieved( port, data )
 	end
 end
 
+// Send one frame over the Wi-Fi link. Wireless has its own latency profile
+// and may drop the frame; the router sees the same "sendpacket" shape as a
+// cable frame.
+function DRV:DeliverWireless( data )
+	local ent = self.WirelessEnt
+	if ((!ent) || (!ent.DataRecieved)) then return false end
+	local function deliver()
+		if ((!ent.IsValid) || (ent:IsValid())) then ent:DataRecieved( 0, data ) end
+	end
+	if (PCMod.Latency && PCMod.Latency.Deliver) then
+		local dist = PCMod.Latency.DistanceBetween && PCMod.Latency.DistanceBetween( self.Entity, ent )
+		local range = (PCMod.Cfg && PCMod.Cfg.WirelessRange) or 0
+		return PCMod.Latency.Deliver( deliver, "wireless", dist, range )
+	end
+	deliver()
+	return true
+end
+
 function DRV:SendPacket( dest, port, body, ttl, src, viaWireless, forcePort )
 	// Loopback is accepted in IPv4 (127.0.0.1), IPv6 (::1) and hostname form.
 	// Anything addressed to one of our own addresses is local traffic too: the
@@ -356,7 +404,17 @@ function DRV:SendPacket( dest, port, body, ttl, src, viaWireless, forcePort )
 	if (sendPort == 0) then
 		local ctx = self.DHCPByPort && self.DHCPByPort[ 0 ]
 		local wsrc = src or self:SourceFor( ctx, dest ) or self:GetWirelessSource( dest ) or self.Entity:GetSourceAddress( dest )
-		self.WirelessEnt:DataRecieved( 0, { "sendpacket", { wsrc, dest, port, body }, nil, nil, ttl } )
+		local wmac
+		if (self.Entity.EnsureInterfaceMAC) then
+			wmac = self.Entity:EnsureInterfaceMAC( 0 )
+		elseif (self.Entity.EnsureMAC) then
+			wmac = self.Entity:EnsureMAC()
+		end
+		local frame = { "sendpacket", { wsrc, dest, port, body }, nil, nil, ttl }
+		if (wmac && PCMod.MAC) then
+			frame[ 4 ] = { SourceMAC = wmac, DestMAC = PCMod.MAC.BROADCAST }
+		end
+		self:DeliverWireless( frame )
 		return
 	end
 	// Source from the lease owned by the chosen interface, so a multi-homed
@@ -494,6 +552,8 @@ function DRV:DisconnectWireless()
 		local rdrv = rdata && rdata.Drivers && rdata.Drivers[ "webgr_router" ]
 		if (rdrv && rdrv.RemoveWirelessClient) then rdrv:RemoveWirelessClient( self.Entity ) end
 	end
+	// Drop the Wi-Fi interface's own lease/address; a cable lease stays.
+	if (self.DHCPByPort && self.DHCPByPort[ 0 ] && self.ReleasePort) then self:ReleasePort( 0 ) end
 	self.WirelessEnt = nil
 	self.WirelessPass = ""
 	self.WirelessIPv4 = nil

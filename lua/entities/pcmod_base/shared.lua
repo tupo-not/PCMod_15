@@ -302,7 +302,20 @@ if (SERVER) then
 			if (!port.Connected) then return 2 end
 			local ent = port.ConEnt
 			if ((ent) && (ent:IsValid())) then
-				return ent:GivenData( port.RemotePort, data )
+				local remote = port.RemotePort
+				local function deliver()
+					if ((ent) && (ent:IsValid())) then ent:GivenData( remote, data ) end
+				end
+				// Emulate the delay of crossing this physical link. The port
+				// type picks the link profile (fibre or Ethernet); non-network
+				// ports are delivered immediately.
+				local kind = PCMod.Latency && PCMod.Latency.KindForPort && PCMod.Latency.KindForPort( port )
+				if (kind && PCMod.Latency.Deliver) then
+					PCMod.Latency.Deliver( deliver, kind )
+				else
+					deliver()
+				end
+				return 0
 			end
 			return 2
 		end
@@ -565,6 +578,13 @@ if (SERVER) then
 					IPv4 = info.IPv4,
 					IPv6 = info.IPv6,
 					Kind = info.Kind,
+					MAC = info.MAC,
+					Mask = info.Mask,
+					MaskBits = info.MaskBits,
+					Gateway4 = info.Gateway4,
+					IPv6Prefix = info.IPv6Prefix,
+					IPv6Gateway = info.IPv6Gateway,
+					IPv6LinkLocal = info.IPv6LinkLocal,
 				}
 			end
 			table.sort( out, function( a, b ) return (a.Port < b.Port) end )
@@ -920,6 +940,12 @@ if (SERVER) then
 				local v6 = p and PCMod.IPv6.Format( { 0xfd00, ex.UpBB or 0, 0, ex.LanID or 0, 0, 0, 0, (p.sub or 0) * 256 + (p.add or 0) } ) or false
 				if (PCMod.IPv6.Matches( addr, ex.IPv4, v6 )) then return true end
 			end
+			// Per-interface addresses (two NICs on the same router, cable +
+			// Wi-Fi, and so on). Every assigned interface stays reachable even
+			// when another one owns the primary identity.
+			for _, info in pairs( self:Interfaces() ) do
+				if (PCMod.IPv6.Matches( addr, info.IPv4, info.IPv6 )) then return true end
+			end
 			return false
 		end
 
@@ -960,17 +986,35 @@ if (SERVER) then
 			// Layer-2 frame metadata: the sender's MAC and, until a switch has
 			// learned the destination, a broadcast address.
 			data[4] = {
-				SourceMAC = self:EnsureMAC(),
+				SourceMAC = self:EnsureInterfaceMAC( portid ),
 				DestMAC = PCMod.MAC.BROADCAST,
 			}
 			// IP TTL travels with the frame until a router turns it into a
 			// packet. data[3] is already used by switches for loop detection.
 			if (ttl) then data[5] = ttl end
+			// Simulate the one-way delay of the physical link the frame is
+			// leaving on. The peer may be a switch, modem or router.
+			local kind = PCMod.Latency && PCMod.Latency.KindForPort && PCMod.Latency.KindForPort( prt )
 			if (!self.IsNetworkDevice) then
-				prt.ConEnt:DataRecieved( portid2, data )
+				local peer = prt.ConEnt
+				local function deliver()
+					if ((peer) && (peer:IsValid())) then peer:DataRecieved( portid2, data ) end
+				end
+				if (kind && PCMod.Latency.Deliver) then
+					PCMod.Latency.Deliver( deliver, kind )
+				else
+					deliver()
+				end
 				// self:PushData
 			else
-				self:DataRecieved( portid, data )
+				local function deliver()
+					if ((self) && (self:IsValid())) then self:DataRecieved( portid, data ) end
+				end
+				if (kind && PCMod.Latency.Deliver) then
+					PCMod.Latency.Deliver( deliver, kind )
+				else
+					deliver()
+				end
 			end
 			return 0
 		end
@@ -1566,6 +1610,55 @@ if (SERVER) then
 			return self:EnsureMAC()
 		end
 
+		// Ports that carry an L2 hardware address (Ethernet/fibre). The Wi-Fi
+		// interface is port 0 and is handled separately.
+		function ENT:NetworkInterfacePorts()
+			local out = {}
+			local ports = (self.Ports && self:Ports()) or {}
+			for k, v in pairs( ports ) do
+				if ((v.Type == "network") || (v.Type == "optic")) then out[ #out + 1 ] = k end
+			end
+			table.sort( out )
+			return out
+		end
+
+		// Every interface gets its own hardware address. The lowest wired port
+		// keeps the entity's legacy MAC so existing single-NIC saves and leases
+		// stay stable; all other ports get a fresh address. Wi-Fi (port 0) is
+		// distinct from every cable, so it never shares a DHCP lease with one.
+		function ENT:EnsureInterfaceMAC( port )
+			local dt = self:Data()
+			if (port == nil) then return self:EnsureMAC() end
+			dt.InterfaceMACs = dt.InterfaceMACs or {}
+			local mac = dt.InterfaceMACs[ port ]
+			if (PCMod.MAC.IsValid( mac )) then return mac end
+			local wired = self:NetworkInterfacePorts()
+			local lowest = wired[ 1 ]
+			local legacy = dt.MAC
+			local legacyUsed = false
+			for _, m in pairs( dt.InterfaceMACs ) do
+				if (m == legacy) then legacyUsed = true end
+			end
+			if (PCMod.MAC.IsValid( legacy ) && (!legacyUsed) &&
+				(((lowest != nil) && (port == lowest)) || ((lowest == nil) && (port == 0)))) then
+				mac = legacy
+			else
+				mac = PCMod.MAC.Random()
+			end
+			dt.InterfaceMACs[ port ] = mac
+			self:UpdateData( dt )
+			return mac
+		end
+
+		function ENT:GetInterfaceMAC( port )
+			return self:EnsureInterfaceMAC( port )
+		end
+
+		function ENT:GetInterfaceMACs()
+			local dt = self:Data()
+			return dt.InterfaceMACs or {}
+		end
+
 		// Give this entity a fresh hardware identity. Switches also regenerate
 		// their per-port MACs. Used on spawn and when a duplicator clones an
 		// entity, so two copies never share an address on the same segment.
@@ -1576,6 +1669,7 @@ if (SERVER) then
 				dt = self:GenerateMACs()
 			elseif (self.IsComputer || self.IsNetworkDevice) then
 				dt.MAC = PCMod.MAC.Random()
+				dt.InterfaceMACs = nil
 			else
 				return
 			end
@@ -1587,7 +1681,21 @@ if (SERVER) then
 			local norm = PCMod.MAC.Normalize( mac )
 			if (!norm) then return false end
 			local dt = self:Data()
+			local old = dt.MAC
 			dt.MAC = norm
+			// The interface that used the legacy MAC follows the new one, so
+			// changing the primary address from the control panel takes effect
+			// without disturbing the other NICs' addresses.
+			if (istable( dt.InterfaceMACs )) then
+				local replaced = false
+				for k, v in pairs( dt.InterfaceMACs ) do
+					if (v == old) then dt.InterfaceMACs[ k ] = norm; replaced = true end
+				end
+				if ((!replaced) && (norm)) then
+					local wired = self:NetworkInterfacePorts()
+					if (wired[ 1 ] != nil) then dt.InterfaceMACs[ wired[ 1 ] ] = norm end
+				end
+			end
 			self:UpdateData( dt )
 			self:SetNWString( "MAC", norm )
 			return true
@@ -1599,6 +1707,7 @@ if (SERVER) then
 			local dt = self:Data()
 			local tmp = {}
 			if (PCMod.MAC.IsValid( dt.MAC )) then tmp.mac = dt.MAC end
+			if (istable( dt.InterfaceMACs )) then tmp.ifacemacs = dt.InterfaceMACs end
 			if (self.IsSwitch) then tmp.portmacs = dt.PortMACs end
 			// Computer addressing (static IPv4, netmask, gateway) and login.
 			// Only the configured identity is saved; DHCP addresses are re-leased
@@ -1622,6 +1731,12 @@ if (SERVER) then
 			local dt = self:Data()
 			if (data.mac && PCMod.MAC.IsValid( data.mac )) then
 				dt.MAC = PCMod.MAC.Normalize( data.mac )
+			end
+			if (istable( data.ifacemacs )) then
+				dt.InterfaceMACs = {}
+				for k, v in pairs( data.ifacemacs ) do
+					if (PCMod.MAC.IsValid( v )) then dt.InterfaceMACs[ k ] = PCMod.MAC.Normalize( v ) end
+				end
 			end
 			if (self.IsSwitch && istable( data.portmacs )) then
 				dt.PortMACs = data.portmacs
@@ -1656,6 +1771,9 @@ if (SERVER) then
 			if (self.IsNetworkDevice) then
 				local rdrv = dt.Drivers && dt.Drivers[ "webgr_router" ]
 				if (rdrv && rdrv.ApplyLanAddress) then rdrv:ApplyLanAddress() end
+				// The saved RouterCfg owns the Wi-Fi state; republish it so the
+				// overlay matches the restored web-panel setting.
+				if (rdrv && rdrv.SyncWirelessOverlay) then rdrv:SyncWirelessOverlay() end
 			end
 		end
 
@@ -1928,15 +2046,28 @@ if (CLIENT) then
 		return txt
 	end
 
+	// SSID published by the router driver when Wi-Fi is enabled. Older saves
+	// that only carry the boolean GVar fall back to the default name.
+	function ENT:GetWirelessSSID()
+		local ssid = self.GetNWString && self:GetNWString( "WifiSSID" )
+		if ((ssid) && (ssid != "")) then return ssid end
+		if (self.GetGVar && self:GetGVar( "wireless" )) then
+			local idx = (self.EntIndex && self:EntIndex()) or 0
+			return "WebGear-" .. tostring( idx )
+		end
+		return nil
+	end
+
 	function ENT:DrawInfo( origin )
 		// If we are wireless then draw wireless info
-		local wireless = self:GetGVar( "wireless" )
+		local ssid = self.GetWirelessSSID && self:GetWirelessSSID()
+		local wireless = (ssid != nil)
 		if (wireless) then PCMod.Gui.DrawWirelessLinks( self ) end
 		
 		// Fill in the info table
 		local txt = {}
 		txt[1] = self.PrintName
-		if (wireless) then table.insert( txt, "Wireless" ) end
+		if (wireless) then table.insert( txt, "SSID: " .. tostring( ssid ) ) end
 		for _, addr in ipairs( self:GetOverlayAddresses() ) do table.insert( txt, addr ) end
 		if (self:GetGVar( "noreg" )) then table.insert( txt, "Hardware Failure" ) end
 		

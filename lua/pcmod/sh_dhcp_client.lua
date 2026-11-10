@@ -13,7 +13,11 @@ function PCMod.DHCPClient.Start( owner, opts )
 	if ((!owner) || (!opts) || (!opts.send)) then return false end
 	local ent = owner.Entity
 	if ((!ent) || (!ent:IsValid())) then return false end
-	local mac = ent.EnsureMAC && ent:EnsureMAC() or nil
+	local mac
+	if ((owner.Port != nil) && ent.EnsureInterfaceMAC) then
+		mac = ent:EnsureInterfaceMAC( owner.Port )
+	end
+	if (!mac) then mac = ent.EnsureMAC && ent:EnsureMAC() or nil end
 	if (!mac) then return false end
 	owner.DHCPState = {
 		xid = PCMod.Net.NewXID(),

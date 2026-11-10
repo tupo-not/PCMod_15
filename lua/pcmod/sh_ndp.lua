@@ -10,6 +10,15 @@
 PCMod = PCMod or {}
 PCMod.NDP = PCMod.NDP or {}
 
+// Hosts answer from the hardware address of the interface the solicitation
+// arrived on. Routers keep a single routing identity.
+local function ReplyMAC( ent, port )
+	if ((ent) && (!ent.IsNetworkDevice) && ent.EnsureInterfaceMAC) then
+		return ent:EnsureInterfaceMAC( port )
+	end
+	return ent:GetMAC()
+end
+
 function PCMod.NDP.Table( router )
 	router.NdpCache = router.NdpCache or {}
 	return router.NdpCache
@@ -76,11 +85,12 @@ function PCMod.NDP.Handle( router, port, body, macs )
 	if (kind == "solicit") then
 		if ((!target) || (!ent:IsAddressedTo( target ))) then return true end
 		local myip = (ent.GetSourceAddress && ent:GetSourceAddress( target )) or target
+		local mac = ReplyMAC( ent, port )
 		local reply = {
 			"sendpacket",
-			{ myip, body[4] or PCMod.Net.NDPAllNodes or "ff02::1", 0, PCMod.Net.NDPAdvertise( target, myip, ent:GetMAC() ) },
+			{ myip, body[4] or PCMod.Net.NDPAllNodes or "ff02::1", 0, PCMod.Net.NDPAdvertise( target, myip, mac ) },
 			nil,
-			{ SourceMAC = ent:GetMAC(), DestMAC = (macs && macs.SourceMAC) or PCMod.MAC.BROADCAST },
+			{ SourceMAC = mac, DestMAC = (macs && macs.SourceMAC) or PCMod.MAC.BROADCAST },
 		}
 		ent:PushData( port, reply )
 		return true

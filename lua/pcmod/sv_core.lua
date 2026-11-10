@@ -35,6 +35,7 @@ include( "pcmod/sh_arp.lua" ) -- ARP next-hop resolution
 include( "pcmod/sh_ndp.lua" ) -- IPv6 neighbor discovery
 include( "pcmod/sh_l2.lua" ) -- Pure L2 bridge algorithm
 include( "pcmod/sh_routing.lua" ) -- Broadcast hello routing
+include( "pcmod/sh_latency.lua" ) -- Emulated link latency / Wi-Fi loss
 include( "pcmod/sh_portanchors.lua" ) -- Hardcoded cable attachment points
 AddCSLuaFile( "pcmod/sh_netproto.lua" )
 AddCSLuaFile( "pcmod/sh_dhcp_server.lua" )
@@ -43,6 +44,7 @@ AddCSLuaFile( "pcmod/sh_arp.lua" )
 AddCSLuaFile( "pcmod/sh_ndp.lua" )
 AddCSLuaFile( "pcmod/sh_l2.lua" )
 AddCSLuaFile( "pcmod/sh_routing.lua" )
+AddCSLuaFile( "pcmod/sh_latency.lua" )
 AddCSLuaFile( "pcmod/sh_portanchors.lua" )
 include( "pcmod/sh_ui_layout.lua" ) -- Pure layout primitives
 include( "pcmod/sh_window.lua" ) -- Shared window geometry

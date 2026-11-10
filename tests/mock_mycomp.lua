@@ -34,12 +34,34 @@ d:ButtonClick('btnApplyScale')
 assertTrue(ran and ran.cmd=='pc_guiscale' and ran.val=='1.25', 'apply scale command')
 assertEq(#d.Listboxes.lstSections.Order, 4, 'four control panel categories')
 d.Net={MAC='AA:BB:CC:DD:EE:FF',IPv4='192.168.1.2',Static='192.168.5.7',Mask='255.255.255.0',Gateway4='192.168.5.1',IPv6='fd00:c0:a8:1::2',Prefix='fd00:c0:a8:1::/64',Gateway='fd00:c0:a8:1::1',LinkLocal='fe80::2'}
-d.Wireless={{EntIndex=12,Class='pcmod_router',Distance=342,Signal=80}}
+d.Wireless={{EntIndex=12,Class='pcmod_router',Name='HomeNet',Distance=342,Signal=80}}
 d:ListboxSelect('lstSections','network')
 assertTrue(d.Listboxes.lstNetInfo ~= nil, 'network page exists')
 assertTrue(d.Listboxes.lstWireless == nil, 'wireless controls live on their own page')
 assertTrue(d.Listboxes.lstGuiScale == nil, 'OS controls hidden on network page')
 assertEq(#d.Listboxes.lstNetInfo.Order, 9, 'network information rows')
+-- Every adapter repeats the whole status block (header, MAC, addressing,
+-- gateways) instead of sharing one global block.
+d.Net.Interfaces = {
+	{ Port = 1, IPv4 = '192.168.5.2', IPv6 = 'fd00:c0:a8:5::2', MAC = 'AA:BB:CC:DD:EE:01', Mask = '255.255.255.0', Gateway4 = '192.168.5.1', IPv6Prefix = 'fd00:c0:a8:5::/64', IPv6Gateway = 'fd00:c0:a8:5::1', IPv6LinkLocal = 'fe80::1' },
+	{ Port = 2, IPv4 = '100.0.7.12', IPv6 = 'fd00:7::12', MAC = 'AA:BB:CC:DD:EE:02', Mask = '255.255.255.0', Gateway4 = '100.0.7.1', IPv6Prefix = 'fd00:7::/32', IPv6Gateway = 'fd00:7::1', IPv6LinkLocal = 'fe80::2' },
+	{ Port = 0, IPv4 = '192.168.5.9', IPv6 = 'fd00:c0:a8:5::9', MAC = 'AA:BB:CC:DD:EE:03', Mask = '255.255.255.0', Gateway4 = '192.168.5.1', IPv6Prefix = 'fd00:c0:a8:5::/64', IPv6Gateway = 'fd00:c0:a8:5::1', IPv6LinkLocal = 'fe80::3' },
+}
+d:BuildNetworkInfo()
+assertEq(#d.Listboxes.lstNetInfo.Order, 27, 'three interface blocks of nine rows')
+assertEq(d.Listboxes.lstNetInfo.List.ifacehdr1, '-- eth 1 --', 'first wired header')
+assertEq(d.Listboxes.lstNetInfo.List.ifacehdr2, '-- eth 2 --', 'second wired header')
+assertEq(d.Listboxes.lstNetInfo.List.ifacehdr3, '-- wifi --', 'wifi header')
+assertTrue(string.find(d.Listboxes.lstNetInfo.List.ifacemac1, 'AA:BB:CC:DD:EE:01', 1, true) ~= nil, 'first MAC shown')
+assertTrue(string.find(d.Listboxes.lstNetInfo.List.ifaceipv41, '192.168.5.2', 1, true) ~= nil, 'first IPv4 shown')
+assertTrue(string.find(d.Listboxes.lstNetInfo.List.ifacegw41, '192.168.5.1', 1, true) ~= nil, 'first IPv4 gateway shown')
+assertTrue(string.find(d.Listboxes.lstNetInfo.List.ifaceipv62, 'fd00:7::12', 1, true) ~= nil, 'second IPv6 shown')
+assertTrue(string.find(d.Listboxes.lstNetInfo.List.ifacegw62, 'fd00:7::1', 1, true) ~= nil, 'second IPv6 gateway shown')
+assertTrue(string.find(d.Listboxes.lstNetInfo.List.ifacenetmask3, '255.255.255.0', 1, true) ~= nil, 'wifi netmask shown')
+assertTrue(string.find(d.Listboxes.lstNetInfo.List.ifacell3, 'fe80::3', 1, true) ~= nil, 'wifi link-local shown')
+d.Net.Interfaces = nil
+d:BuildNetworkInfo()
+assertEq(#d.Listboxes.lstNetInfo.Order, 9, 'fallback network rows')
 assertTrue(string.find(d.Listboxes.lstNetInfo.List.mac, 'AA:BB:CC:DD:EE:FF', 1, true) ~= nil, 'MAC address shown')
 assertTrue(string.find(d.Listboxes.lstNetInfo.List.gateway, 'fd00:c0:a8:1::1', 1, true) ~= nil, 'IPv6 gateway shown')
 assertTrue(string.find(d.Listboxes.lstNetInfo.List.gateway4, '192.168.5.1', 1, true) ~= nil, 'IPv4 gateway shown')
@@ -58,6 +80,8 @@ d:ListboxSelect('lstSections','wifi')
 assertTrue(d.Listboxes.lstWireless ~= nil, 'wireless networks list exists')
 assertTrue(d.Listboxes.lstNetInfo == nil, 'network status hidden on wifi page')
 assertEq(#d.Listboxes.lstWireless.Order, 1, 'wireless network listed')
+assertTrue(string.find(d.Listboxes.lstWireless.List['12'], 'HomeNet', 1, true) ~= nil, 'wireless network name shown')
+assertTrue(string.find(d.Listboxes.lstWireless.List['12'], '342m', 1, true) == nil, 'wireless distance meter removed')
 assertTrue(string.find(d.Listboxes.lstWireless.List['12'], 'Signal 80%', 1, true) ~= nil, 'wireless signal shown')
 assertTrue(d.Textboxes.txtWifiPass ~= nil, 'wifi password box exists')
 d:SetListboxSelRow('lstWireless','12')

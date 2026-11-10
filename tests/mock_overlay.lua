@@ -142,6 +142,17 @@ brouter.PrintName = "Backbone Router"
 brouter:DrawInfo( { x = 0, y = 0 } )
 assertList( lines, { "Backbone Router", "100.0.3.1", "fd00:3::1" }, "backbone router DrawInfo" )
 
+-- A wireless router shows the SSID its web panel publishes. No SSID means the
+-- overlay line is gone, so toggling Wi-Fi off in the panel removes it.
+local wrouter = newEnt()
+wrouter.PrintName = "LAN Modem"
+wrouter:SetNWString( "WifiSSID", "HomeNet" )
+wrouter:DrawInfo( { x = 0, y = 0 } )
+assertList( lines, { "LAN Modem", "SSID: HomeNet" }, "wireless overlay shows the SSID" )
+wrouter:SetNWString( "WifiSSID", "" )
+wrouter:DrawInfo( { x = 0, y = 0 } )
+assertList( lines, { "LAN Modem" }, "disabling wifi hides the overlay SSID" )
+
 -- A machine with two adapters lists each interface, even when both share the
 -- same DHCP address, so the second Ethernet port is visible.
 PCMod.StringToTable = function()

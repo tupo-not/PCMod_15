@@ -8,6 +8,20 @@ OS.USBDevices = {}
 OS.NetPorts = {}
 OS.TraceRouteData = {}
 
+// Wall-clock seconds for RTT measurement. The mock suites do not provide
+// CurTime, so fall back to a monotonic zero rather than erroring.
+local function NowSeconds()
+	if (CurTime) then return CurTime() end
+	if (RealTime) then return RealTime() end
+	return 0
+end
+
+local function ElapsedMs( since )
+	local ms = math.floor( ((NowSeconds() - (since or 0)) * 1000) + 0.5 )
+	if (ms < 0) then ms = 0 end
+	return ms
+end
+
 util.AddNetworkString("programyolla")
 
 function OS:Print( txt )
@@ -367,7 +381,10 @@ function OS:ProcessPacket( pt, dat, handle )
 			local st = self.TraceRouteData[ thdl ]
 			if (st) then
 				local hop = tonumber( dat[6] ) or st.TTL
-				st.Hops[ hop ] = tostring( dat[4] or handle[1] ) .. " - " .. tostring( dat[5] or "HOP" )
+				local ms = ElapsedMs( st.SentAt )
+				st.HopMs = st.HopMs or {}
+				st.HopMs[ hop ] = ms
+				st.Hops[ hop ] = tostring( dat[4] or handle[1] ) .. " - " .. tostring( dat[5] or "HOP" ) .. "  (" .. tostring( ms ) .. " ms)"
 				st.TTL = hop + 1
 				self:SendTraceProbe( thdl )
 			end
@@ -379,7 +396,10 @@ function OS:ProcessPacket( pt, dat, handle )
 				local st = self.TraceRouteData[ thdl ]
 				self.TraceRouteData[ thdl ] = nil
 				if (st) then
-					st.Hops[ st.TTL ] = tostring( handle[1] ) .. " - " .. tostring( dat[4] or "HOST" )
+					local ms = ElapsedMs( st.SentAt )
+					st.HopMs = st.HopMs or {}
+					st.HopMs[ st.TTL ] = ms
+					st.Hops[ st.TTL ] = tostring( handle[1] ) .. " - " .. tostring( dat[4] or "HOST" ) .. "  (" .. tostring( ms ) .. " ms)"
 					if (hk == "os") then
 						self:TraceSuccess( handle[1], st.Hops )
 					else
@@ -515,7 +535,9 @@ function OS:NetTrace( dest, hk )
 		Dest = dest,
 		HK = hk,
 		Hops = {},
+		HopMs = {},
 		TTL = 1,
+		SentAt = NowSeconds(),
 	}
 	return self:SendTraceProbe( thdl )
 end
@@ -528,6 +550,7 @@ function OS:SendTraceProbe( thdl )
 		self.TraceRouteData[ thdl ] = nil
 		return false
 	end
+	st.SentAt = NowSeconds()
 	return self:SendNetMessage( st.Dest, 0, { "netTrace", st.HK, thdl, st.TTL }, st.TTL )
 end
 

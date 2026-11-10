@@ -62,10 +62,15 @@ function ENT:Setup( setupdata )
 	if (drv.ApplyLanAddress) then drv:ApplyLanAddress() end
 	dt.IsWireless = setupdata.Wireless
 	dt.WirePass = setupdata.WirePass or "123"
-	self:SetGVar( "wireless", setupdata.Wireless )
-	
-	// Update us
+	// InstallDriver's Initialize may have seeded RouterCfg before the setup
+	// options were known. Re-apply the spawn choice through the normal setter,
+	// which also publishes the SSID for the look-at overlay.
 	self:UpdateData( dt )
+	if (drv.SetWireless) then
+		drv:SetWireless( setupdata.Wireless == true )
+	else
+		self:SetGVar( "wireless", setupdata.Wireless )
+	end
 end
 
 function ENT:RunOnRemove()

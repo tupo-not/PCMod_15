@@ -119,7 +119,18 @@ function DRV:SendOnPort( port, data )
 			if ((pc) && (pc.IsValid) && (pc:IsValid())) then
 				local cd = PCMod.Data[ pc:EntIndex() ]
 				local net = cd && cd.Drivers && cd.Drivers[ "gen_network" ]
-				if (net) then net:DataRecieved( 0, data ) end
+				if (net) then
+					local function deliver()
+						if ((pc.IsValid) && (pc:IsValid())) then net:DataRecieved( 0, data ) end
+					end
+					if (PCMod.Latency && PCMod.Latency.Deliver) then
+						local dist = PCMod.Latency.DistanceBetween && PCMod.Latency.DistanceBetween( self.Entity, pc )
+						local range = (PCMod.Cfg && PCMod.Cfg.WirelessRange) or 0
+						PCMod.Latency.Deliver( deliver, "wireless", dist, range )
+					else
+						deliver()
+					end
+				end
 			end
 		end
 		return
@@ -706,7 +717,9 @@ function DRV:CallEvent( data )
 			self:RecalcRoutes()
 			PCMod.Network.Reconverge()
 		elseif ((cls == "pcmod_brouter") && (peerEnt.IsComputer == true)) then
-			PCMod.DHCPServer.Release( self, peerEnt.GetMAC && peerEnt:GetMAC() )
+			if (!self:ReleaseLeasesOnPort( data[ 1 ] )) then
+				PCMod.DHCPServer.Release( self, peerEnt.GetMAC && peerEnt:GetMAC() )
+			end
 		elseif (PCMod.IsLanRouterClass( cls ) && PCMod.IsRouterClass( peer )) then
 			self.Uplink = nil
 			// Lost our uplink: fall back to standalone addressing.
@@ -725,7 +738,11 @@ function DRV:CallEvent( data )
 		elseif (PCMod.IsLanRouterClass( cls ) && (peer != "pcmod_switch") && (peer != "pcmod_modem")) then
 			// Pulling the cable only takes the lease away when the client is
 			// not still joined over Wi-Fi.
-			if (!self:HasWirelessClient( peerEnt )) then PCMod.DHCPServer.Release( self, peerEnt.GetMAC && peerEnt:GetMAC() ) end
+			if (!self:HasWirelessClient( peerEnt )) then
+				if (!self:ReleaseLeasesOnPort( data[ 1 ] )) then
+					PCMod.DHCPServer.Release( self, peerEnt.GetMAC && peerEnt:GetMAC() )
+				end
+			end
 		end
 	end
 end
@@ -751,6 +768,22 @@ function DRV:DynamicLeases() return PCMod.DHCPServer.List( self, self:LeaseScope
 function DRV:AddStaticLease( ip, mac ) return PCMod.DHCPServer.AddStatic( self, self:LeaseScope(), ip, mac ) end
 function DRV:DeleteStaticLease( idx ) return PCMod.DHCPServer.DeleteStatic( self, self:LeaseScope(), idx ) end
 
+// Release every LAN lease that arrived on this router port. Multi-NIC hosts
+// hold one lease per interface, so a cable event must only drop the lease for
+// the interface that was unplugged.
+function DRV:ReleaseLeasesOnPort( port )
+	if (port == nil) then return false end
+	local c = PCMod.DHCPServer.Cfg( self )
+	local drop = {}
+	for mac, rec in pairs( c.Leases or {} ) do
+		if (rec.port == port) then drop[ #drop + 1 ] = mac end
+	end
+	for _, mac in ipairs( drop ) do
+		PCMod.DHCPServer.Release( self, mac )
+	end
+	return (#drop > 0)
+end
+
 // Find a live entity by its hardware address. The engine stores only MACs, so
 // re-addressing after a LAN change looks the device up here.
 function DRV:EntityForMAC( mac )
@@ -760,6 +793,10 @@ function DRV:EntityForMAC( mac )
 		local ent = data && data.Ent
 		if ((ent) && (ent.IsValid) && (ent:IsValid()) && (ent.GetMAC)) then
 			if (PCMod.Net.MACKey( ent:GetMAC() ) == mac) then return ent end
+			local ifaces = ent.GetInterfaceMACs && ent:GetInterfaceMACs()
+			for _, imac in pairs( ifaces or {} ) do
+				if (PCMod.Net.MACKey( imac ) == mac) then return ent end
+			end
 		end
 	end
 	return nil
@@ -804,8 +841,19 @@ function DRV:RenewDHCP( scope, pc )
 end
 
 function DRV:HasDHCPLease( scope, pc )
-	local mac = pc && pc.GetMAC && pc:GetMAC()
-	return ((mac != nil) && (PCMod.DHCPServer.Find( self, scope, mac ) != nil))
+	if (!pc) then return false end
+	local mac = pc.GetMAC && pc:GetMAC()
+	if (mac && PCMod.DHCPServer.Find( self, scope, mac )) then return true end
+	local ifaces = pc.GetInterfaceMACs && pc:GetInterfaceMACs()
+	for _, imac in pairs( ifaces or {} ) do
+		if (PCMod.DHCPServer.Find( self, scope, imac )) then return true end
+	end
+	return false
+end
+
+function DRV:HasLeaseForMAC( scope, mac )
+	if (!mac) then return false end
+	return (PCMod.DHCPServer.Find( self, scope, mac ) != nil)
 end
 
 function DRV:HasLease( pc )
@@ -1235,15 +1283,19 @@ function DRV:RemoveWirelessClient( pc )
 	if (self.WirelessClients && self.WirelessClients[ pc:EntIndex() ]) then
 		self.WirelessClients[ pc:EntIndex() ] = nil
 	end
-	// Leaving Wi-Fi must not strip the address of a client that is still
-	// cabled to this router - the cable and the Wi-Fi link share the lease.
-	if (self:IsWiredClient( pc )) then return end
-	local mac = pc.GetMAC && pc:GetMAC()
-	local rec = mac && PCMod.DHCPServer.Find( self, "lan", mac )
+	// The Wi-Fi interface has its own MAC (and lease). Releasing it must not
+	// disturb a cable lease the same machine still holds. Old single-MAC
+	// devices keep the shared-lease behaviour.
+	local wmac
+	if ((!pc.IsNetworkDevice) && pc.GetInterfaceMAC) then wmac = pc:GetInterfaceMAC( 0 ) end
+	local pmac = pc.GetMAC && pc:GetMAC()
+	wmac = wmac or pmac
+	if ((wmac == pmac) && self:IsWiredClient( pc )) then return end
+	local rec = wmac && PCMod.DHCPServer.Find( self, "lan", wmac )
 	if (!rec) then return end
 	local ipdata = pc.Data && pc:Data() && pc:Data().IP
 	if (ipdata) then
-		if (ipdata.Router == self.Entity:EntIndex()) then
+		if ((ipdata.Router == self.Entity:EntIndex()) && (ipdata.LAN == rec.ip)) then
 			if (pc.SetSubnet) then pc:SetSubnet( false ) end
 			if (pc.SetIP) then pc:SetIP( false ) end
 			ipdata.Router = false
@@ -1251,7 +1303,7 @@ function DRV:RemoveWirelessClient( pc )
 			pc:ReleaseExtraIP( rec.ip )
 		end
 	end
-	PCMod.DHCPServer.Release( self, mac )
+	PCMod.DHCPServer.Release( self, wmac )
 end
 
 // Deliver an in-flight packet to a Wi-Fi client on this router. Returns true
@@ -1263,7 +1315,18 @@ function DRV:DeliverToWirelessClient( packet )
 			packet.ViaWireless = true
 			local data = PCMod.Data[ pc:EntIndex() ]
 			local drv = data && data.Drivers && data.Drivers[ "gen_network" ]
-			if (drv) then drv:PacketRecieved( packet ) end
+			if (drv) then
+				local function deliver()
+					if ((pc.IsValid) && (pc:IsValid())) then drv:PacketRecieved( packet ) end
+				end
+				if (PCMod.Latency && PCMod.Latency.Deliver) then
+					local dist = PCMod.Latency.DistanceBetween && PCMod.Latency.DistanceBetween( self.Entity, pc )
+					local range = (PCMod.Cfg && PCMod.Cfg.WirelessRange) or 0
+					PCMod.Latency.Deliver( deliver, "wireless", dist, range )
+				else
+					deliver()
+				end
+			end
 			return true
 		end
 	end
@@ -1305,6 +1368,11 @@ function DRV:GetCfg()
 	local c = d.RouterCfg
 	if (c.Wireless == nil) then c.Wireless = (self.Wireless == true) end
 	if (c.WirePass == nil) then c.WirePass = d.WirePass or "123" end
+	if (c.WireName == nil) then
+		// Stable default SSID. Users can rename the network from the Wi-Fi page.
+		local idx = (self.Entity.EntIndex && self.Entity:EntIndex()) or 0
+		c.WireName = d.WireName or ("WebGear-" .. tostring( idx ))
+	end
 	if (c.DHCPStart == nil) then c.DHCPStart = tonumber( PCMod.Cfg.DHCPStart ) or 2 end
 	if (c.DHCPEnd == nil) then c.DHCPEnd = tonumber( PCMod.Cfg.DHCPEnd ) or 254 end
 	// MGMNT segment on a backbone: hosts .2-.11 of the backbone's own /24.
@@ -1347,6 +1415,21 @@ function DRV:SetWireless( on )
 	local c = self:GetCfg()
 	c.Wireless = on
 	if (self.Entity.SetGVar) then self.Entity:SetGVar( "wireless", on ) end
+	self:SyncWirelessOverlay()
+end
+
+// Publish the look-at overlay state. The overlay is client-side, so the SSID
+// travels as a network string: non-empty means Wi-Fi is on. This is what makes
+// the overlay follow the web panel instead of the spawn-time checkbox.
+function DRV:SyncWirelessOverlay()
+	local ent = self.Entity
+	if ((!ent) || (!ent.SetNWString)) then return end
+	local c = self:GetCfg()
+	self.Wireless = (c.Wireless == true)
+	local ssid = ""
+	if (self.Wireless) then ssid = tostring( c.WireName or "" ) end
+	ent:SetNWString( "WifiSSID", ssid )
+	if (ent.SetGVar) then ent:SetGVar( "wireless", self.Wireless ) end
 end
 
 // Rules-based firewall (allow-list). When enabled (default deny) everything is
@@ -1497,7 +1580,7 @@ function DRV:ApplyWebQuery( path )
 	// Apply single-key settings in a fixed order: the network and mask first,
 	// then the pool that is clamped against it. pairs() order is not
 	// deterministic, which would make multi-key queries flaky.
-	local order = { "wireless", "netmask", "lanaddr", "lannet", "dhcpstart", "dhcpend", "firewall", "nat", "wpass" }
+	local order = { "wireless", "netmask", "lanaddr", "lannet", "dhcpstart", "dhcpend", "firewall", "nat", "wname", "wpass" }
 	// When the first pool bound is a bare host id, a dotted last bound is the
 	// one that names the network, so let it derive the subnet.
 	local startDotted = parsed.dhcpstart && (string.find( parsed.dhcpstart, "%." ) != nil)
@@ -1637,6 +1720,15 @@ function DRV:ApplyWebSetting( key, value, deriveBase )
 	local c = self:GetCfg()
 	if (key == "wireless") then
 		self:SetWireless( (value == "1") || (value == "on") )
+	elseif (key == "wname") then
+		local name = string.Trim( tostring( value or "" ) )
+		if (name == "") then
+			c.WireName = nil
+			self:GetCfg()
+		else
+			c.WireName = name
+		end
+		self:SyncWirelessOverlay()
 	elseif (key == "wpass") then
 		if (value == "random") then
 			c.WirePass = tostring( math.random( 100000, 999999 ) )
@@ -1800,6 +1892,7 @@ function DRV:PageWifi()
 	else
 		table.insert( lines, '<p><b>Status:</b> disabled <a href="?wireless=1">[Enable]</a></p>' )
 	end
+	table.insert( lines, '<p><b>Name:</b> <input type="text" name="wname" value="' .. tostring( c.WireName ) .. '"> <input type="submit" value="Set Name"></p>' )
 	table.insert( lines, '<p><b>Password:</b> <input type="text" name="wpass" value="' .. tostring( c.WirePass ) .. '"> <input type="submit" value="Set Password"></p>' )
 	return table.concat( lines, "\n" )
 end
