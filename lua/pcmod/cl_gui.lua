@@ -285,12 +285,26 @@ end )
 // ---------------------------------------------------------------------------------------------------------
 function PCMod.Gui.DrawLabel( x, y, font, text, padding, bgcol, txtcol )
 	if (PCMod.Gui.CamLocked) then return end
+	if (!font) then font = "ScoreboardText" end
+	// Measure with the font we will actually draw with. If it is not registered
+	// (InitFonts never ran or the engine rejected the name), try to (re)create
+	// the fonts once, then fall back to DermaDefault - never error on a bad font.
+	surface.SetFont( font )
+	if (!surface.GetTextSize( "X" )) then
+		if (PCMod.Gui.InitFonts) then PCMod.Gui.InitFonts() end
+		surface.SetFont( font )
+		if (!surface.GetTextSize( "X" )) then
+			font = "DermaDefault"
+			surface.SetFont( font )
+			if (!surface.GetTextSize( "X" )) then return end
+		end
+	end
 	local tmp_w = {}
 	local tmp_h = {}
 	local cnt
-	surface.SetFont( "ScoreboardText" )
 	for cnt=1, #text do
 		local tw, th = surface.GetTextSize( text[ cnt ] )
+		if ((!tw) || (!th)) then return end
 		tmp_w[ cnt ] = tw
 		tmp_h[ cnt ] = th
 	end
