@@ -115,10 +115,14 @@ local sc = {}
 	sc.RH = 393
 	
 	// For Cursor Position Calculation:
-	sc.x1 = -9
-	sc.x2 = 9
-	sc.y1 = 12.5
-	sc.y2 = -4
+	// Aligned to the drawn rect: RW*Resolution = 19.2, RH*Resolution = 15.72
+	// world units (centres kept). The old values (18 x 16.5) skewed the cursor
+	// mapping, worst in the screen corners - the Start button in the bottom-left
+	// had its hitbox cut off from the visible button.
+	sc.x1 = -9.6
+	sc.x2 = 9.6
+	sc.y1 = 12.11
+	sc.y2 = -3.61
 	sc.z = 6.4
 	sc.fov = 70
 	
