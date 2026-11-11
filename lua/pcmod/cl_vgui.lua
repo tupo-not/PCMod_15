@@ -84,7 +84,7 @@ function PCMod.Gui.ShowLockFrame( show )
 	pn:SetPos( ScrW() * 0.86, ScrH() * 0.1 )
 	pn:SetSize( W, H )
 	pn:SetTitle( "" )
-	pn:SetDraggable( false )
+	pn:SetDraggable( true ) -- the custom-painted header bar is the drag area
 	pn:ShowCloseButton( false )
 	PCMod.Gui.LFrame = pn
 
@@ -92,7 +92,7 @@ function PCMod.Gui.ShowLockFrame( show )
 		draw.RoundedBox( 8, 0, 0, w, h, MENU_BG )
 		draw.RoundedBox( 6, 10, 11, 34, 34, MENU_ICON_BG )
 		DrawMonitorIcon( 17, 19, 20, MENU_ICON )
-		draw.SimpleText( "PCMod 1.5", "PCModMenuTitle", 52, 17, MENU_TEXT, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER )
+		draw.SimpleText( "PCMod", "PCModMenuTitle", 52, 17, MENU_TEXT, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER )
 		draw.SimpleText( "Computer controls", "PCModMenuSub", 52, 37, MENU_DIM, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER )
 		surface.SetDrawColor( MENU_LINE )
 		surface.DrawLine( 8, HEADER_H - 4, w - 8, HEADER_H - 4 )

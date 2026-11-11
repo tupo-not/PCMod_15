@@ -63,7 +63,7 @@ local function mockMenuPanel( class )
 	function p:SetPos( x, y ) self.X, self.Y = x, y end
 	function p:SetSize( w, h ) self.W, self.H = w, h end
 	function p:SetTitle( t ) self.Title = t end
-	function p:SetDraggable( b ) end
+	function p:SetDraggable( b ) self.Draggable = b end
 	function p:ShowCloseButton( b ) end
 	function p:SetParent( par ) table.insert( par.children, self ) self.parent = par end
 	function p:SetText( t ) self.Text = t end
@@ -99,10 +99,12 @@ PCMod.Gui.ShowLockFrame( true )
 local frame = PCMod.Gui.LFrame
 assert( frame ~= nil, "lock frame created" )
 assertEq( frame.Title, "", "no legacy title bar (custom header)" )
+assertTrue( frame.Draggable == true, "lock frame is draggable" )
 assertEq( #frame.children, 3, "X button + 2 rows on a laptop" )
 menuTexts = {}
 frame:Paint( frame.W, frame.H )
-assertTrue( table.concat( menuTexts, "|" ):find( "PCMod 1.5", 1, true ) ~= nil, "header title" )
+assertTrue( table.concat( menuTexts, "|" ):find( "PCMod", 1, true ) ~= nil, "header title is PCMod" )
+assertTrue( table.concat( menuTexts, "|" ):find( "PCMod 1.5", 1, true ) == nil, "no version suffix in title" )
 assertTrue( table.concat( menuTexts, "|" ):find( "Computer controls", 1, true ) ~= nil, "header subtitle" )
 assertTrue( table.concat( menuTexts, "|" ):find( "Device menu", 1, true ) ~= nil, "footer label" )
 menuTexts = {}
