@@ -34,6 +34,21 @@ function DEV:Initialize( x, y, w, h )
 end
 
 function DEV:Paint( x, y, w, h )
+	// TaskbarOnly: DrawSpace repaints just the taskbar strip (plus the Start
+	// button) on top while a Start menu slides in/out from behind it.
+	if (self.TaskbarOnly) then
+		local bary = y + (h * (1 - self.BarSize))
+		local c_tsk = PCMod.Gui.GetThemeColour( self.Th, "TaskBar" )
+		local c_bor = PCMod.Gui.GetThemeColour( self.Th, "Border" )
+		if (!PCMod.Gui.ThemeDraw( self.Th, "taskbar", x, bary, w, h*self.BarSize, self.BarSize, self.BtnW )) then
+			surface.SetDrawColor( c_tsk.r, c_tsk.g, c_tsk.b, c_tsk.a )
+			surface.DrawRect( x, bary, w, h*self.BarSize )
+			surface.SetDrawColor( c_bor.r, c_bor.g, c_bor.b, c_bor.a )
+			surface.DrawLine( x+(w*self.BtnW), bary, x+w, bary )
+		end
+		self:Draw()
+		return
+	end
 	local c_pri = PCMod.Gui.GetThemeColour( self.Th, "Primary" )
 	local c_sec = PCMod.Gui.GetThemeColour( self.Th, "Secondary" )
 	local c_tsk = PCMod.Gui.GetThemeColour( self.Th, "TaskBar" )

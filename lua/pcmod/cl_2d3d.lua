@@ -711,9 +711,13 @@ function PCMod.SDraw.MenuSlideActive( ss )
 			local inst = (v.DevID && PCMod.SDraw.DevMap) && PCMod.SDraw.DevMap[ v.DevID ]
 			local start = v.MenuAnimStart
 			if (inst && inst.MenuAnimStart) then start = inst.MenuAnimStart end
-			if (start) then
+			local cstart = v.CloseAnimStart
+			if (inst && inst.CloseAnimStart) then cstart = inst.CloseAnimStart end
+			if (start || cstart) then
 				local now = CurTime()
-				if ((now - start) < (PCMod.SDraw.MenuAnimTime or 0.22)) then return true end
+				local dur = PCMod.SDraw.MenuAnimTime or 0.22
+				if (start && ((now - start) < dur)) then return true end
+				if (cstart && ((now - cstart) < dur)) then return true end
 			end
 		end
 	end
@@ -738,21 +742,32 @@ function PCMod.SDraw.GetDeviceVisualRect( device, w, h )
 		dy = ((device.Y + device.H) * h) - vh
 	end
 	if (isMenu) then
-		// Slide-up entrance: the menu rises from fully below the screen up to
-		// its anchored spot. Drawing, hover and click tagging all resolve the
-		// rect through this function, so they stay aligned during the slide.
+		// Slide animation: the menu rises from fully below the screen up to its
+		// anchored spot on entrance, and slides back down when the server flags
+		// it with Closing (second press on Start). Drawing, hover and click
+		// tagging all resolve the rect through this function, so they stay
+		// aligned during the slide.
 		local inst = (device.DevID && PCMod.SDraw.DevMap) && PCMod.SDraw.DevMap[ device.DevID ]
 		// The client instance wins once it exists; before that (the very first
 		// frame after the server added the menu) the payload stamp is used, so
 		// the menu never flashes at its final position for one frame.
 		local start = device.MenuAnimStart
 		if (inst && inst.MenuAnimStart) then start = inst.MenuAnimStart end
+		local cstart = device.CloseAnimStart
+		if (inst && inst.CloseAnimStart) then cstart = inst.CloseAnimStart end
+		local dur = PCMod.SDraw.MenuAnimTime or 0.22
 		local t = 1
-		if (start) then
-			t = math.Clamp( (CurTime() - start) / (PCMod.SDraw.MenuAnimTime or 0.22), 0, 1 )
+		if (device.Closing && cstart) then
+			t = math.Clamp( (CurTime() - cstart) / dur, 0, 1 )
+		elseif (start) then
+			t = math.Clamp( (CurTime() - start) / dur, 0, 1 )
 		end
 		local e = 1 - ((1 - t) * (1 - t)) // ease-out quad
-		dy = h + ((dy - h) * e)
+		if (device.Closing) then
+			dy = dy + ((h - dy) * e) // slide back down, below the screen
+		else
+			dy = h + ((dy - h) * e) // rise from below the screen
+		end
 	end
 	// Program windows may never extend past the viewport / taskbar. This also
 	// covers stale sizes from another GUI scale (e.g. a window maximised at
@@ -793,12 +808,10 @@ function PCMod.SDraw.DrawSpace( ss, x, y, w, h, entid )
 			// Stamp the slide start on first sight - before the client instance
 			// exists - so the very first frame already draws the menu hidden
 			// instead of flashing at its final position.
-			if (((v.Type == "menu_start") || (v.Type == "menu_allprogs")) && (!v.MenuAnimStart)) then
-				v.MenuAnimStart = CurTime()
+			if ((v.Type == "menu_start") || (v.Type == "menu_allprogs")) then
+				if (!v.MenuAnimStart) then v.MenuAnimStart = CurTime() end
+				if (v.Closing && (!v.CloseAnimStart)) then v.CloseAnimStart = CurTime() end
 			end
-			// While a menu slides up, the taskbar (part of the desktop) is drawn
-			// above it, like the real Start menu sliding out from behind it.
-			if ((v.Type == "desktop") && menuSliding) then pr = 256 end
 			if (!tmp[pr]) then tmp[pr] = {} end
 			table.insert( tmp[pr], v )
 		end
@@ -843,7 +856,25 @@ function PCMod.SDraw.DrawSpace( ss, x, y, w, h, entid )
 			end
 		end
 	end
-	
+
+	// While a Start/All-Programs menu slides (in or out), repaint just the
+	// taskbar strip of the desktop on top, so the menu visually slides out
+	// from behind the taskbar instead of covering it. (Raising the desktop's
+	// priority instead would hide the whole menu behind the fullscreen
+	// desktop background.)
+	if (menuSliding) then
+		for k, v in pairs( ss ) do
+			if (type( v ) == "table" && (v.Type == "desktop")) then
+				local dev = PCMod.SDraw.DevMap[ v.DevID ]
+				if (dev && dev.Int_Paint) then
+					local dx, dy, dw, dh = PCMod.SDraw.GetDeviceVisualRect( v, w, h )
+					dev.TaskbarOnly = true
+					dev:Int_Paint( x+dx, y+dy, dw, dh )
+					dev.TaskbarOnly = false
+				end
+			end
+		end
+	end
 end
 
 // ---------------------------------------------------------------------------------------------------------

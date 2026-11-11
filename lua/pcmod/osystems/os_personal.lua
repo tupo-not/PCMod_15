@@ -152,7 +152,34 @@ function OS:RunCommand( com, args )
 	end
 	if (com == "startmenu_open") then
 		if (self.State != 10) then return end
-		self:OpenStartMenu()
+		local ss = self:Display():GetScreen()
+		local dev = ss:GetDevice( "menu_start" )
+		if (dev) then
+			local ent = self.Entity
+			local tid = "pcmod_menuexit_" .. tostring( ent:EntIndex() )
+			if (dev.Closing) then
+				// Pressed again during the exit slide: reopen, cancel the removal.
+				dev.Closing = false
+				ss:AddDevice( "menu_start", dev )
+				self:Display():SetScreen( ss )
+				if (timer && timer.Remove) then timer.Remove( tid ) end
+			else
+				// Second press: flag the device so the client slides it back
+				// down behind the taskbar, then remove it for real.
+				dev.Closing = true
+				ss:AddDevice( "menu_start", dev )
+				self:Display():SetScreen( ss )
+				if (timer && timer.Create) then
+					timer.Create( tid, 0.3, 1, function()
+						if ((!ent) || (!ent:IsValid())) then return end
+						local os = ent:GetOS()
+						if (os && os.CloseStartMenu) then os:CloseStartMenu() end
+					end )
+				end
+			end
+		else
+			self:OpenStartMenu()
+		end
 	end
 	if (com == "startmenu_close") then
 		if (self.State != 10) then return end

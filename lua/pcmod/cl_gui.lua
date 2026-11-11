@@ -480,18 +480,13 @@ function PCMod.Gui.RegisterClick( mx, my, ent, right )
 	end
 	
 	// Now grab the device with the highest priority that is tagged
-	// While a Start menu slides up, the taskbar (desktop) counts as topmost,
-	// matching the draw order in DrawSpace.
-	local menuSliding = PCMod.SDraw.MenuSlideActive( ss )
 	local p = -1
 	local devn = ""
 	for k, v in pairs( ss ) do
 		if (type( v ) == "table") then
 			if (v.Tagged) then
-				local pr = v.Priority or 1
-				if ((v.Type == "desktop") && menuSliding) then pr = 256 end
-				if (pr > p) then
-					p = pr
+				if (v.Priority > p) then
+					p = v.Priority
 					devn = k
 				end
 			end
