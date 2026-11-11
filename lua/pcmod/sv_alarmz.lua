@@ -121,7 +121,7 @@ function PCMod.Alarmz.PushCamState( camIdx, ply )
 		net.WriteUInt( camIdx, 32 )
 		net.WriteBool( entry.hash != nil )
 		net.WriteBool( ply && (entry.ownerID == ply:SteamID()) || false )
-		net.WriteUInt( #links, 8 )
+		net.WriteUInt( #links, 16 ) -- 8 bits truncated the count above 255 links
 		for _, pcIdx in ipairs( links ) do net.WriteUInt( pcIdx, 32 ) end
 	if (ply) then
 		net.Send( ply )
@@ -285,6 +285,11 @@ end
 
 net.Receive( "pcmod_alarmz_req", function( len, ply )
 	if (!IsValid( ply )) then return end
+	// Per-player rate limit: every accepted action triggers net sends
+	// (PushCamState -> Broadcast), so an unthrottled client could spam them.
+	ply._pcmodAlarmzNext = ply._pcmodAlarmzNext or 0
+	if (CurTime() < ply._pcmodAlarmzNext) then return end
+	ply._pcmodAlarmzNext = CurTime() + 0.2
 	local action = net.ReadString()
 	local camIdx = net.ReadUInt( 32 )
 	local monIdx = net.ReadUInt( 32 )
@@ -306,6 +311,15 @@ end )
 
 // Removing the camera drops its password and all links; removing a monitor/PC
 // only drops the links that pointed at it (the camera password survives).
+// Drop per-player auth flags when they leave, so entry.authed does not grow
+// without bound across reconnects.
+hook.Add( "PlayerDisconnected", "PCMod.Alarmz.CleanAuth", function( ply )
+	local sid = ply:SteamID()
+	for camIdx, entry in pairs( PCMod.Alarmz.Cams or {} ) do
+		if (entry.authed) then entry.authed[ sid ] = nil end
+	end
+end )
+
 hook.Add( "EntityRemoved", "PCMod.Alarmz.Cleanup", function( ent )
 	if (!IsValid( ent )) then return end
 	if (ent:GetClass() == CAM_CLASS) then

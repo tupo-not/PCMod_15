@@ -65,8 +65,13 @@ function PCMod.DHCPClient.Handle( owner, body )
 		return true
 	end
 	if (kind == "nack") then
+		// Forget the rejecting server entirely: keeping state.server made line 47
+		// reject every later offer from any other server, so after one NACK the
+		// client could never obtain a lease again.
 		state.done = false
 		state.offer = nil
+		state.server = nil
+		state.requested = nil
 		return true
 	end
 	if (kind == "release") then return true end

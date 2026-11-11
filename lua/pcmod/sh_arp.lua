@@ -21,6 +21,17 @@ function PCMod.ARP.Learn( router, ip, mac, port )
 	local cache = PCMod.ARP.Table( router )
 	local rec = { ip = ip, mac = mac, port = port, time = CurTime() }
 	cache[ ip ] = rec
+	// Cap the cache (evict the oldest entry) so a long-running router does not
+	// grow ArpCache without bound.
+	local n = 0
+	for k in pairs( cache ) do n = n + 1 end
+	if (n > 512) then
+		local oldest, oldestKey = nil, nil
+		for k, v in pairs( cache ) do
+			if ((!oldest) || ((v.time or 0) < oldest)) then oldest = v.time or 0; oldestKey = k end
+		end
+		if (oldestKey && (oldestKey != ip)) then cache[ oldestKey ] = nil end
+	end
 	return rec
 end
 

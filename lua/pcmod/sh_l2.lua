@@ -40,11 +40,23 @@ function PCMod.L2.Receive( ent, port, data )
 		end
 		if (ent.SwitchFrames && ent.SwitchFrames[ meta.switchframe ]) then return end
 		ent.SwitchFrames = ent.SwitchFrames or {}
+		ent.SwitchOrder = ent.SwitchOrder or {}
 		ent.SwitchFrames[ meta.switchframe ] = true
-		ent.SwitchFrameCount = (ent.SwitchFrameCount or 0) + 1
-		if (ent.SwitchFrameCount > 2048) then
-			ent.SwitchFrames = { [ meta.switchframe ] = true }
-			ent.SwitchFrameCount = 1
+		table.insert( ent.SwitchOrder, meta.switchframe )
+		if (#ent.SwitchOrder > 2048) then
+			// Evict the OLDEST half, keeping insertion order. A full wipe would
+			// forget a looping frame that is still in flight, so it would be
+			// re-forwarded on every wipe and sustain a broadcast storm.
+			local n = #ent.SwitchOrder
+			local half = math.floor( n / 2 )
+			local newset, neworder = {}, {}
+			for i = half + 1, n do
+				local id = ent.SwitchOrder[ i ]
+				newset[ id ] = true
+				neworder[ #neworder + 1 ] = id
+			end
+			ent.SwitchFrames = newset
+			ent.SwitchOrder = neworder
 		end
 
 		local macs = data[ 4 ]

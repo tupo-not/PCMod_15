@@ -797,7 +797,14 @@ function PCMod.IPv4.Parse( addr )
 	if (!a) then return nil end
 	a, b, c, d = tonumber( a ), tonumber( b ), tonumber( c ), tonumber( d )
 	if ((!a) || (!b) || (!c) || (!d)) then return nil end
+<<<<<<< HEAD
 	if (a != PCMod.IPv4.BackboneOctet()) then return nil end
+=======
+	if (a != 10) then return nil end
+	// Octets must be 0-255; the pattern alone accepted 10.999.999.999 and
+	// produced a garbage backbone id (bb > 65535).
+	if ((b > 255) || (c > 255) || (d > 255)) then return nil end
+>>>>>>> 2269553 (audit: network-layer fixes (DHCP NACK, ARP cap, pid memory, L2 loop guard, IPv4 parse, alarmz net))
 	return { bb = (b * 256) + c, host = d }
 end
 

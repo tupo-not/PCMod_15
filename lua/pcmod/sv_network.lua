@@ -146,6 +146,12 @@ function PCMod.Network.ClearPacketMemory( pid )
 		end
 	end
 	clear( PCMod.Network.Backbones )
+	// LAN routers are registered inside their backbone's .LAN list and also
+	// keep per-pid memory - a recycled pid must be forgotten there too,
+	// otherwise LAN routers drop the new packet as "already processed".
+	for _, bb in pairs( PCMod.Network.Backbones or {} ) do
+		if (bb && bb.LAN) then clear( bb.LAN ) end
+	end
 end
 
 // ---------------------------------------------------------------------------------------------------------

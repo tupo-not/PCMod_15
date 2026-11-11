@@ -102,7 +102,7 @@ net.Receive( "pcmod_alarmz_state", function()
 	local camIdx = net.ReadUInt( 32 )
 	local hasPass = net.ReadBool()
 	local isOwner = net.ReadBool()
-	local n = net.ReadUInt( 8 )
+	local n = net.ReadUInt( 16 ) -- must match the server's WriteUInt( #links, 16 )
 	local links = {}
 	for i = 1, n do links[ net.ReadUInt( 32 ) ] = true end
 	PCMod.AlarmzCL.States[ camIdx ] = { hasPass = hasPass, isOwner = isOwner, links = links }
