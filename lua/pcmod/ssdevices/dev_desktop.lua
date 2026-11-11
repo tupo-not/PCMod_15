@@ -24,6 +24,14 @@ DEV.StartHitPad = 0.04
 
 DEV.Th = "basic"
 
+// Debug aid: pc_debug_hitbox 1 draws the desktop window rect (green) and the
+// btn_start hitbox (red) on the screen and logs every click's normalized
+// coords next to the element rect, so hitbox/visual mismatches are visible.
+concommand.Add( "pc_debug_hitbox", function( pl, cmd, args )
+	PCMod.Cfg.DebugHitbox = (tonumber( args[1] ) or 0) != 0
+	PCMod.Msg( "DebugHitbox = " .. tostring( PCMod.Cfg.DebugHitbox ) )
+end )
+
 function DEV:Initialize( x, y, w, h )
 	local btny = y + (h * (1 - self.BtnSize))
 	self:CreateButton2( self.Th, "btn_start", x, btny, w*self.BtnW, h*self.BtnSize, "Start" )
@@ -79,6 +87,15 @@ function DEV:Paint( x, y, w, h )
 		surface.DrawLine( x+(w*self.BtnW), bary, x+w, bary )
 	end
 	self:Draw()
+	if (PCMod.Cfg.DebugHitbox) then
+		surface.SetDrawColor( 0, 255, 0, 255 )
+		surface.DrawOutlinedRect( self.win_x, self.win_y, self.win_w, self.win_h )
+		local el = self.Elements and self.Elements[ "btn_start" ]
+		if (el) then
+			surface.SetDrawColor( 255, 0, 0, 255 )
+			surface.DrawOutlinedRect( el.X, el.Y, el.W, el.H )
+		end
+	end
 end
 
 function DEV:ButtonClick( btn )
@@ -91,6 +108,10 @@ function DEV:ButtonClick( btn )
 end
 
 function DEV:DoClick( x, y, right )
+	if (PCMod.Cfg.DebugHitbox) then
+		local el = self.Elements and self.Elements[ "btn_start" ]
+		PCMod.Msg( string.format( "CLICK x=%.3f y=%.3f win=%d,%d,%d,%d btn=%s", x, y, self.win_x, self.win_y, self.win_w, self.win_h, (el and string.format( "%d,%d,%d,%d", el.X, el.Y, el.W, el.H )) or "nil" ) )
+	end
 	// Padded Start hitbox: accept clicks in a margin around the drawn button.
 	// Clicking the empty desktop does nothing anyway, and the Start menu (when
 	// open) sits above the taskbar and takes its clicks first by priority.
