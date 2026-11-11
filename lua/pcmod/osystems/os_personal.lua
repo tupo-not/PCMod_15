@@ -152,6 +152,7 @@ function OS:RunCommand( com, args )
 	end
 	if (com == "startmenu_open") then
 		if (self.State != 10) then return end
+		if ((!self.Entity) || (!self.Entity:IsValid())) then return end
 		local ss = self:Display():GetScreen()
 		local dev = ss:GetDevice( "menu_start" )
 		if (dev) then
@@ -173,7 +174,8 @@ function OS:RunCommand( com, args )
 					timer.Create( tid, 0.3, 1, function()
 						if ((!ent) || (!ent:IsValid())) then return end
 						local os = ent:GetOS()
-						if (os && os.CloseStartMenu) then os:CloseStartMenu() end
+						if ((!os) || (os.State != 10) || (!os.CloseStartMenu)) then return end
+						os:CloseStartMenu()
 					end )
 				end
 			end
@@ -299,6 +301,12 @@ function OS:OpenStartMenu()
 end
 
 function OS:CloseStartMenu()
+	// Cancel a pending slide-down removal (toggle path): without this a stale
+	// timer could close a menu that was reopened within the 0.3 s window, or
+	// fire mid-shutdown.
+	if (self.Entity && self.Entity:IsValid() && timer && timer.Remove) then
+		timer.Remove( "pcmod_menuexit_" .. self.Entity:EntIndex() )
+	end
 	local ss = self:Display():GetScreen()
 	ss:RemoveDevice( "menu_start" )
 	self:Display():SetScreen( ss )

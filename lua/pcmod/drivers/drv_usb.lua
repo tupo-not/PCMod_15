@@ -94,7 +94,11 @@ function DRV:SendDeviceData( port, data )
 end
 
 function DRV:GetDeviceData( port )
-	local dat = table.Copy( self.PTData[ port ].Data )
-	self.PTData[ port ].Data = {}
+	// PTData[port] is nil for unknown/stale port ids (device unplugged) - the
+	// old code crashed with "attempt to index a nil value".
+	local pd = self.PTData[ port ]
+	if (!pd) then return {} end
+	local dat = table.Copy( pd.Data or {} )
+	pd.Data = {}
 	return dat
 end

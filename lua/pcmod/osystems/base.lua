@@ -179,8 +179,10 @@ end
 
 function OS:LaunchProgram( progname )
 	if (!self.Progs[ progname ]) then return false end
-	PCMod.Progs[ progname ].Entity = self.Entity
-	return PCMod.Progs[ progname ]:Start()
+	// Operate on this OS's instance - writing .Entity on the shared global
+	// prototype PCMod.Progs[progname] would corrupt the program for every PC.
+	self.Progs[ progname ].Entity = self.Entity
+	return self.Progs[ progname ]:Start()
 end
 
 function OS:ShutDown()

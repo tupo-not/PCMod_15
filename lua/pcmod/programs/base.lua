@@ -134,10 +134,14 @@ function PROG:BaseTriggerState( st )
 		end
 		self:OnEnd()
 		local ss = self:GetScreenSpace()
-		ss:RemoveDevice( self.DeviceName )
-		ss:RemoveDevice( "win_" .. self.Name .. "_openfile" )
-		ss:RemoveDevice( "win_" .. self.Name .. "_printloc" )
-		self:SetScreenSpace( ss )
+		// ss is nil once the owning entity is gone (PC removed mid-shutdown) -
+		// removing devices on it would crash the exit path.
+		if (ss) then
+			ss:RemoveDevice( self.DeviceName )
+			ss:RemoveDevice( "win_" .. self.Name .. "_openfile" )
+			ss:RemoveDevice( "win_" .. self.Name .. "_printloc" )
+			self:SetScreenSpace( ss )
+		end
 		// Drop the whole device payload so a reopen (or a power cycle) starts
 		// with a clean window instead of a stale page/status/edit.
 		self.DeviceData = {}
@@ -201,8 +205,10 @@ function PROG:ShowFilePicker( path, mode )
 	local list = self:ListDir( path )
 	if (!istable( list )) then list = {} end
 	local ss = self:GetScreenSpace()
+	local os = self:GetOS()
+	if ((!ss) || (!os)) then return end
 	local tmp = {}
-	tmp.Th = self:GetOS():GetTheme()
+	tmp.Th = os:GetTheme()
 	tmp.Path = path
 	tmp.Entries = list
 	tmp.Tree = self:BuildFileTree()
@@ -317,6 +323,7 @@ end
 
 function PROG:CloseOpenFile()
 	local ss = self:GetScreenSpace()
+	if (!ss) then return end
 	local on = "win_" .. self.Name .. "_openfile"
 	ss:RemoveDevice( on )
 	self:SetScreenSpace( ss )
@@ -328,8 +335,10 @@ function PROG:ShowPrintLocation( isChanged )
 	end
 	PCMod.Msg( "isChanged = "..PCMod.BTN( isChanged ), true )
 	local ss = self:GetScreenSpace()
+	local os = self:GetOS()
+	if ((!ss) || (!os)) then return end
 	local tmp = {}
-	tmp.Th = self:GetOS():GetTheme()
+	tmp.Th = os:GetTheme()
 	tmp.Parent = self.DeviceName
 	local dev = ss:MakeDevice( "window_printloc", 0.2, 0.2, 0.6, 0.6, tmp, 240 )
 	local on = "win_" .. self.Name .. "_printloc"
@@ -340,6 +349,7 @@ end
 
 function PROG:ClosePrintLocation()
 	local ss = self:GetScreenSpace()
+	if (!ss) then return end
 	local on = "win_" .. self.Name .. "_printloc"
 	ss:RemoveDevice( on )
 	self:SetScreenSpace( ss )

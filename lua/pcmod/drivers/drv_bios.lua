@@ -319,10 +319,12 @@ function DRV:SetWaitingCommand( enabled )
 	local ss = display:GetScreen()
 	if (ss) then
 		local dev = ss:GetDevice( "win_bios" )
-		dev.CF = enabled
-		//ss:MakeDevice( "window_bios", 0, 0, 1, 1, { Text = {} }, 2 )
-		ss:AddDevice( "win_bios", dev )
-		PCMod.Msg( "Bios updating screenspace...", true )
+		if (dev) then
+			dev.CF = enabled
+			//ss:MakeDevice( "window_bios", 0, 0, 1, 1, { Text = {} }, 2 )
+			ss:AddDevice( "win_bios", dev )
+			PCMod.Msg( "Bios updating screenspace...", true )
+		end
 	else
 		PCMod.Msg( ">> NO SCREEN-SPACE FOUND! <<", true )
 	end
