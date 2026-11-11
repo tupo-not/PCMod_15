@@ -28,7 +28,7 @@ if (SERVER) then
 
 end
 
-SWEP.Spawnable = true
+SWEP.Spawnable = true -- gameplay tool (password cracking), stays in the spawnmenu
 SWEP.AdminSpawnable = true
 
 SWEP.ViewModel = "models/weapons/v_c4.mdl"

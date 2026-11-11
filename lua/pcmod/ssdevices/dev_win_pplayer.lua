@@ -51,7 +51,7 @@ end
 function DEV:ListboxSelect( lbname, option )
 	if (lbname == "lstCats") then
 		self:ClearListbox( "lstSongs" )
-		for _, v in pairs( PCMod.Cfg.Music[ option ] ) do
+		for _, v in pairs( PCMod.Cfg.Music[ option ] or {} ) do
 			self:AddListboxItem( "lstSongs", v[2], v[1] )
 		end
 	end

@@ -45,6 +45,7 @@ function TOOL:LeftClick( trace )
 	
 	// The rest of the function is server-only stuff.
 	if (CLIENT) then return true end
+	local ply = self:GetOwner()
 
 	local cl = trace.Entity:GetClass()
 
@@ -59,13 +60,13 @@ function TOOL:LeftClick( trace )
 	end
 
 	// Get some variables
-	local ply = self:GetOwner()
 	local dest1 = ( self.targetent )
 	local port = ( self:GetClientInfo( "port" ) )
 	local body = ( self:GetClientInfo( "body" ) )
 	local filter = ( self:GetClientInfo( "filter" ) )
 	local ent = trace.Entity
 
+	local dest
 	if (filter == "network") then
 		dest = dest1:GetFullIP()
 	else

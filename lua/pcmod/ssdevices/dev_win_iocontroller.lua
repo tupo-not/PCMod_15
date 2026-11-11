@@ -75,6 +75,9 @@ function DEV:ListboxSelect( name, option )
 end
 
 function DEV:SelectOutput( id )
+	// ListboxSelect passes string keys; normalize so numeric Outs keys match
+	// and the id == 0 check can actually fire.
+	id = tonumber( id ) or id
 	self.SelOut = id
 	local val = tostring( self.Outs[ id ] )
 	if (id == 0) then val = "0" end

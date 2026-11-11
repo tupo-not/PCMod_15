@@ -28,7 +28,7 @@ if (SERVER) then
 
 end
 
-SWEP.Spawnable = true
+SWEP.Spawnable = false -- admin tool: keep it out of the regular spawnmenu
 SWEP.AdminSpawnable = true
 
 SWEP.ViewModel = "models/weapons/v_c4.mdl"
@@ -73,7 +73,7 @@ function SWEP:Think()
 		self.Slots[ cnt ] = self:GetNWBool( "slot_" .. tostring( cnt ) )
 	end
 	if ((self.SelSlot < 1) || (self.SelSlot > 4)) then self.SelSlot = 1 end
-	if (self.LabelPos != self.SelProg) then
+	if (self.LabelPos != self.SelSlot) then
 		self.LabelPos = math.Mid( self.LabelPos, self.SelSlot, self.ZipRat )
 		if ((self.LabelPos > (self.SelSlot-0.1)) && (self.LabelPos < (self.SelSlot+0.1))) then self.LabelPos = self.SelSlot end
 	end
@@ -145,12 +145,17 @@ function SWEP:PasteHD()
 		PCMod.Notice( "OS didn't match!", self.Owner )
 		return
 	end
-	local tabloyusay = table.Count(PCMod.StringToTable( osid2.ItemContent))
-	
+	// StringToTable returns nil for a missing/empty allprogs.dat - the old
+	// code crashed on table.Count(nil) / [i][3].
+	local progtab = PCMod.StringToTable( osid2.ItemContent ) or {}
+	local tabloyusay = table.Count( progtab )
+
 	for i=1, tabloyusay do
-	local lazim = PCMod.StringToTable( osid2.ItemContent)[i][3]
-	local islenmis = string.Replace( lazim, "sys_openprog ", "" )
-	ent:InstallProgram( islenmis )
+	local row = progtab[ i ]
+	if ((row) && (row[3])) then
+		local islenmis = string.Replace( row[3], "sys_openprog ", "" )
+		ent:InstallProgram( islenmis )
+	end
 	end
 	PCMod.Data[ ent:EntIndex() ].HardDrive = table.Copy( hd )
 	self.Owner:SendLua( "PCMod.Gui.FlashIcon( \"gui/icons/ico_harddrive\", 1 );" )

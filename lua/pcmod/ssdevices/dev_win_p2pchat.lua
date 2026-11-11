@@ -89,8 +89,9 @@ function DEV:DoClick( x, y )
 end
 
 function DEV:DataRecieved( name, data )
-	if (name == "filename") then self:SetTextboxText( "txtFilename", data ) end
-	if (name == "runcommand") then self:RunProgCommand( "notepad", data ) end
+	// Was a verbatim copy of dev_win_notepad's handler: this window has no
+	// txtFilename textbox and "runcommand" must not go to notepad. Nothing
+	// server-side sends these names here, so keep it a safe no-op.
 end
 
 function DEV:Tick()

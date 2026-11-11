@@ -15,7 +15,7 @@ SWEP.Contact = ""
 SWEP.Purpose = ""
 SWEP.Instructions = "Left click to select source ent, left click again to select dest ent and send"
 
-SWEP.Spawnable = true
+SWEP.Spawnable = false -- admin tool: keep it out of the regular spawnmenu
 SWEP.AdminSpawnable = true
 
 SWEP.ViewModel = "models/weapons/v_hands.mdl"
@@ -66,13 +66,14 @@ if (SERVER) then
 	function SWEP:PrimaryAttack()
 		local ent = self.Owner:GetEyeTrace().Entity
 		if (!self.EntA) then
-			if ((ent) && (ent:IsValid())) then
+			// Ports()/GetFullIP() below only exist on PCMod entities.
+			if ((ent) && (ent:IsValid()) && (ent.IsPCMod)) then
 				self.EntA = ent
 				self:Say( "(A) Entity " .. ent:EntIndex() .. " selected!" )
 			end
 			return
 		end
-		if ((!ent) || (!ent:IsValid())) then return end
+		if ((!ent) || (!ent:IsValid()) || (!ent.IsPCMod)) then return end
 		self:Say( "(B) Entity " .. ent:EntIndex() .. " selected!" )
 		self:DoStuff( self.EntA, ent )
 		self.EntA = nil

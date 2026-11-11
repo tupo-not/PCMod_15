@@ -61,13 +61,17 @@ function PANEL:Paint()
 		local ico = self.Icon
 		local fn = "gui/icons/ico_" .. ico
 		local sid = PCMod.Res.Mats[ fn ]
-		surface.SetTexture( sid )
-		// PCMOD15 E2: icons may be tinted by the theme (Icon_Tint).
-		// GetCol falls back to white, so themes without the key
-		// render exactly as before.
-		local c_ico = self:GetCol( "Icon_Tint" )
-		surface.SetDrawColor( c_ico.r, c_ico.g, c_ico.b, c_ico.a )
-		surface.DrawTexturedRect( self.X, self.Y, self.H, self.H ) -- Yes, self.H is repeated on purpose
+		// A missing icon material would make SetTexture(nil) raise inside
+		// Paint and break the whole frame - skip the icon instead.
+		if (sid) then
+			surface.SetTexture( sid )
+			// PCMOD15 E2: icons may be tinted by the theme (Icon_Tint).
+			// GetCol falls back to white, so themes without the key
+			// render exactly as before.
+			local c_ico = self:GetCol( "Icon_Tint" )
+			surface.SetDrawColor( c_ico.r, c_ico.g, c_ico.b, c_ico.a )
+			surface.DrawTexturedRect( self.X, self.Y, self.H, self.H ) -- Yes, self.H is repeated on purpose
+		end
 	end
 end
 

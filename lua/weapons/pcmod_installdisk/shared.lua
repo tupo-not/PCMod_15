@@ -42,7 +42,7 @@ if (SERVER) then
 
 end
 
-SWEP.Spawnable = true
+SWEP.Spawnable = true -- player-facing: installing the OS needs it in the spawnmenu
 SWEP.AdminSpawnable = true
 
 // The CD model itself is the viewmodel: no C4 mesh, no hands.
