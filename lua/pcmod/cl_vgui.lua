@@ -10,7 +10,55 @@
 // ShowLockFrame - Shows / Hides the lock frame
 // ---------------------------------------------------------------------------------------------------------
 
+// Dark "device menu" style for the lock frame (design mock): dark rounded panel,
+// header with icon + title + subtitle + X, icon rows with chevrons, footer.
+local MENU_BG = Color( 22, 24, 29, 255 )
+local MENU_ROW = Color( 30, 33, 40, 255 )
+local MENU_ROW_HOVER = Color( 14, 105, 96, 255 )
+local MENU_ICON_BG = Color( 16, 88, 80, 255 )
+local MENU_ICON = Color( 150, 235, 215, 255 )
+local MENU_TEXT = Color( 240, 242, 245, 255 )
+local MENU_DIM = Color( 140, 145, 155, 255 )
+local MENU_LINE = Color( 45, 48, 56, 255 )
+local MENU_FOOT = Color( 110, 115, 125, 255 )
 
+local function DrawMonitorIcon( x, y, s, col )
+	surface.SetDrawColor( col )
+	surface.DrawOutlinedRect( x, y, s, s * 0.62 )
+	surface.DrawRect( x + s * 0.35, y + s * 0.62, s * 0.3, s * 0.12 )
+	surface.DrawRect( x + s * 0.2, y + s * 0.74, s * 0.6, s * 0.08 )
+end
+
+local function DrawKeyboardIcon( x, y, s, col )
+	surface.SetDrawColor( col )
+	surface.DrawOutlinedRect( x, y + s * 0.2, s, s * 0.6 )
+	for i = 0, 2 do
+		for j = 0, 1 do
+			surface.DrawRect( x + s * (0.18 + i * 0.24), y + s * (0.34 + j * 0.24), s * 0.12, s * 0.12 )
+		end
+	end
+	surface.DrawRect( x + s * 0.25, y + s * 0.68, s * 0.5, s * 0.1 )
+end
+
+local function DrawPowerIcon( x, y, s, col )
+	surface.SetDrawColor( col )
+	local cx, cy, r = x + s * 0.5, y + s * 0.55, s * 0.32
+	for i = 0, 24 do
+		local a1 = math.rad( -60 + i * 12 )
+		local a2 = math.rad( -60 + (i + 1) * 12 )
+		surface.DrawLine( cx + math.cos( a1 ) * r, cy + math.sin( a1 ) * r, cx + math.cos( a2 ) * r, cy + math.sin( a2 ) * r )
+	end
+	surface.DrawLine( cx, y + s * 0.08, cx, y + s * 0.55 )
+end
+
+local function DrawSlidersIcon( x, y, s, col )
+	surface.SetDrawColor( col )
+	for i = 0, 2 do
+		local yy = y + s * (0.2 + i * 0.3)
+		surface.DrawLine( x, yy, x + s, yy )
+		surface.DrawRect( x + s * (0.25 + i * 0.25), yy - s * 0.08, s * 0.16, s * 0.16 )
+	end
+end
 
 function PCMod.Gui.ShowLockFrame( show )
 	if (!show) then
@@ -20,50 +68,85 @@ function PCMod.Gui.ShowLockFrame( show )
 		end
 		return
 	end
+
+	local ent = ents.GetByIndex( PCMod.Gui.CamLockID )
+	local isLaptop = (IsValid( ent ) && (ent:GetClass() == "pcmod_laptop"))
+
+	local W = math.Clamp( ScrW() * 0.14, 230, 320 )
+	local HEADER_H = 56
+	local ROW_H = 52
+	local ROW_GAP = 6
+	local FOOTER_H = 30
+	local rowCount = 1 + (isLaptop && 1 or 0)
+	local H = HEADER_H + 8 + rowCount * (ROW_H + ROW_GAP) + FOOTER_H
+
 	local pn = vgui.Create( "DFrame" )
-	pn:SetPos( ScrW()*0.86, ScrH()*0.1 )
-	pn:SetSize( ScrW()*0.12, ScrH()*0.2 )
-	pn:SetTitle( "PCMod 15" )
+	pn:SetPos( ScrW() * 0.86, ScrH() * 0.1 )
+	pn:SetSize( W, H )
+	pn:SetTitle( "" )
 	pn:SetDraggable( false )
 	pn:ShowCloseButton( false )
 	PCMod.Gui.LFrame = pn
-	
-	local btn = vgui.Create( "DButton" )
-	btn:SetParent( pn )
-	btn:SetSize( pn:GetWide()-10, 20 )
-	btn:SetPos( 5, 30 )
-	btn:SetText( "Close" )
-	btn.DoClick = function( self )
+
+	pn.Paint = function( self, w, h )
+		draw.RoundedBox( 8, 0, 0, w, h, MENU_BG )
+		draw.RoundedBox( 6, 10, 11, 34, 34, MENU_ICON_BG )
+		DrawMonitorIcon( 17, 19, 20, MENU_ICON )
+		draw.SimpleText( "PCMod 1.5", "PCModMenuTitle", 52, 17, MENU_TEXT, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER )
+		draw.SimpleText( "Computer controls", "PCModMenuSub", 52, 37, MENU_DIM, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER )
+		surface.SetDrawColor( MENU_LINE )
+		surface.DrawLine( 8, HEADER_H - 4, w - 8, HEADER_H - 4 )
+		draw.SimpleText( "PCMod • Device menu", "PCModMenuFoot", 12, h - 17, MENU_FOOT, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER )
+		DrawSlidersIcon( w - 26, h - 24, 14, MENU_FOOT )
+	end
+
+	local xbtn = vgui.Create( "DButton" )
+	xbtn:SetParent( pn )
+	xbtn:SetPos( W - 34, 10 )
+	xbtn:SetSize( 24, 24 )
+	xbtn:SetText( "" )
+	xbtn.Paint = function( self, w, h )
+		if (self:IsHovered()) then draw.RoundedBox( 4, 0, 0, w, h, Color( 60, 64, 72, 255 ) ) end
+		surface.SetDrawColor( MENU_DIM )
+		surface.DrawLine( 7, 7, w - 7, h - 7 )
+		surface.DrawLine( w - 7, 7, 7, h - 7 )
+	end
+	xbtn.DoClick = function( self )
 		PCMod.Beam.UnlockCam( LocalPlayer() )
 	end
 
-	local btn = vgui.Create( "DButton" )
-	btn:SetParent( pn )
-	btn:SetSize( pn:GetWide()-10, 20 )
-	btn:SetPos( 5, 55 )
-	btn:SetText( "Clipboard" )
-	btn.DoClick = function( self )
-	/*
-	net.Start("ekrantazele")
-	net.WriteEntity(LocalPlayer():GetEyeTrace().Entity)
-	net.SendToServer()
-	*/
-	RunConsoleCommand( "pc_quicktype", PCMod.SDraw.KeyboardEntID )
-	end
-	
-	local ent = ents.GetByIndex( PCMod.Gui.CamLockID )
-	
-	if ((ent) && (ent:IsValid()) && (ent:GetClass() == "pcmod_laptop")) then
-		local btn = vgui.Create( "DButton" )
-		btn:SetParent( pn )
-		btn:SetSize( pn:GetWide()-10, 20 )
-		btn:SetPos( 5, 80 )
-		btn:SetText( "Toggle Power" )
-		btn.DoClick = function( self )
-			RunConsoleCommand( "pc_command", PCMod.Gui.CamLockID, "power" )
+
+	// icon row button
+	local function MakeRow( y, iconFn, label, sublabel, onClick )
+		local b = vgui.Create( "DButton" )
+		b:SetParent( pn )
+		b:SetPos( 8, y )
+		b:SetSize( W - 16, ROW_H )
+		b:SetText( "" )
+		b.Paint = function( self, w, h )
+			draw.RoundedBox( 6, 0, 0, w, h, (self:IsHovered() && MENU_ROW_HOVER) or MENU_ROW )
+			iconFn( 16, h * 0.5 - 8, 16, MENU_ICON )
+			draw.SimpleText( label, "PCModMenuRow", 44, h * 0.32, MENU_TEXT, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER )
+			draw.SimpleText( sublabel, "PCModMenuSub", 44, h * 0.72, MENU_DIM, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER )
+			draw.SimpleText( ">", "PCModMenuRow", w - 16, h * 0.5, MENU_DIM, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER )
 		end
+		b.DoClick = onClick
+		return b
+	end
+
+	local y = HEADER_H + 4
+	MakeRow( y, DrawKeyboardIcon, "Clipboard", "Open typing interface", function( self )
+		RunConsoleCommand( "pc_quicktype", PCMod.SDraw.KeyboardEntID )
+	end )
+	y = y + ROW_H + ROW_GAP
+
+	if (isLaptop) then
+		MakeRow( y, DrawPowerIcon, "Toggle Power", "Change computer power state", function( self )
+			RunConsoleCommand( "pc_command", PCMod.Gui.CamLockID, "power" )
+		end )
 	end
 end
+
 
 // ---------------------------------------------------------------------------------------------------------
 // EnableHackyClicky - Toggles the HackyClicky control (lol)

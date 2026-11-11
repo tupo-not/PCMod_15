@@ -149,13 +149,22 @@ function PCMod.Gui.InitFonts()
 	// the same relative size.
 	local size = PCMod.Gui.GetFontSize( 20 )
 	//surface.CreateFont( "Tahoma", 20, 400, true, false, "pcmod_3d2d" )
-	surface.CreateFont("pcmod_3d2d", {font = 'Tahoma', size = size, weight = 400} )
-	surface.CreateFont("ScoreboardText", {font = 'Tahoma', size = size, weight = 400} )
-	// Mark a font as valid only if it actually measures - a rejected CreateFont
-	// must not end up in the registry (SetFont on it would spam warnings).
-	for _, f in ipairs( { "pcmod_3d2d", "ScoreboardText" } ) do
-		surface.SetFont( f )
-		if (surface.GetTextSize( "X" )) then PCMod.Gui.Fonts[ f ] = true end
+	local fontsToMake = {
+		{ "pcmod_3d2d", size, 400 },
+		{ "ScoreboardText", size, 400 },
+		// device-menu (lock frame) fonts
+		{ "PCModMenuTitle", math.max( 13, math.floor( size * 0.8 + 0.5 ) ), 700 },
+		{ "PCModMenuRow", math.max( 12, math.floor( size * 0.7 + 0.5 ) ), 600 },
+		{ "PCModMenuSub", math.max( 10, math.floor( size * 0.55 + 0.5 ) ), 400 },
+		{ "PCModMenuFoot", 10, 400 },
+	}
+	for _, f in ipairs( fontsToMake ) do
+		surface.CreateFont( f[ 1 ], { font = "Tahoma", size = f[ 2 ], weight = f[ 3 ] } )
+		// Mark a font as valid only if it actually measures - a rejected
+		// CreateFont must not end up in the registry (SetFont on it would spam
+		// "isn't a valid font" warnings).
+		surface.SetFont( f[ 1 ] )
+		if (surface.GetTextSize( "X" )) then PCMod.Gui.Fonts[ f[ 1 ] ] = true end
 	end
 end
 hook.Add( "Initialize", "PCMod.Gui.InitFonts", PCMod.Gui.InitFonts )
