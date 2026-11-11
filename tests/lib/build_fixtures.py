@@ -72,6 +72,7 @@ FIXTURES = {
     "pcmod_cl_alarmz.lua": "pcmod/cl_alarmz.lua",
     "pc_camlink.lua": "weapons/gmod_tool/stools/pc_camlink.lua",
     "pcmod_cl_gui.lua": "pcmod/cl_gui.lua",
+    "pcmod_sh_json.lua": "pcmod/sh_json.lua",
 }
 
 # Additional sources that only need a syntax check.

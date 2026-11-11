@@ -84,6 +84,7 @@ TESTS=(
     mock_diskui
     mock_alarmz
     mock_alarmzlink
+    mock_json
 )
 
 # Allow narrowing to a single suite: ./run_tests.sh mock_fs

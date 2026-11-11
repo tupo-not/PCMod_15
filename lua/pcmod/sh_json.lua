@@ -2,7 +2,7 @@
 
  JSON Encoder and Parser for Lua 5.1
  
- Copyright © 2007 Shaun Brown (http://www.chipmunkav.com).
+ Copyright ï¿½ 2007 Shaun Brown (http://www.chipmunkav.com).
  All Rights Reserved.
  
  Permission is hereby granted, free of charge, to any person 
@@ -64,6 +64,7 @@ local setmetatable = setmetatable
 local pairs = pairs
 local ipairs = ipairs
 local assert = assert
+local pcall = pcall
 local Chipmunk = Chipmunk
 
 module("Json")
@@ -177,9 +178,15 @@ function JsonWriter:IsArray(t)
 end
 
 function JsonWriter:WriteTable(t)
+	// Cycle guard: a self-referencing table would recurse forever.
+	self.seen = self.seen or {}
+	if (self.seen[t]) then
+		error( "Encoding of cyclic table unsupported" )
+	end
+	self.seen[t] = true
 	local ba, st, et, n = self:IsArray(t)
-	self:Append(st)	
-	if ba then		
+	self:Append(st)
+	if ba then
 		for i = 1, n do
 			self:Write(t[i])
 			if i < n then
@@ -192,13 +199,15 @@ function JsonWriter:WriteTable(t)
 			if not first then
 				self:Append(',')
 			end
-			first = false;			
+			first = false;
+
 			self:ParseString(k)
 			self:Append(':')
-			self:Write(v)			
+			self:Write(v)
 		end
 	end
 	self:Append(et)
+	self.seen[t] = nil
 end
 
 function JsonWriter:WriteError(o)
@@ -347,8 +356,14 @@ function JsonReader:ReadString()
 	assert(self:Next() == '"')
         while self:Peek() ~= '"' do
 		local ch = self:Next()
+		if ch == nil then
+			error( "Unterminated string in JSON input" )
+		end
 		if ch == '\\' then
 			ch = self:Next()
+			if ch == nil then
+				error( "Unterminated string escape in JSON input" )
+			end
 			if self.escapes[ch] then
 				ch = self.escapes[ch]
 			end
@@ -382,7 +397,10 @@ end
 function JsonReader:ReadBlockComment()
 	local done = false
 	while not done do
-		local ch = self:Next()		
+		local ch = self:Next()
+		if ch == nil then
+			error( "Unterminated block comment in JSON input" )
+		end
 		if ch == '*' and self:Peek() == '/' then
 			done = true
                 end
@@ -399,12 +417,18 @@ end
 
 function JsonReader:ReadSingleLineComment()
 	local ch = self:Next()
-	while ch ~= '\r' and ch ~= '\n' do
+	// ch becomes nil at end of input - without the nil check this looped forever.
+	while ch ~= nil and ch ~= '\r' and ch ~= '\n' do
 		ch = self:Next()
 	end
 end
 
 function JsonReader:ReadArray()
+	// Depth limit: deeply nested input would otherwise overflow the stack.
+	self.depth = (self.depth or 0) + 1
+	if (self.depth > 100) then
+		error( "JSON input nested too deeply" )
+	end
 	local result = {}
 	assert(self:Next() == '[')
 	local done = false
@@ -428,10 +452,16 @@ function JsonReader:ReadArray()
 		end
 	end
 	assert(']' == self:Next())
+	self.depth = self.depth - 1
 	return result
 end
 
 function JsonReader:ReadObject()
+	// Depth limit: deeply nested input would otherwise overflow the stack.
+	self.depth = (self.depth or 0) + 1
+	if (self.depth > 100) then
+		error( "JSON input nested too deeply" )
+	end
 	local result = {}
 	assert(self:Next() == '{')
 	local done = false
@@ -471,6 +501,7 @@ function JsonReader:ReadObject()
 		end
 	end
 	assert(self:Next() == "}")
+	self.depth = self.depth - 1
 	return result
 end
 
@@ -505,8 +536,13 @@ function Encode(o)
 end
 
 function Decode(s)
+	if (type(s) ~= "string") then return nil, "Decode expects a string" end
 	local reader = JsonReader:New(s)
-	return reader:Read()
+	// pcall: malformed input raises errors (unterminated string/comment, deep
+	// nesting) - callers get nil + message instead of a propagated crash.
+	local ok, res = pcall( function() return reader:Read() end )
+	if (!ok) then return nil, res end
+	return res
 end
 
 function Null()
