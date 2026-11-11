@@ -715,10 +715,11 @@ function PCMod.SDraw.MenuSlideActive( ss )
 	for k, v in pairs( ss ) do
 		if (type( v ) == "table" && ((v.Type == "menu_start") || (v.Type == "menu_allprogs"))) then
 			local inst = (v.DevID && PCMod.SDraw.DevMap) && PCMod.SDraw.DevMap[ v.DevID ]
+			// Payload stamp first (see GetDeviceVisualRect), instance as fallback.
 			local start = v.MenuAnimStart
-			if (inst && inst.MenuAnimStart) then start = inst.MenuAnimStart end
+			if ((!start) && (inst && inst.MenuAnimStart)) then start = inst.MenuAnimStart end
 			local cstart = v.CloseAnimStart
-			if (inst && inst.CloseAnimStart) then cstart = inst.CloseAnimStart end
+			if ((!cstart) && (inst && inst.CloseAnimStart)) then cstart = inst.CloseAnimStart end
 			if (start || cstart) then
 				local now = CurTime()
 				local dur = PCMod.SDraw.MenuAnimTime or 0.22
@@ -756,13 +757,15 @@ function PCMod.SDraw.GetDeviceVisualRect( device, w, h, noanim )
 		// tagging all resolve the rect through this function, so they stay
 		// aligned during the slide.
 		local inst = (device.DevID && PCMod.SDraw.DevMap) && PCMod.SDraw.DevMap[ device.DevID ]
-		// The client instance wins once it exists; before that (the very first
-		// frame after the server added the menu) the payload stamp is used, so
-		// the menu never flashes at its final position for one frame.
+		// The payload stamp wins: DrawSpace stamps it on first sight, before the
+		// client instance exists, so the very first frame is already hidden. The
+		// instance stamp is only a fallback - preferring it caused a one-frame
+		// flash at the final position when reopening while the old instance was
+		// still alive (toggle-close window).
 		local start = device.MenuAnimStart
-		if (inst && inst.MenuAnimStart) then start = inst.MenuAnimStart end
+		if ((!start) && (inst && inst.MenuAnimStart)) then start = inst.MenuAnimStart end
 		local cstart = device.CloseAnimStart
-		if (inst && inst.CloseAnimStart) then cstart = inst.CloseAnimStart end
+		if ((!cstart) && (inst && inst.CloseAnimStart)) then cstart = inst.CloseAnimStart end
 		local dur = PCMod.SDraw.MenuAnimTime or 0.22
 		local t = 1
 		// noanim: click tagging uses the settled rect, so a sliding menu never

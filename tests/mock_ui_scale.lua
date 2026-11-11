@@ -83,6 +83,16 @@ assertTrue(math.abs(py0 - 1) < 1e-9, "payload-stamped menu hidden at t=0")
 local _,py1 = PCMod.SDraw.GetDeviceVisualRect({ Type="menu_start", X=0, Y=0.4, W=0.4, H=0.54, MenuAnimStart=100 - 0.5 }, 1, 1)
 assertTrue(math.abs(py1 - 0.67) < 1e-9, "payload-stamped menu settled after animation")
 
+-- Reopen while a stale instance is still alive (toggle-close window): the
+-- fresh payload stamp must win over the instance's old stamp, otherwise the
+-- menu flashes at its final position for one frame before animating.
+PCMod.SDraw.DevMap = { m1 = { MenuAnimStart = 0 } } -- stale instance from a previous open
+local _,ry0 = PCMod.SDraw.GetDeviceVisualRect({ Type="menu_start", X=0, Y=0.4, W=0.4, H=0.54, DevID="m1", MenuAnimStart=100 }, 1, 1)
+assertTrue(math.abs(ry0 - 1) < 1e-9, "reopen: fresh payload stamp wins, menu hidden at t=0")
+local _,ry1 = PCMod.SDraw.GetDeviceVisualRect({ Type="menu_start", X=0, Y=0.4, W=0.4, H=0.54, DevID="m1" }, 1, 1)
+assertTrue(math.abs(ry1 - 0.67) < 1e-9, "instance stamp is the fallback when payload has none (old stamp -> settled at 0.67)")
+PCMod.SDraw.DevMap = nil
+
 -- MenuSlideActive: true only while a menu is mid-slide.
 assertTrue(PCMod.SDraw.MenuSlideActive({ m = { Type="menu_start", DevID="m", MenuAnimStart=100 } }) == true, "slide active while animating")
 assertTrue(PCMod.SDraw.MenuSlideActive({ m = { Type="menu_start", DevID="m", MenuAnimStart=100 - 0.5 } }) == false, "slide over after MenuAnimTime")
