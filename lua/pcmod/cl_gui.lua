@@ -498,6 +498,9 @@ function PCMod.Gui.RegisterClick( mx, my, ent, right )
 	// Obtain the device from storage
 	local dev_name = tostring( ent:EntIndex() ) .. ":" .. devn
 	if (!PCMod.SDraw.DevMap[ dev_name ]) then
+		if (PCMod.Cfg.DebugHitbox) then
+			PCMod.Msg( string.format( "REGCLICK x=%.3f y=%.3f -> NO DEVICE (devn='%s')", x, y, devn ) )
+		end
 		PCMod.Msg( "Clicked on unexistant device!", true )
 		return
 	end
@@ -510,6 +513,9 @@ function PCMod.Gui.RegisterClick( mx, my, ent, right )
 	
 	// Register the click and set the focus
 	PCMod.SDraw.DevFocus = devn
+	if (PCMod.Cfg.DebugHitbox) then
+		PCMod.Msg( string.format( "REGCLICK x=%.3f y=%.3f dx=%.3f dy=%.3f dev=%s", x, y, dx, dy, devn ) )
+	end
 	PCMod.SDraw.DevMap[ dev_name ]:Int_DoClick( dx, dy, right )
 	//PCMod.SDraw.DevMap[ dev_name ]:DoClick( dx, dy )
 end
