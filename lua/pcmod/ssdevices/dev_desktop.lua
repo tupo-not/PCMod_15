@@ -16,6 +16,12 @@ DEV.BarSize = 0.06
 DEV.BtnSize = 0.06
 DEV.BtnW = 0.12
 
+// Extra hitbox margin around the drawn Start button (fraction of the screen).
+// The taskbar is only BarSize tall and the button sits in the bottom-left
+// corner, where the cursor mapping is least precise, so clicks there are
+// matched against a padded rect instead of the exact button rect.
+DEV.StartHitPad = 0.04
+
 DEV.Th = "basic"
 
 function DEV:Initialize( x, y, w, h )
@@ -69,7 +75,14 @@ function DEV:ButtonClick( btn )
 	end
 end
 
-function DEV:DoClick( x, y )
+function DEV:DoClick( x, y, right )
+	// Padded Start hitbox: accept clicks in a margin around the drawn button.
+	// Clicking the empty desktop does nothing anyway, and the Start menu (when
+	// open) sits above the taskbar and takes its clicks first by priority.
+	if ((!right) && (y > (1 - self.BarSize - self.StartHitPad)) && (x < (self.BtnW + self.StartHitPad))) then
+		self:ButtonClick( "btn_start" )
+		return
+	end
 	self:ProcessClick( x, y )
 end
 

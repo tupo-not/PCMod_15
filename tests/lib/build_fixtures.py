@@ -88,6 +88,7 @@ CHECK_ONLY = [
     "pcmod/programs/pr_nettools.lua",
     "pcmod/ssdevices/dev_win_nettools.lua",
     "pcmod/ssdevices/dev_win_browser.lua",
+    "pcmod/ssdevices/dev_desktop.lua",
     "weapons/pcmod_installdisk/shared.lua",
     "weapons/gmod_tool/stools/pcspawn_switch.lua",
     "weapons/gmod_tool/stools/pcspawn_router.lua",
