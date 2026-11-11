@@ -22,6 +22,7 @@ ScrW=function() return 1600 end
 ScrH=function() return 900 end
 input={IsMouseDown=function() return false end}
 MOUSE_LEFT=1
+function CurTime() return 100 end
 dofile('cl2d3d.lua')
 local ent={IsValid=function() return true end,EntIndex=function() return 1 end}
 PCMod.Gui.CamLocked=true; PCMod.Gui.CamLockID=1
@@ -58,6 +59,21 @@ assertEq(ax0,0.2,"all programs sits next to start menu")
 assertTrue(math.abs(ay0 - (0.94 - 0.47)) < 1e-9, "all programs bottom anchored")
 assertEq(aw0,0.2,"all programs width")
 assertEq(ah0,0.47,"all programs height")
+
+-- Menu slide-up entrance: a fresh menu instance starts fully below the screen
+-- and eases up to its anchored spot (final dy = 0.94 - 0.27 = 0.67 at scale 0.5).
+PCMod.SDraw.DevMap = { m1 = { MenuAnimStart = 100 } }
+local _,sy0 = PCMod.SDraw.GetDeviceVisualRect({ Type="menu_start", X=0, Y=0.4, W=0.4, H=0.54, DevID="m1" }, 1, 1)
+assertTrue(math.abs(sy0 - 1) < 1e-9, "menu hidden below screen at t=0")
+PCMod.SDraw.DevMap.m1.MenuAnimStart = 100 - 0.11 -- half of MenuAnimTime (0.22)
+local _,sy1 = PCMod.SDraw.GetDeviceVisualRect({ Type="menu_start", X=0, Y=0.4, W=0.4, H=0.54, DevID="m1" }, 1, 1)
+assertTrue(math.abs(sy1 - (1 + (0.67 - 1) * 0.75)) < 1e-9, "menu mid-slide, ease-out (t=0.5 -> e=0.75)")
+PCMod.SDraw.DevMap.m1.MenuAnimStart = 100 - 0.22
+local _,sy2 = PCMod.SDraw.GetDeviceVisualRect({ Type="menu_start", X=0, Y=0.4, W=0.4, H=0.54, DevID="m1" }, 1, 1)
+assertTrue(math.abs(sy2 - 0.67) < 1e-9, "menu settled at anchored spot after animation")
+local _,sy3 = PCMod.SDraw.GetDeviceVisualRect({ Type="menu_start", X=0, Y=0.4, W=0.4, H=0.54, DevID="unknown" }, 1, 1)
+assertTrue(math.abs(sy3 - 0.67) < 1e-9, "menu without a live instance is not animated")
+PCMod.SDraw.DevMap = nil
 -- Stale/oversized windows are clamped into the viewport for draw and clicks.
 local edx,edy,edw,edh,eds = PCMod.SDraw.GetDeviceVisualRect({ ProgName="x", Type="window_x", X=0.9, Y=0.9, W=1.5, H=1.5 }, 1, 1)
 assertEq(eds,0.5,"clamped window scale")

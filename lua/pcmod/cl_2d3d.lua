@@ -35,6 +35,8 @@ PCMod.SDraw.UIScale = 1
 PCMod.SDraw.WindowScale = 1
 PCMod.SDraw.UIOffX = 0
 PCMod.SDraw.UIOffY = 0
+// Duration (seconds) of the Start/All-Programs menu slide-up entrance.
+PCMod.SDraw.MenuAnimTime = 0.22
 PCMod.SDraw.LastMouseDown = false
 
 PCMod.SDraw.DevParams = {}
@@ -716,7 +718,18 @@ function PCMod.SDraw.GetDeviceVisualRect( device, w, h )
 		// All Programs sits right next to it instead of floating at the top.
 		dx = dx * ds
 		dy = ((device.Y + device.H) * h) - vh
-		return dx, dy, vw, vh, ds
+	end
+	if (isMenu) then
+		// Slide-up entrance: the menu rises from fully below the screen up to
+		// its anchored spot. Drawing, hover and click tagging all resolve the
+		// rect through this function, so they stay aligned during the slide.
+		local inst = (device.DevID && PCMod.SDraw.DevMap) && PCMod.SDraw.DevMap[ device.DevID ]
+		local t = 1
+		if (inst && inst.MenuAnimStart) then
+			t = math.Clamp( (CurTime() - inst.MenuAnimStart) / (PCMod.SDraw.MenuAnimTime or 0.22), 0, 1 )
+		end
+		local e = 1 - ((1 - t) * (1 - t)) // ease-out quad
+		dy = h + ((dy - h) * e)
 	end
 	// Program windows may never extend past the viewport / taskbar. This also
 	// covers stale sizes from another GUI scale (e.g. a window maximised at
@@ -848,10 +861,15 @@ function PCMod.SDraw.DrawDevice( device, x, y, w, h, entid )
 		dev = table.Copy( basedev )
 		if (dev.OnCreate) then dev:OnCreate() end
 		PCMod.SDraw.DevMap[ device.DevID ] = dev
-		
+
 		// Feed in the data
 		PCMod.SDraw.ApplyDeviceData( dev, device )
-		
+
+		// Menus slide up from behind the taskbar when they first appear.
+		if ((device.Type == "menu_start") || (device.Type == "menu_allprogs")) then
+			dev.MenuAnimStart = CurTime()
+		end
+
 		// Initialize it
 		dev:Int_Initialize( x, y, w, h)
 	else		
