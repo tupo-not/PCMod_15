@@ -489,18 +489,14 @@ function PANEL:DoRightClick()
 	PCMod.Gui.RegisterClick( gui.MouseX(), gui.MouseY(), nil, true )
 end
 function PANEL:PerformLayout()
-	// The keyboard panel may not exist yet during a partial Lua reload (or if
-	// InitKeyboard failed), so never index it directly.
-	//
-	// Only reserve space while the keyboard is actually visible. Hiding it used
-	// to still subtract its height, which made the bottom of the screen (the
-	// taskbar / Start button) unclickable - players had to pixel-hunt for a
-	// spot that still hit this panel.
-	local kh = 0
-	if (PCMod.Gui.KeyBoard && PCMod.Gui.KeyBoard:IsVisible()) then
-		kh = PCMod.Gui.KeyBoard:GetTall()
-	end
-	self:SetSize( ScrW(), ScrH() - kh )
+	// Always cover the whole screen. Shrinking this panel while the on-screen
+	// keyboard is visible left the bottom corners (taskbar / Start button)
+	// covered by no panel at all, because the keyboard is centered and does
+	// not reach them - clicks there never reached the screenspace. Instead the
+	// keyboard panel is moved to the front when shown (see sh_beam LockKeyboard),
+	// so its keys keep receiving clicks and everything else falls through to
+	// this fullscreen catcher.
+	self:SetSize( ScrW(), ScrH() )
 	self:SetPos( 0, 0 )
 	self:SetText( "" )
 end

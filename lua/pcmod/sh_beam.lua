@@ -569,10 +569,13 @@ function PCMod.Beam.LockKeyboard( ply, entid )
 		PCMod.EnableCapture( true )
 		if (PCMod.Gui.KeyBoard) then
 			PCMod.Gui.KeyBoard:SetVisible( true )
+			// The keyboard sits on top of the (always fullscreen) click-catcher,
+			// so its keys get the clicks while the rest of the screen (including
+			// the taskbar / Start button) still reaches HackyClicky.
+			PCMod.Gui.KeyBoard:MoveToFront()
 		else
 			PCMod.Msg( "No keyboard derma panel!", true )
 		end
-		// Keep the click-catcher above the keyboard while it is visible.
 		if (PCMod.Gui.HackyClicky) then PCMod.Gui.HackyClicky:PerformLayout() end
 	end
 end

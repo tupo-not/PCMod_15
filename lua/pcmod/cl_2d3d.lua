@@ -513,6 +513,9 @@ function PCMod.SDraw.DrawFullscreen()
 		PCMod.SDraw.FS_H = h
 		PCMod.SDraw.RebuildDevices()
 		if (PCMod.Gui && PCMod.Gui.InitFonts) then PCMod.Gui.InitFonts() end
+		// The click-catcher must follow the new resolution too, otherwise the
+		// bottom/right strip of the grown screen stops receiving clicks.
+		if (PCMod.Gui && PCMod.Gui.HackyClicky && PCMod.Gui.HackyClicky.PerformLayout) then PCMod.Gui.HackyClicky:PerformLayout() end
 	end
 
 	// Cache the cursor in the same native coordinate space the devices use.
@@ -729,13 +732,15 @@ end
 
 // Returns the visual rectangle of a device in the target space (pass w=1, h=1
 // for normalized viewport coordinates), plus the applied scale.
-function PCMod.SDraw.GetDeviceVisualRect( device, w, h )
+function PCMod.SDraw.GetDeviceVisualRect( device, w, h, noanim )
 	local ds = 1
 	if (PCMod.SDraw.UsesGuiScale( device )) then ds = PCMod.SDraw.WindowScale or 1 end
-	local dx = device.X * w
-	local dy = device.Y * h
-	local vw = device.W * w * ds
-	local vh = device.H * h * ds
+	// nil-guards: UpdateScreenSpace deletes keys whose value is 0, so a partial
+	// update can leave X/Y/W/H nil - treat missing geometry as 0.
+	local dx = (device.X or 0) * w
+	local dy = (device.Y or 0) * h
+	local vw = (device.W or 0) * w * ds
+	local vh = (device.H or 0) * h * ds
 	local isMenu = ((device.Type == "menu_start") || (device.Type == "menu_allprogs"))
 	if ((ds != 1) && isMenu) then
 		// Menus stay a block in the bottom-left: keep their bottom edge on the
@@ -760,10 +765,14 @@ function PCMod.SDraw.GetDeviceVisualRect( device, w, h )
 		if (inst && inst.CloseAnimStart) then cstart = inst.CloseAnimStart end
 		local dur = PCMod.SDraw.MenuAnimTime or 0.22
 		local t = 1
-		if (device.Closing && cstart) then
-			t = math.Clamp( (CurTime() - cstart) / dur, 0, 1 )
-		elseif (start) then
-			t = math.Clamp( (CurTime() - start) / dur, 0, 1 )
+		// noanim: click tagging uses the settled rect, so a sliding menu never
+		// swallows taskbar clicks (a Closing menu at t=1 is fully off-screen).
+		if (!noanim) then
+			if (device.Closing && cstart) then
+				t = math.Clamp( (CurTime() - cstart) / dur, 0, 1 )
+			elseif (start) then
+				t = math.Clamp( (CurTime() - start) / dur, 0, 1 )
+			end
 		end
 		local e = 1 - ((1 - t) * (1 - t)) // ease-out quad
 		if (device.Closing) then

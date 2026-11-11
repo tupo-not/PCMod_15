@@ -45,10 +45,13 @@ assertEq( p.H, 900, "hidden keyboard height covers taskbar" )
 assertEq( p.X, 0, "hidden keyboard x" )
 assertEq( p.Y, 0, "hidden keyboard y" )
 
--- Visible keyboard: reserve its height so keys keep receiving clicks.
+-- Visible keyboard: the catcher STAYS fullscreen (the keyboard panel is moved
+-- to front by sh_beam LockKeyboard, so keys keep clicks and the taskbar corners
+-- still reach the catcher).
 PCMod.Gui.KeyBoard.IsVisible = function() return true end
 PANEL.PerformLayout( p )
-assertEq( p.H, 900 - 184, "visible keyboard height" )
+assertEq( p.W, 1600, "visible keyboard keeps full width")
+assertEq( p.H, 900, "visible keyboard keeps full height (taskbar stays clickable)" )
 
 -- No keyboard panel at all (partial reload): still full screen.
 PCMod.Gui.KeyBoard = nil

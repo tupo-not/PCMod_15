@@ -474,7 +474,9 @@ function PCMod.Gui.RegisterClick( mx, my, ent, right )
 		if (type( v ) == "table") then
 			ss[ k ].Tagged = false
 			// Use the same visual rect (GUI scale / menu anchoring) as drawing.
-			local vx, vy, vw, vh = PCMod.SDraw.GetDeviceVisualRect( v, 1, 1 )
+			// noanim=true: tag by the settled rect, so a menu mid-slide does not
+			// cover the taskbar in hit-testing (matches the taskbar repaint).
+			local vx, vy, vw, vh = PCMod.SDraw.GetDeviceVisualRect( v, 1, 1, true )
 			// Max edges are inclusive: CalcCursor clamps to exactly 1.0 on the
 			// last pixel row/column, and a strict '<' left that edge untagged.
 			if ((x >= vx) && (x <= (vx + vw)) && (y >= vy) && (y <= (vy + vh))) then ss[ k ].Tagged = true end
@@ -487,7 +489,9 @@ function PCMod.Gui.RegisterClick( mx, my, ent, right )
 	for k, v in pairs( ss ) do
 		if (type( v ) == "table") then
 			if (v.Tagged) then
-				if (v.Priority > p) then
+				// >= like GetTopDeviceAt, so press-grab and release-click
+				// break priority ties the same way.
+				if (v.Priority >= p) then
 					p = v.Priority
 					devn = k
 				end
@@ -506,8 +510,9 @@ function PCMod.Gui.RegisterClick( mx, my, ent, right )
 	end
 	local device = ss[ devn ]
 	
-	// Calculate where abouts the click is on the device (same visual rect as draw)
-	local vx, vy, vw, vh = PCMod.SDraw.GetDeviceVisualRect( device, 1, 1 )
+	// Calculate where abouts the click is on the device (same visual rect as draw;
+	// noanim so a sliding menu is hit-tested at its settled position)
+	local vx, vy, vw, vh = PCMod.SDraw.GetDeviceVisualRect( device, 1, 1, true )
 	local dx = (x - vx) / vw
 	local dy = (y - vy) / vh
 	
