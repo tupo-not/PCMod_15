@@ -117,14 +117,17 @@ local sc = {}
 	sc.RH = 393
 	
 	// For Cursor Position Calculation:
-	// Aligned to the drawn rect: RW*Resolution = 19.2, RH*Resolution = 15.72
-	// world units (centres kept). The old values (18 x 16.5) skewed the cursor
-	// mapping, worst in the screen corners - the Start button in the bottom-left
-	// had its hitbox cut off from the visible button.
+	// Aligned to the drawn rect: RW*Resolution = 19.2 wide, RH*Resolution =
+	// 15.72 tall. The desktop was stretched to the full screen by changing
+	// RW/RH only, so the map must follow the draw rect: horizontally the
+	// image is centred on the entity (x centre kept at 0), vertically it is
+	// anchored at the top (RY unchanged), so y1 keeps the old top and only
+	// y2 moves. The old map (18 x 16.5) left the bottom of the screen - where
+	// the taskbar and the Start button are - outside the button hitbox.
 	sc.x1 = -9.6
 	sc.x2 = 9.6
-	sc.y1 = 12.11
-	sc.y2 = -3.61
+	sc.y1 = 12.5
+	sc.y2 = -3.22
 	sc.z = 6.4
 	sc.fov = 70
 	
