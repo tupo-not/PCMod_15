@@ -475,7 +475,9 @@ function PCMod.Gui.RegisterClick( mx, my, ent, right )
 			ss[ k ].Tagged = false
 			// Use the same visual rect (GUI scale / menu anchoring) as drawing.
 			local vx, vy, vw, vh = PCMod.SDraw.GetDeviceVisualRect( v, 1, 1 )
-			if ((x > vx) && (x < (vx + vw)) && (y > vy) && (y < (vy + vh))) then ss[ k ].Tagged = true end
+			// Max edges are inclusive: CalcCursor clamps to exactly 1.0 on the
+			// last pixel row/column, and a strict '<' left that edge untagged.
+			if ((x >= vx) && (x <= (vx + vw)) && (y >= vy) && (y <= (vy + vh))) then ss[ k ].Tagged = true end
 		end
 	end
 	
