@@ -48,7 +48,7 @@ function ENT:Setup( setupdata )
 	
 	// Install the main driver
 	local drv = self:InstallDriver( "webgr_router" )
-	drv.Wireless = setupdata.Wireless
+	if (drv) then drv.Wireless = setupdata.Wireless end
 
 	// Register our data
 	local registered = PCMod.Network.RegisterRouter( self.Entity )
@@ -59,7 +59,7 @@ function ENT:Setup( setupdata )
 	end
 	// Registration resets the LAN gateway to 192.168.0.1; move it onto the
 	// router's configured network instead (custom third octet / netmask).
-	if (drv.ApplyLanAddress) then drv:ApplyLanAddress() end
+	if (drv && drv.ApplyLanAddress) then drv:ApplyLanAddress() end
 	dt.IsWireless = setupdata.Wireless
 	dt.WirePass = setupdata.WirePass or "123"
 	// InstallDriver's Initialize may have seeded RouterCfg before the setup

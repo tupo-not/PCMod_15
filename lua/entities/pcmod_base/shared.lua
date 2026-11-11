@@ -270,7 +270,7 @@ if (SERVER) then
 				if (self:IsAddressedTo( packet.Dest )) then
 					PCMod.Msg( "This packet was directed at us! Port: " .. packet.Port, true )
 
-					PCMod.Network.Packets[ pid ].Delivered = true
+					if (pid && PCMod.Network.Packets[ pid ]) then PCMod.Network.Packets[ pid ].Delivered = true end
 					packet.ViaWireless = false
 					
 					// Forward data to network driver

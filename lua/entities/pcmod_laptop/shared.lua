@@ -64,9 +64,10 @@ function ENT:Setup( setupdata )
 	
 	// Setup the screenspace
 	if (disp) then disp:FullFlush() end
-	
-	disp.IsLaptop = true
-	bios.IsLaptop = true
+
+	// InstallDriver returns nothing when the driver is missing - guard both.
+	if (disp) then disp.IsLaptop = true end
+	if (bios) then bios.IsLaptop = true end
 	
 	self:SetGVar( "laptop", true )
 	

@@ -83,12 +83,15 @@ function PCMod.Wiring.UnlinkPort( srcent, srcprt )
 		dest.RopeTable = nil
 		destent:UpdatePort( source.RemotePort, dest )
 	end
+	// Capture the peer's port BEFORE clearing it: the unlinked event must carry
+	// the real port index, not the zeroed RemotePort.
+	local remoteprt = source.RemotePort
 	source.Connected = false
 	source.ConEnt = nil
 	source.RemotePort = 0
 	srcent:UpdatePort( srcprt, source )
 	srcent:FireEvent( { "unlinked", srcprt, destent } )
-	destent:FireEvent( { "unlinked", source.RemotePort, srcent } )
+	destent:FireEvent( { "unlinked", remoteprt, srcent } )
 	return true
 end
 

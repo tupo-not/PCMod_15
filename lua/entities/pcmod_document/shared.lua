@@ -71,8 +71,14 @@ if (SERVER) then
 	end
 	
 	function ENT:SetPlayer( ply )
-	
-		PCMod.Data[ self:EntIndex() ].Owner = text
+
+		PCMod.Data[ self:EntIndex() ].Owner = ply
+	end
+
+	function ENT:OnRemove()
+		// Free the data slot so a recycled entity index cannot inherit a
+		// stale document/owner.
+		PCMod.Data[ self:EntIndex() ] = nil
 	end
 	
 	function ENT:GetPlayer()

@@ -90,9 +90,12 @@ if (SERVER) then
 	
 	function ENT:TriggerInput( iname, value )
 		local dt = self:Data()
+		if (!dt) then return end
 		PCMod.Msg( "IO Device recieved wire input!", true )
 		dt.Inputs[ iname ] = tonumber( value )
-		self.Inputs[ iname ].Value = value
+		// self.Inputs only exists when Wiremod is installed, and only knows the
+		// registered input names - indexing it blindly crashed on every input.
+		if (self.Inputs && self.Inputs[ iname ]) then self.Inputs[ iname ].Value = value end
 		self:PushData( 1, { "inputs", dt.Inputs } ) -- We are assuming port 1 is our USB port  -thomasfn
 		self:UpdateData( dt )
 	end

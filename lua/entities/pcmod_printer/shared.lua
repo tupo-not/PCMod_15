@@ -51,7 +51,7 @@ function ENT:DataRecieved( port, data )
 				self:PrintDocument( data[2] )
 			end
 		end
-		if (data[2] == "getstatus") then
+		if (data[1] == "getstatus") then
 			if (self:Data().Printing) then
 				local dat = { "status", "Printing" }
 				self.Entity:PushData( prt, dat )
