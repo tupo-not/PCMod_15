@@ -74,6 +74,35 @@ assertTrue(math.abs(sy2 - 0.67) < 1e-9, "menu settled at anchored spot after ani
 local _,sy3 = PCMod.SDraw.GetDeviceVisualRect({ Type="menu_start", X=0, Y=0.4, W=0.4, H=0.54, DevID="unknown" }, 1, 1)
 assertTrue(math.abs(sy3 - 0.67) < 1e-9, "menu without a live instance is not animated")
 PCMod.SDraw.DevMap = nil
+
+-- Payload-stamp fallback: a menu seen before its client instance exists (the
+-- very first frame after the server adds it) must already animate, so it never
+-- flashes at its final position for one frame.
+local _,py0 = PCMod.SDraw.GetDeviceVisualRect({ Type="menu_start", X=0, Y=0.4, W=0.4, H=0.54, MenuAnimStart=100 }, 1, 1)
+assertTrue(math.abs(py0 - 1) < 1e-9, "payload-stamped menu hidden at t=0")
+local _,py1 = PCMod.SDraw.GetDeviceVisualRect({ Type="menu_start", X=0, Y=0.4, W=0.4, H=0.54, MenuAnimStart=100 - 0.5 }, 1, 1)
+assertTrue(math.abs(py1 - 0.67) < 1e-9, "payload-stamped menu settled after animation")
+
+-- MenuSlideActive: true only while a menu is mid-slide.
+assertTrue(PCMod.SDraw.MenuSlideActive({ m = { Type="menu_start", DevID="m", MenuAnimStart=100 } }) == true, "slide active while animating")
+assertTrue(PCMod.SDraw.MenuSlideActive({ m = { Type="menu_start", DevID="m", MenuAnimStart=100 - 0.5 } }) == false, "slide over after MenuAnimTime")
+assertTrue(PCMod.SDraw.MenuSlideActive({ d = { Type="desktop" } }) == false, "no menu, no slide")
+assertTrue(PCMod.SDraw.MenuSlideActive(nil) == false, "nil screenspace, no slide")
+
+-- While a menu slides up, the desktop (taskbar) is painted above it.
+PCMod.SDraw.DevMap = { m = { MenuAnimStart = 100 } }
+local order = {}
+PCMod.SDraw.DrawDevice = function( device ) table.insert( order, device.DevID ) end
+local ss2 = {
+    desk = { Type = "desktop", X = 0, Y = 0, W = 1, H = 1, Priority = 1, DevID = "desk" },
+    menu = { Type = "menu_start", X = 0, Y = 0.4, W = 0.4, H = 0.54, Priority = 254, DevID = "menu", MenuAnimStart = 100 },
+}
+PCMod.SDraw.Cursor = { Ent = 1, Frame = 0, X = 0, Y = 0 }
+ents = { GetByIndex = function() return {} end }
+PCMod.SDraw.DrawSpace( ss2, 0, 0, 1600, 900, 1 )
+assertEq(#order, 2, "both devices painted")
+assertEq(order[1], "menu", "sliding menu painted first")
+assertEq(order[2], "desk", "taskbar painted above the sliding menu")
 -- Stale/oversized windows are clamped into the viewport for draw and clicks.
 local edx,edy,edw,edh,eds = PCMod.SDraw.GetDeviceVisualRect({ ProgName="x", Type="window_x", X=0.9, Y=0.9, W=1.5, H=1.5 }, 1, 1)
 assertEq(eds,0.5,"clamped window scale")

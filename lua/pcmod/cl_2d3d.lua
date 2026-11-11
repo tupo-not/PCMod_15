@@ -702,6 +702,24 @@ function PCMod.SDraw.UsesGuiScale( device )
 	return ((t == "menu_start") || (t == "menu_allprogs"))
 end
 
+// True while a Start/All-Programs menu of this screenspace is still sliding
+// up (its entrance animation has not finished yet).
+function PCMod.SDraw.MenuSlideActive( ss )
+	if (!ss) then return false end
+	for k, v in pairs( ss ) do
+		if (type( v ) == "table" && ((v.Type == "menu_start") || (v.Type == "menu_allprogs"))) then
+			local inst = (v.DevID && PCMod.SDraw.DevMap) && PCMod.SDraw.DevMap[ v.DevID ]
+			local start = v.MenuAnimStart
+			if (inst && inst.MenuAnimStart) then start = inst.MenuAnimStart end
+			if (start) then
+				local now = CurTime()
+				if ((now - start) < (PCMod.SDraw.MenuAnimTime or 0.22)) then return true end
+			end
+		end
+	end
+	return false
+end
+
 // Returns the visual rectangle of a device in the target space (pass w=1, h=1
 // for normalized viewport coordinates), plus the applied scale.
 function PCMod.SDraw.GetDeviceVisualRect( device, w, h )
@@ -724,9 +742,14 @@ function PCMod.SDraw.GetDeviceVisualRect( device, w, h )
 		// its anchored spot. Drawing, hover and click tagging all resolve the
 		// rect through this function, so they stay aligned during the slide.
 		local inst = (device.DevID && PCMod.SDraw.DevMap) && PCMod.SDraw.DevMap[ device.DevID ]
+		// The client instance wins once it exists; before that (the very first
+		// frame after the server added the menu) the payload stamp is used, so
+		// the menu never flashes at its final position for one frame.
+		local start = device.MenuAnimStart
+		if (inst && inst.MenuAnimStart) then start = inst.MenuAnimStart end
 		local t = 1
-		if (inst && inst.MenuAnimStart) then
-			t = math.Clamp( (CurTime() - inst.MenuAnimStart) / (PCMod.SDraw.MenuAnimTime or 0.22), 0, 1 )
+		if (start) then
+			t = math.Clamp( (CurTime() - start) / (PCMod.SDraw.MenuAnimTime or 0.22), 0, 1 )
 		end
 		local e = 1 - ((1 - t) * (1 - t)) // ease-out quad
 		dy = h + ((dy - h) * e)
@@ -757,6 +780,7 @@ function PCMod.SDraw.DrawSpace( ss, x, y, w, h, entid )
 	// screen is in view) is gone. The only writes left are idempotent stamps
 	// (DevID once, Rev/Entity to constant values), so behaviour is unchanged.
 	local tmp = {}
+	local menuSliding = PCMod.SDraw.MenuSlideActive( ss )
 	for k, v in pairs( ss ) do
 		if (type( v ) == "table") then
 			local pr = v.Priority
@@ -766,6 +790,15 @@ function PCMod.SDraw.DrawSpace( ss, x, y, w, h, entid )
 				devid = tostring( entid ) .. ":" .. k
 				v.DevID = devid
 			end
+			// Stamp the slide start on first sight - before the client instance
+			// exists - so the very first frame already draws the menu hidden
+			// instead of flashing at its final position.
+			if (((v.Type == "menu_start") || (v.Type == "menu_allprogs")) && (!v.MenuAnimStart)) then
+				v.MenuAnimStart = CurTime()
+			end
+			// While a menu slides up, the taskbar (part of the desktop) is drawn
+			// above it, like the real Start menu sliding out from behind it.
+			if ((v.Type == "desktop") && menuSliding) then pr = 256 end
 			if (!tmp[pr]) then tmp[pr] = {} end
 			table.insert( tmp[pr], v )
 		end
