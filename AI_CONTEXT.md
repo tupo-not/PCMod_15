@@ -34,3 +34,11 @@ wire-подобный тулган (`pcwire` и др.), install-диск. Lua в
 - GMod **не запускать** самому; игру не тестировал — только mock-тесты + синтаксис.
 - Не менять файлы Wiremod и папку игры; не публиковать в Workshop.
 - Не переписывать системы целиком; расширять существующее. Вопросы к пользователю — когда неоднозначно.
+
+## Что сделано позже (аудит-сессия, см. git log после 8b84d60)
+
+- **Кнопка «Пуск»**: корень был в VGUI click-catcher `HackyClicky` — при видимой экранной клавиатуре (laptop/keyboard → LockKeyboard) он уменьшался до `ScrH()-kh`, а клавиатура центрирована и не покрывает нижние углы → taskbar/«Пуск» в мёртвой зоне. Теперь catcher всегда fullscreen, клавиатура — `MoveToFront()` поверх. Плюс: хит-тест кликов по установившемуся прямоугольнику (`GetDeviceVisualRect(..., noanim)`), инклюзивные границы тегирования, slide-меню больше не глотает клики по taskbar. Debug: `pc_debug_hitbox 1` (REGCLICK/CLICK в консоль + рамки на экране).
+- **Меню «Пуск»**: slide-up/slide-down анимация (`MenuAnimTime=0.22`, ease-out), taskbar дорисовывается поверх полосой (`TaskbarOnly`), повторный клик — toggle с `Closing`-флагом и таймером на сервере.
+- **Аудит-фиксы**: sh_json (hang на EOF, pcall Decode, лимит глубины, cycle-guard; новая suite `mock_json`), sv_wiring unlinked port 0, nil-guards в entities/OS/programs/drivers, DHCP NACK, ARP cap, L2 loop-guard eviction, IPv4.Parse валидация, alarmz (16-bit count, rate-limit, чистка authed), мелкие UI/SWEP.
+- **Не менялось намеренно**: права доступа в stools (pcwire и др.) — любой может линковать чужие устройства; решать пользователю (риск для игры с друзьями).
+- После правок: все 43 suite PASS (`cd tests && ./run_tests.sh`, lua5.1 в PATH).
