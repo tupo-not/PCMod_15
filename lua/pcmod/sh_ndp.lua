@@ -28,8 +28,24 @@ function PCMod.NDP.Learn( router, ip, mac, port )
 	local key = PCMod.IPv6.Normalize( ip )
 	mac = PCMod.Net.MACKey( mac )
 	if ((!key) || (key == "") || (!mac)) then return nil end
+	local cache = PCMod.NDP.Table( router )
 	local rec = { ip = key, mac = mac, port = port, time = CurTime() }
-	PCMod.NDP.Table( router )[ key ] = rec
+	cache[ key ] = rec
+	// Cap the cache (evict the oldest entry), same as the ARP cache, so a
+	// long-running router does not grow NdpCache without bound.
+	local n = 0
+	for k in pairs( cache ) do n = n + 1 end
+	if (n > 512) then
+		// Evict the oldest entry that is NOT the one just inserted (with equal
+		// timestamps the new entry can be the oldest - evicting it would lose it).
+		local oldest, oldestKey = nil, nil
+		for k, v in pairs( cache ) do
+			if (k != key) then
+				if ((!oldest) || ((v.time or 0) < oldest)) then oldest = v.time or 0; oldestKey = k end
+			end
+		end
+		if (oldestKey) then cache[ oldestKey ] = nil end
+	end
 	return rec
 end
 

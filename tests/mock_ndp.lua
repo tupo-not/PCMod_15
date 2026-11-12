@@ -135,6 +135,14 @@ assertEq( sentBody[ 2 ], "solicit", "request is a solicitation" )
 assertEq( sentBody[ 3 ], "fd00:2::9", "solicitation names the target" )
 assertEq( fresh.Sent[ 1 ].data[ 2 ][ 2 ], "ff02::1", "solicitation goes to all-nodes multicast" )
 
+-- The neighbor cache is capped (oldest evicted), same as the ARP cache.
+for i = 1, 600 do
+	PCMod.NDP.Learn( routerDrv, string.format( "fd00:9::%x", i ), string.format( "AA:BB:CC:DD:EE:%02x", i % 256 ), 1 )
+end
+local cacheSize = 0
+for k in pairs( PCMod.NDP.Table( routerDrv ) ) do cacheSize = cacheSize + 1 end
+assertEq( cacheSize, 512, "NDP cache is capped at 512 entries" )
+
 -- Entries expire after the neighbor-cache lifetime.
 Now = (PCMod.Net.NdpTime or 60) + 1
 assertTrue( PCMod.NDP.Lookup( routerDrv, target ) == nil, "stale neighbor entries expire" )

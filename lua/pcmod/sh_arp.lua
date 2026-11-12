@@ -26,11 +26,15 @@ function PCMod.ARP.Learn( router, ip, mac, port )
 	local n = 0
 	for k in pairs( cache ) do n = n + 1 end
 	if (n > 512) then
+		// Evict the oldest entry that is NOT the one just inserted (with equal
+		// timestamps the new entry can be the oldest - evicting it would lose it).
 		local oldest, oldestKey = nil, nil
 		for k, v in pairs( cache ) do
-			if ((!oldest) || ((v.time or 0) < oldest)) then oldest = v.time or 0; oldestKey = k end
+			if (k != ip) then
+				if ((!oldest) || ((v.time or 0) < oldest)) then oldest = v.time or 0; oldestKey = k end
+			end
 		end
-		if (oldestKey && (oldestKey != ip)) then cache[ oldestKey ] = nil end
+		if (oldestKey) then cache[ oldestKey ] = nil end
 	end
 	return rec
 end
