@@ -27,8 +27,12 @@ Exit codes: `0` all passed, `1` build/syntax error, `2` a test failed,
 
 1. `lib/build_fixtures.py` translates the GLua-specific syntax this addon uses
    (`//` comments, `!`, `!=`, `&&`, `||`) into standard Lua 5.1 and writes the
-   result into `.build/`. It also compile-checks every fixture with `luac5.1 -p`.
-2. `run_tests.sh` runs each `mock_*.lua` suite against those fixtures.
+   result into `.build/`. It also compile-checks every addon Lua file with
+   `luac5.1 -p`, automatically, except the retired `oldstools/` directory.
+2. `lib/check_sources.py` checks project contracts that Lua cannot see: network
+   channels are registered, `RunString`/`loadstring` stay out of the addon,
+   new `umsg` usage is rejected, and `addon.json` matches `sh_version.lua`.
+3. `run_tests.sh` discovers and runs every `mock_*.lua` suite.
 
 The `.build/` directory is fully generated and git-ignored — never edit it.
 Change the real sources under `../lua/` instead; the fixtures are rebuilt
@@ -42,5 +46,5 @@ with `error("FAILED: ...")`; a suite passes when it reaches its final
 `print("... PASSED")` line without erroring.
 
 To include a new addon source as a fixture, add a name → path entry to
-`lib/build_fixtures.py:FIXTURES` (for sources you `dofile`) or `CHECK_ONLY` (for
-sources you only want syntax-checked), then reference it from a mock suite.
+`lib/build_fixtures.py:FIXTURES`, then reference it from a mock suite. Syntax
+checking is automatic, so a new source needs no extra registration for that.

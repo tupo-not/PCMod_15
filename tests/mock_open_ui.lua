@@ -151,7 +151,7 @@ dev:BuildPlaces()
 assertEq( dev.PlacePaths[ "node:system/os" ], "system/os", "fallback synthesizes path" )
 assertEq( dev:GetListboxSelRow( "lstPlaces" ), "node:system/os", "fallback selects path" )
 
--- Legacy program payload (old ShowOpenFile): only Fs is sent.
+-- ShowOpenFile payload: only Fs is sent.
 local pass = {}
 function dev:PassData( devname, dname, data )
 	table.insert( pass, { dev = devname, name = dname, data = data } )
@@ -164,13 +164,13 @@ dev.Places = {}
 dev.Fs = { "old.txt" }
 dev.Path = ""
 dev:OnUpdate()
-assertEq( dev.Listboxes.lstFiles.Order[ 1 ], "old.txt", "legacy Fs file listed" )
+assertEq( dev.Listboxes.lstFiles.Order[ 1 ], "old.txt", "Fs file listed" )
 Now = 700
 dev:ListboxSelect( "lstFiles", "old.txt", false, 0.5, 0.5 )
 Now = 700.2
 dev:ListboxSelect( "lstFiles", "old.txt", false, 0.5, 0.5 )
-assertEq( pass[ 1 ].name, "filename", "legacy filename data" )
-assertEq( pass[ 1 ].data, "old.txt", "legacy filename value" )
-assertEq( pass[ 2 ].data, "closebrowse", "legacy closebrowse" )
+assertEq( pass[ 1 ].name, "filename", "filename data" )
+assertEq( pass[ 1 ].data, "old.txt", "filename value" )
+assertEq( pass[ 2 ].data, "closebrowse", "closebrowse" )
 
 print( "ALL FILE PICKER UI TESTS PASSED" )

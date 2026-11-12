@@ -63,7 +63,7 @@ function PROG:WirelessName( ent, data )
 	if (data) then
 		if (data.RouterCfg && data.RouterCfg.WireName) then return data.RouterCfg.WireName end
 		if (data.WireName) then return data.WireName end
-		local rdrv = data.Drivers && data.Drivers[ "webgr_router" ]
+		local rdrv = PCMod.GetSubsystem && PCMod.GetSubsystem( data, "router" )
 		if (rdrv && rdrv.GetCfg) then
 			local cfg = rdrv:GetCfg()
 			if (cfg && cfg.WireName) then return cfg.WireName end
@@ -121,25 +121,23 @@ function PROG:RefreshWireless()
 	self:RefreshWifiStatus()
 end
 
-// The PC's network driver (server-side).
-function PROG:GetNetworkDriver()
-	local data = PCMod.Data[ self.Entity:EntIndex() ]
-	if (!data || !data.Drivers) then return nil end
-	return data.Drivers[ "gen_network" ]
+// The PC's network subsystem (server-side).
+function PROG:GetNetworkSubsystem()
+	return PCMod.GetSubsystem && PCMod.GetSubsystem( PCMod.Data[ self.Entity:EntIndex() ], "network" )
 end
 
-// Router drivers this computer is attached to: every reachable router behind
-// its cable ports (following switches) plus the Wi-Fi router it joined.
-function PROG:GetConnectedRouterDrivers()
+// Router subsystems this computer is attached to: every reachable router
+// behind its cable ports (following switches) plus the Wi-Fi router it joined.
+function PROG:GetConnectedRouterSubsystems()
 	local out = {}
 	local seen = {}
 	local function addRouter( ent )
 		if ((!ent) || (!ent:IsValid())) then return end
 		local d = PCMod.Data && PCMod.Data[ ent:EntIndex() ]
-		local drv = d && d.Drivers && d.Drivers[ "webgr_router" ]
-		if (drv && (!seen[ ent:EntIndex() ])) then
+		local sub = PCMod.GetSubsystem && PCMod.GetSubsystem( d, "router" )
+		if (sub && (!seen[ ent:EntIndex() ])) then
 			seen[ ent:EntIndex() ] = true
-			out[ #out + 1 ] = drv
+			out[ #out + 1 ] = sub
 		end
 	end
 	local function walk( ent, depth )
@@ -161,30 +159,30 @@ function PROG:GetConnectedRouterDrivers()
 			if (port && port.Connected && port.ConEnt) then walk( port.ConEnt, 0 ) end
 		end
 	end
-	local net = self:GetNetworkDriver()
+	local net = self:GetNetworkSubsystem()
 	if (net && net.WirelessEnt && net.WirelessEnt:IsValid()) then addRouter( net.WirelessEnt ) end
 	return out
 end
 
 // Force a fresh DHCP lease. The device only broadcasts a discover; whichever
-// router owns the interface it arrives on answers. The old router-walking
-// fallback remains for drivers without DHCP support (older clients/mocks).
+// router owns the interface it arrives on answers. The direct router walk
+// remains for subsystems without DHCP support.
 function PROG:RenewNetwork()
-	local net = self:GetNetworkDriver()
+	local net = self:GetNetworkSubsystem()
 	local renewed = 0
 	if (net && net.DHCPDiscover) then
 		net.LastDHCP = nil
 		net:DHCPDiscover()
 		if (net.LastDHCP) then renewed = 1 end
 	else
-		for _, drv in ipairs( self:GetConnectedRouterDrivers() ) do
-			if (drv.RenewLease && drv:RenewLease( self.Entity )) then renewed = renewed + 1 end
+		for _, sub in ipairs( self:GetConnectedRouterSubsystems() ) do
+			if (sub.RenewLease && sub:RenewLease( self.Entity )) then renewed = renewed + 1 end
 		end
 	end
 	// Keep the Wi-Fi status in step with whether we still have a lease.
 	if (net && net.WirelessEnt && net.WirelessEnt:IsValid()) then
 		local rdata = PCMod.Data[ net.WirelessEnt:EntIndex() ]
-		local rdrv = rdata && rdata.Drivers && rdata.Drivers[ "webgr_router" ]
+		local rdrv = rdata && PCMod.GetSubsystem && PCMod.GetSubsystem( rdata, "router" )
 		if (net.DHCPByPort && net.DHCPByPort[ 0 ]) then
 			// Asynchronous Wi-Fi DHCP: let the live context drive the status.
 			net.WirelessIPv4 = nil
@@ -204,7 +202,7 @@ end
 // interface leases arrive on a timer now that link latency is emulated).
 function PROG:NetworkSignature()
 	local parts = {}
-	local net = self:GetNetworkDriver()
+	local net = self:GetNetworkSubsystem()
 	local wifi = net && net.WirelessEnt
 	if ((wifi) && (wifi:IsValid())) then
 		parts[ #parts + 1 ] = "w:" .. tostring( wifi:EntIndex() )
@@ -237,7 +235,7 @@ function PROG:Think()
 end
 
 function PROG:RefreshWifiStatus()
-	local net = self:GetNetworkDriver()
+	local net = self:GetNetworkSubsystem()
 	if ((net) && (net.WirelessEnt) && (net.WirelessEnt:IsValid())) then
 		// A DHCP answer over Wi-Fi is asynchronous once link latency is
 		// emulated, so do not trust the snapshot taken at association time.
@@ -280,7 +278,7 @@ function PROG:ConnectWireless( entIndex, pass )
 		self:UpdateSS()
 		return
 	end
-	local net = self:GetNetworkDriver()
+	local net = self:GetNetworkSubsystem()
 	if (!net) then
 		self.DeviceData.Wifi = { Connected = false, Error = "No network hardware." }
 		self:UpdateSS()
@@ -290,7 +288,7 @@ function PROG:ConnectWireless( entIndex, pass )
 	net.WirelessEnt = target
 	net.WirelessPass = pass
 	local rdata = PCMod.Data[ target:EntIndex() ]
-	local rdrv = rdata && rdata.Drivers && rdata.Drivers[ "webgr_router" ]
+	local rdrv = rdata && PCMod.GetSubsystem && PCMod.GetSubsystem( rdata, "router" )
 	local reg = (rdrv && rdrv.AddWirelessClient) && rdrv:AddWirelessClient( self.Entity )
 	if ((!reg) || (reg == "invalid")) then
 		net.WirelessEnt = nil
@@ -320,7 +318,7 @@ function PROG:ConnectWireless( entIndex, pass )
 end
 
 function PROG:DisconnectWireless()
-	local net = self:GetNetworkDriver()
+	local net = self:GetNetworkSubsystem()
 	if (net && net.DisconnectWireless) then net:DisconnectWireless() end
 	// With the wireless link gone a cable may be the only path; ask for an
 	// address again instead of keeping a lease that was released.

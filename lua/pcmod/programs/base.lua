@@ -70,13 +70,13 @@ end
 function PROG:GetScreenSpace()
 	local ent = self.Entity
 	if ((!ent) || (!ent:IsValid())) then return end
-	return PCMod.Data[ ent:EntIndex() ].Drivers[ "gen_display" ]:GetScreen()
+	return PCMod.Data[ ent:EntIndex() ].Subsystems[ "display" ]:GetScreen()
 end
 
 function PROG:SetScreenSpace( ss )
 	local ent = self.Entity
 	if ((!ent) || (!ent:IsValid())) then return end
-	PCMod.Data[ ent:EntIndex() ].Drivers[ "gen_display" ]:SetScreen( ss )
+	PCMod.Data[ ent:EntIndex() ].Subsystems[ "display" ]:SetScreen( ss )
 end
 
 // The active screen-space entry for this program. Programs with more than one
@@ -105,7 +105,7 @@ end
 function PROG:GetOS()
 	local ent = self.Entity
 	if ((!ent) || (!ent:IsValid())) then return end
-	return PCMod.Data[ ent:EntIndex() ].Drivers[ "gen_bios" ].OS
+	return PCMod.Data[ ent:EntIndex() ].Subsystems[ "bios" ].OS
 end
 
 function PROG:SetState( st )
@@ -187,8 +187,9 @@ end
 // Original window helpers (open file / print location / printing)
 // ------------------------------------------------------------------------------------------------
 // Central program API: a file picker that browses the whole virtual drive.
-// Programs call ShowFilePicker( startpath, mode ) (or the legacy ShowOpenFile)
-// and override OnFilePicked( path ) if they do not handle "openpath".
+// Programs call ShowFilePicker( startpath, mode ) (or ShowOpenFile, which
+// remains the public entry point used by existing programs) and override
+// OnFilePicked( path ) if they do not handle "openpath".
 function PROG:ShowOpenFile( path )
 	self:ShowFilePicker( path or "", "open" )
 end
@@ -375,8 +376,8 @@ function PROG:GetMinWindowSize()
 	return math.Clamp( mw, 0.05, 1 ), math.Clamp( mh, 0.05, 1 )
 end
 
-// Shared geometry model. The legacy WinX/WinY/WinW/WinH fields stay the public
-// surface (programs and saves use them), but every clamp goes through the same
+// Shared geometry model. WinX/WinY/WinW/WinH stay the public surface
+// (programs and saves use them), but every clamp goes through the same
 // object the client device uses.
 function PROG:GetWindowModel()
 	local win = self.WindowModel
@@ -428,9 +429,9 @@ function PROG:GetDimensions()
 		tmp.y = self.WinY or 0
 		tmp.w = self.WinW or 0.62
 		tmp.h = self.WinH or 0.72
-		// Legacy/save data may hold a window smaller than the universal
-		// minimum; grow it back so text cannot overlap. Store it on the
-		// program as well, otherwise a later move would put the old size back.
+		// Saved data may hold a window smaller than the universal minimum;
+		// grow it back so text cannot overlap. Store it on the program as
+		// well, otherwise a later move would put the old size back.
 		local win = self:GetWindowModel()
 		if (win) then
 			win:Set( tmp.x, tmp.y, tmp.w, tmp.h )

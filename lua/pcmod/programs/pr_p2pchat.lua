@@ -21,10 +21,10 @@ PROG.MLimit = 10
 // IsSelfAddress - Is the given IP this very program?
 // Round 22: a packet addressed to us comes back to us, so the local echo would
 // store every message twice. That happens for two addresses:
-//   - 127.0.0.1 - the network driver short-circuits it back to this program
-//     (drv_network.lua:31-40);
+//   - 127.0.0.1 - the network subsystem short-circuits it back to this program
+//     (subsystems/network.lua:31-40);
 //   - our OWN in-game IP - the router finds this PC on its own LAN and delivers
-//     the packet right back to us (drv_router.lua HasPC -> pcmod_base GivenData:
+//     the packet right back to us (subsystems/router.lua HasPC -> pcmod_base GivenData:
 //     "packet.Dest == self:GetFullIP()").
 // For any other address the packet leaves the PC, so the echo is needed.
 function PROG:IsSelfAddress( ip )

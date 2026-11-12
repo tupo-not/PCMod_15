@@ -61,7 +61,7 @@ function DEV:ButtonClick( btn )
 	end
 	if (btn == "s2_pcmod15") then
 		// PCMod 1.5 (2026-10-23): the wizard now offers the new interface theme
-		// instead of the legacy choice; the id must match a file in lua\pcmod\themes\.
+		// instead of the previous choice; the id must match a file in lua\pcmod\themes\.
 		self:SubmitCommand( "os_command", "sys_settheme", "pcmod15", "true" )
 		self.Th = "pcmod15"
 		self:RemoveElement( "s2_next" )

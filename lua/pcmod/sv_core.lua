@@ -11,9 +11,10 @@
 
 PCMod = {} -- Main table
 PCMod.Exists = true -- Internal checking
-PCMod.Version = "2.0.4" -- 'Nice' version
-PCMod.IntVer = "Release" -- Internal version
 PCMod.Data = {} -- Data storage table for entities
+
+AddCSLuaFile( "pcmod/sh_version.lua" )
+include( "pcmod/sh_version.lua" )
 
 util.AddNetworkString("pc_stream");
 
@@ -78,7 +79,7 @@ PCMod.Msg( "Loading PCMod Core..." )
 
 include( "pcmod/sv_wiring.lua" ) -- Wiring control
 include( "pcmod/sv_network.lua" ) -- Networking
-include( "pcmod/sv_drivers.lua" ) -- Drivers
+include( "pcmod/sv_subsystems.lua" ) -- Hardware subsystems
 include( "pcmod/sv_rp.lua" ) -- RP control
 include( "pcmod/sv_window_payload.lua" ) -- Declarative window -> payload
 include( "pcmod/sv_programs.lua" ) -- Programs
@@ -352,7 +353,7 @@ concommand.Add( "pc_command", PCMod.PC_Command )
 // PC_Stream - Passes a datastream to PC_Command
 // ---------------------------------------------------------------------------------------------------------
 // Only scalars may cross the stream: a nested table reaches table.concat in the
-// drivers (drv_bios.lua:71) and raises a server Lua error from a single message.
+// BIOS subsystem and raises a server Lua error from a single message.
 local function ScalarStreamArgs( t )
 	for _, v in pairs( t ) do
 		if (istable( v )) then return false end

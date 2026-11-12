@@ -64,9 +64,9 @@ local function validMAC( mac )
 	return ((type( mac ) == "string") && (string.match( mac, "^%x%x:%x%x:%x%x:%x%x:%x%x:%x%x$" ) != nil))
 end
 
--- The lowest wired port keeps the legacy identity; other interfaces differ.
+-- The lowest wired port keeps the primary identity; other interfaces differ.
 local m1 = ent:EnsureInterfaceMAC( 1 )
-assertEq( m1, "AA:BB:CC:DD:EE:01", "first wired port keeps the legacy MAC" )
+assertEq( m1, "AA:BB:CC:DD:EE:01", "first wired port keeps the primary MAC" )
 local m2 = ent:EnsureInterfaceMAC( 2 )
 assertTrue( validMAC( m2 ), "second wired port gets a valid MAC" )
 assertTrue( m2 != m1, "the two Ethernet ports do not share a MAC" )
@@ -99,7 +99,7 @@ ent:RandomizeIdentity()
 assertTrue( PCMod.Data[ 1 ].InterfaceMACs == nil, "clone drops the old interface MACs" )
 local n1 = ent:EnsureInterfaceMAC( 1 )
 local n2 = ent:EnsureInterfaceMAC( 2 )
-assertEq( n1, PCMod.Data[ 1 ].MAC, "new primary uses the new legacy MAC" )
+assertEq( n1, PCMod.Data[ 1 ].MAC, "new primary uses the new primary MAC" )
 assertTrue( n1 != "AA:BB:CC:DD:EE:99", "clone primary is fresh" )
 assertTrue( (n2 != m2) && (n2 != n1), "clone secondary is fresh and distinct" )
 

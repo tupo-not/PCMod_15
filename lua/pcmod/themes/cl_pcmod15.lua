@@ -115,9 +115,9 @@ THEME.ButtonBG_Hover = Color( 58, 64, 74, 255 )	-- E4: hover tile (8.4:1 with Bu
 THEME.Icon_Tint = Color( 220, 226, 232, 255 )	-- E2: icon tint (white before E2)
 THEME.Font_Button = "pcmod15_button"		-- E2b: bold label font (must be registered by EnsureFonts - the base helper calls it)
 
--- == Legacy 3D sub-tables: unused by this theme (Draw handles every id) but
---    defined so no code path (e.g. classic Draw3DBox in Low Quality mode)
---    can ever see a nil color table. Same safety pattern as cl_modern.lua. ==
+-- == 3D sub-tables: unused by this theme (Draw handles every id) but defined
+--    so no code path (e.g. classic Draw3DBox in Low Quality mode) can ever see
+--    a nil color table. Same safety pattern as cl_modern.lua. ==
 
 THEME.ButtonCol = {
 	UpperOuter = THEME.Border,

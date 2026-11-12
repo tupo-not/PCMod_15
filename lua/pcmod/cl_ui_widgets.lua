@@ -1,8 +1,8 @@
 // ---------------------------------------------------------------------------------------------------------
 // cl_ui_widgets.lua - Client-Side
-// One widget contract for the three legacy control stores (textboxes,
-// listboxes and screen-space elements). The device base keeps the stores for
-// compatibility, but drawing/hit-testing now runs through this registry.
+// One widget contract for the three control stores (textboxes, listboxes and
+// screen-space elements). The device base keeps the stores, but drawing and
+// hit-testing run through this registry.
 // ---------------------------------------------------------------------------------------------------------
 
 PCMod.UI = PCMod.UI or {}
@@ -76,7 +76,7 @@ function W.StopLayer( kind )
 end
 
 // ---------------------------------------------------------------------------------------------------------
-// Legacy control kinds
+// Control kinds
 // ---------------------------------------------------------------------------------------------------------
 
 W.Register( "textbox", {

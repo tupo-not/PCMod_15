@@ -105,7 +105,7 @@ function OS:RunCommand( com, args )
 	// split them apart again, so every value that contained a space was
 	// broken (a password was cut off at the first space).
 	if (!args) then
-		// legacy call with one single string ("command arg1 arg2")
+		// single-string call form: "command arg1 arg2"
 		local coms = string.Explode( " ", com )
 		com = coms[1]
 		table.remove( coms, 1 )

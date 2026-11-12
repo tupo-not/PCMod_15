@@ -233,7 +233,7 @@ function DEV:BuildList()
 	self.EntryTypes = {}
 	self.EntryLocked = {}
 
-	// Legacy payload (old ShowOpenFile) only has Fs: a flat list of file names.
+	// ShowOpenFile payload: only Fs is sent, a flat list of file names.
 	local source = self.Entries or {}
 	if ((#source == 0) && (#(self.Tree or {}) == 0) && (#(self.Places or {}) == 0) && (#(self.Fs or {}) > 0)) then
 		source = {}
@@ -273,7 +273,7 @@ function DEV:SendPicker( com, arg )
 		end
 		return
 	end
-	// Legacy program that still uses the old open-file window protocol.
+	// Programs using the open-file window protocol.
 	if (!self.Parent) then return end
 	if (com == "picker_close") then
 		self:PassData( self.Parent, "runcommand", "closebrowse" )

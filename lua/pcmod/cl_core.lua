@@ -11,9 +11,11 @@
 
 if (!PCMod_NoInclude) then PCMod = {} end -- Main table
 PCMod.Exists = true -- Internal checking
-PCMod.Version = "1.1" -- 'Nice' version
-PCMod.IntVer = "Release" -- Internal version
 PCMod.IsPCMod2 = true
+
+if (!PCMod_NoInclude) then
+	include( "pcmod/sh_version.lua" )
+end
 
 
 // ---------------------------------------------------------------------------------------------------------

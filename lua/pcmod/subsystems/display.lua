@@ -1,28 +1,28 @@
 
-// Display Driver for PCMod 2
+// Display subsystem for PCMod 2
 
-DRV = PCMod.DeriveDriver( "base" )
+SUBSYSTEM = PCMod.DeriveSubsystem( "base" )
 
-DRV.NiceName = "Generic Display Driver"
-DRV.Name = "gen_display"
-DRV.Type = "display"
-DRV.ID = 0
-DRV.PortHook = "vga"
-DRV.PortID = 0
-DRV.SS = {}
+SUBSYSTEM.NiceName = "Generic Display"
+SUBSYSTEM.Name = "display"
+SUBSYSTEM.Type = "display"
+SUBSYSTEM.ID = 0
+SUBSYSTEM.PortHook = "vga"
+SUBSYSTEM.PortID = 0
+SUBSYSTEM.SS = {}
 // Round 34 (M-33): this was an undeclared global (it is not used anywhere
-// else) - it belongs to the driver.
-DRV.bekleniyor = 0
+// else) - it belongs to the subsystem.
+SUBSYSTEM.bekleniyor = 0
 
 util.AddNetworkString("ekrantazele")
 
 	
-function DRV:Initialize()
+function SUBSYSTEM:Initialize()
 	if (!self.Entity) then return end
 	
-	self.Entity:AddEHook( "driver", self.Name, "linked" )
-	self.Entity:AddEHook( "driver", self.Name, "ss_inval" )
-	self.Entity:AddEHook( "driver", self.Name, "turnoff" )
+	self.Entity:AddEHook( "subsystem", self.Name, "linked" )
+	self.Entity:AddEHook( "subsystem", self.Name, "ss_inval" )
+	self.Entity:AddEHook( "subsystem", self.Name, "turnoff" )
 	
 	// Get our primary VGA port
 	local ports = self.Entity:Ports()
@@ -35,8 +35,8 @@ function DRV:Initialize()
 end
 
 
-function DRV:Think()
-	//PCMod.Msg( "Display Driver Thinking...", true )
+function SUBSYSTEM:Think()
+	//PCMod.Msg( "Display subsystem thinking...", true )
 
 	
 	
@@ -47,7 +47,7 @@ function DRV:Think()
 		if (!self.IsLaptop) then
 			
 			if (!prt) then
-				PCMod.Msg( "Failed to locate port! (Display Driver)", true )
+				PCMod.Msg( "Failed to locate port! (Display subsystem)", true )
 				return
 			end
 			
@@ -67,7 +67,7 @@ function DRV:Think()
 	end
 end
 
-function DRV:CallEvent( data )
+function SUBSYSTEM:CallEvent( data )
 	-- if ((!data) || (!data[1])) then return end
 	if (!data) then return end
 	
@@ -81,17 +81,17 @@ function DRV:CallEvent( data )
 	end
 end
 
-function DRV:GetPort()
+function SUBSYSTEM:GetPort()
 	if (!self.Entity) then return end
 	return self.Entity:Ports()[ self.PortID ]
 end
 
-function DRV:GetScreen()
+function SUBSYSTEM:GetScreen()
 	return self.Entity:ScreenSpace()
 end
 
 
-function DRV:FullFlush()
+function SUBSYSTEM:FullFlush()
 	local ss = self:GetScreen()
 	if (!ss) then return end
 	PCMod.Msg( "Performing full flush (ddriv)", true )
@@ -109,7 +109,7 @@ function DRV:FullFlush()
 	self:CallEvent( { "ss_inval", 0 } )
 end
 
-function DRV:SetScreen( ss )
+function SUBSYSTEM:SetScreen( ss )
 	PCMod.Msg( "Updating host screen!", true )
 	self.Entity:UpdateScreenSpace( ss )
 end

@@ -114,11 +114,12 @@ if (SERVER) then
 			for k, _ in pairs(ent:Ports() or {}) do
 				PCMod.Wiring.UnlinkPort( ent, k )
 			end
-			PCMod.Msg( "Ports unlinked, now for drivers", true )
+			PCMod.Msg( "Ports unlinked, now for subsystems", true )
 			local dat = PCMod.Data[ self:EntIndex() ]
-			if (dat && dat.Drivers) then
-				for k, _ in pairs(dat.Drivers) do
-					dat.Drivers[ k ]:OnRemove()
+			local subs = dat && PCMod.GetSubsystemStore( dat, false )
+			if (subs) then
+				for k, _ in pairs(subs) do
+					subs[ k ]:OnRemove()
 				end
 			end
 			PCMod.Msg( "Data!", true )
@@ -179,7 +180,8 @@ if (SERVER) then
 			tmp.Memory = {}
 			tmp.Ports = {}
 			tmp.HardDrive = {}
-			tmp.Drivers = {}
+			// New name for the per-entity hardware services.
+			tmp.Subsystems = {}
 			tmp.EHooks = {}
 			tmp.ScreenSpace = PCMod.MakeScreenSpace()
 			tmp.IsOn = false
@@ -206,11 +208,11 @@ if (SERVER) then
 		end
 	
 		function ENT:CloseAllPrograms()
-			local drv = self:Data().Drivers or {}
+			local bios = PCMod.GetSubsystem && PCMod.GetSubsystem( self:Data(), "bios" )
 			if(PCMod.Data[ self:EntIndex() ] && PCMod.Data[ self:EntIndex() ].OS) then
 				PCMod.Data[ self:EntIndex() ].OS:ShutDown()
-			elseif(drv[ "gen_bios" ] && drv[ "gen_bios" ].OS) then
-				drv[ "gen_bios" ].OS:ShutDown()
+			elseif(bios && bios.OS) then
+				bios.OS:ShutDown()
 			else
 				// No OS instance (never booted / already cleared) - there are no
 				// programs to close, so this is a normal state, not a warning.
@@ -273,18 +275,16 @@ if (SERVER) then
 					PCMod.Network.Packets[ pid ].Delivered = true
 					packet.ViaWireless = false
 					
-					// Forward data to network driver
+					// Forward data to the network subsystem.
 					if (self.IsComputer) then
-						if (PCMod.Data[ self:EntIndex() ].Drivers[ "gen_network" ]) then
-							PCMod.Data[ self:EntIndex() ].Drivers[ "gen_network" ]:PacketRecieved( packet )
-						end
+						local net = PCMod.GetSubsystem && PCMod.GetSubsystem( self:Data(), "network" )
+						if (net) then net:PacketRecieved( packet ) end
 					end
 				else
-					// Are we a router? If so forward it to webgear
+					// Are we a router? If so forward it to the router subsystem.
 					if (self.IsNetworkDevice) then
-						if (PCMod.Data[ self:EntIndex() ].Drivers[ "webgr_router" ]) then
-							PCMod.Data[ self:EntIndex() ].Drivers[ "webgr_router" ]:DataRecieved( packet )
-						end
+						local rtr = PCMod.GetSubsystem && PCMod.GetSubsystem( self:Data(), "router" )
+						if (rtr) then rtr:DataRecieved( packet ) end
 					end
 				end
 			end
@@ -343,7 +343,8 @@ if (SERVER) then
 			// The data slot can disappear (a core reload rebuilds PCMod.Data);
 			// bail out instead of erroring every tick.
 			if (!PCMod.Data[ self:EntIndex() ]) then return end
-			for _, v in pairs( PCMod.Data[ self:EntIndex() ].Drivers ) do
+			local subs = PCMod.GetSubsystemStore( PCMod.Data[ self:EntIndex() ], false )
+			for _, v in pairs( subs or {} ) do
 				v:Think()
 			end
 			self.harddrive = self:Data().HardDrive -- Duplicator support
@@ -615,7 +616,7 @@ if (SERVER) then
 			return true
 		end
 
-		// Legacy helpers: update the third/fourth octet of the current LAN
+		// Address helpers: update the third/fourth octet of the current LAN
 		// address, preserving the RFC1918 network the device already has.
 		function ENT:SetSubnet( subnet )
 			local ip = self:Data().IP
@@ -1052,32 +1053,37 @@ if (SERVER) then
 		
 		
 	-------------------------------------------------------------------------------------------------------------------------------------------------
-	-- Driver Functions --
+	-- Subsystem Functions --
 	-------------------------------------------------------------------------------------------------------------------------------------------------
 	
 	
-		function ENT:InstallDriver( drivername )
-			local drv = PCMod.Drivers[ drivername ]
-			if (!drv) then
-				PCMod.Msg( "No such driver '" .. drivername .. "'!", true )
+		function ENT:InstallSubsystem( name )
+			local key = PCMod.ResolveSubsystemName( name ) or name
+			local proto = PCMod.Subsystems && PCMod.Subsystems[ key ]
+			if (!proto) then
+				PCMod.Msg( "No such subsystem '" .. tostring( name ) .. "'!", true )
 				return
 			end
-			local mydrv = table.Copy( drv )
-			mydrv.Entity = self
-			PCMod.Data[ self:EntIndex() ].Drivers[ drivername ] = mydrv
-			PCMod.Data[ self:EntIndex() ].Drivers[ drivername ]:Initialize()
-			PCMod.Msg( "Installing driver '" .. drivername .. "' to (" .. tostring( self:EntIndex() ) .. ")", true )
-			return PCMod.Data[ self:EntIndex() ].Drivers[ drivername ]
+			local inst = table.Copy( proto )
+			inst.Entity = self
+			local store = PCMod.GetSubsystemStore( self:Data(), true )
+			if (!store) then return end
+			store[ key ] = inst
+			inst:Initialize()
+			PCMod.Msg( "Installing subsystem '" .. key .. "' to (" .. tostring( self:EntIndex() ) .. ")", true )
+			return inst
 		end
-		
-		function ENT:PushDriverData( drivername, port, data )
-			if (!PCMod.Data[ self:EntIndex() ].Drivers[ drivername ]) then return end
-			PCMod.Data[ self:EntIndex() ].Drivers[ drivername ]:DataRecieved( port, data )
+
+		function ENT:PushSubsystemData( name, port, data )
+			local sub = PCMod.GetSubsystem( self:Data(), name )
+			if (!sub) then return end
+			sub:DataRecieved( port, data )
 		end
-		
-		function ENT:CallDriver( drivername, func, ... )
-			if (!PCMod.Data[ self:EntIndex() ].Drivers[ drivername ]) then return end
-			return PCMod.Data[ self:EntIndex() ].Drivers[ drivername ][ func ]( ... ) -- Now that's what I call a function call :D
+
+		function ENT:CallSubsystem( name, func, ... )
+			local sub = PCMod.GetSubsystem( self:Data(), name )
+			if (!sub) then return end
+			return sub[ func ]( sub, ... )
 		end
 		
 	
@@ -1534,10 +1540,11 @@ if (SERVER) then
 			PCMod.Msg( "Calling hook! (" .. hk.Event .. ")", true )
 			if (!data) then data = {} end
 			data.Event = hk.Event
-			if (hk.Target == "driver") then
-				if (!self:Data().Drivers[ hk.ID ]) then return end
-				PCMod.Msg( "Calling driver hook!", true )
-				self:Data().Drivers[ hk.ID ]:CallEvent( data )
+			if (hk.Target == "subsystem") then
+				local sub = PCMod.GetSubsystem( self:Data(), hk.ID )
+				if (!sub) then return end
+				PCMod.Msg( "Calling subsystem hook!", true )
+				sub:CallEvent( data )
 			end
 			if (hk.Target == "ent") then
 				PCMod.Msg( "Calling entity hook!", true )
@@ -1623,7 +1630,7 @@ if (SERVER) then
 		end
 
 		// Every interface gets its own hardware address. The lowest wired port
-		// keeps the entity's legacy MAC so existing single-NIC saves and leases
+		// keeps the entity's primary MAC so existing single-NIC saves and leases
 		// stay stable; all other ports get a fresh address. Wi-Fi (port 0) is
 		// distinct from every cable, so it never shares a DHCP lease with one.
 		function ENT:EnsureInterfaceMAC( port )
@@ -1634,14 +1641,14 @@ if (SERVER) then
 			if (PCMod.MAC.IsValid( mac )) then return mac end
 			local wired = self:NetworkInterfacePorts()
 			local lowest = wired[ 1 ]
-			local legacy = dt.MAC
-			local legacyUsed = false
+			local primaryMAC = dt.MAC
+			local primaryUsed = false
 			for _, m in pairs( dt.InterfaceMACs ) do
-				if (m == legacy) then legacyUsed = true end
+				if (m == primaryMAC) then primaryUsed = true end
 			end
-			if (PCMod.MAC.IsValid( legacy ) && (!legacyUsed) &&
+			if (PCMod.MAC.IsValid( primaryMAC ) && (!primaryUsed) &&
 				(((lowest != nil) && (port == lowest)) || ((lowest == nil) && (port == 0)))) then
-				mac = legacy
+				mac = primaryMAC
 			else
 				mac = PCMod.MAC.Random()
 			end
@@ -1683,7 +1690,7 @@ if (SERVER) then
 			local dt = self:Data()
 			local old = dt.MAC
 			dt.MAC = norm
-			// The interface that used the legacy MAC follows the new one, so
+			// The interface that used the primary MAC follows the new one, so
 			// changing the primary address from the control panel takes effect
 			// without disturbing the other NICs' addresses.
 			if (istable( dt.InterfaceMACs )) then
@@ -1767,9 +1774,9 @@ if (SERVER) then
 				self:SetIPText()
 			end
 			// Re-apply the restored LAN addressing (gateway on the configured
-			// network) once the router driver exists.
+			// network) once the router subsystem exists.
 			if (self.IsNetworkDevice) then
-				local rdrv = dt.Drivers && dt.Drivers[ "webgr_router" ]
+				local rdrv = PCMod.GetSubsystem && PCMod.GetSubsystem( dt, "router" )
 				if (rdrv && rdrv.ApplyLanAddress) then rdrv:ApplyLanAddress() end
 				// The saved RouterCfg owns the Wi-Fi state; republish it so the
 				// overlay matches the restored web-panel setting.
@@ -1893,9 +1900,9 @@ if (SERVER) then
 				self:SetBIPText()
 			end
 
-			// Push the restored wireless flag into the router driver.
+			// Push the restored wireless flag into the router subsystem.
 			if (self.IsNetworkDevice) then
-				local rdrv = dt.Drivers && dt.Drivers[ "webgr_router" ]
+				local rdrv = PCMod.GetSubsystem && PCMod.GetSubsystem( dt, "router" )
 				if (rdrv && rdrv.SetWireless && (dt.IsWireless != nil)) then
 					rdrv:SetWireless( dt.IsWireless == true )
 				end
@@ -1923,7 +1930,7 @@ if (SERVER) then
 				end
 			end
 
-			// Legacy duplicator Think stamp.
+			// Duplicator reads this field from the entity.
 			self.harddrive = dt.HardDrive
 		end
 		
@@ -2046,7 +2053,7 @@ if (CLIENT) then
 		return txt
 	end
 
-	// SSID published by the router driver when Wi-Fi is enabled. Older saves
+	// SSID published by the router subsystem when Wi-Fi is enabled. Older saves
 	// that only carry the boolean GVar fall back to the default name.
 	function ENT:GetWirelessSSID()
 		local ssid = self.GetNWString && self:GetNWString( "WifiSSID" )

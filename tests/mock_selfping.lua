@@ -3,7 +3,7 @@ PCMod = {
 	Msg = function() end,
 	Cfg = { DefaultTTL = 64, WirelessRange = 0 },
 	Data = {},
-	DeriveDriver = function() return {} end,
+	DeriveSubsystem = function() return {} end,
 	IPv6 = {
 		IsLoopback = function( a ) return (a == "127.0.0.1") || (a == "::1") end,
 		IsIPv6 = function( a ) return (type( a ) == "string") && (string.find( a, ":", 1, true ) != nil) end,
@@ -12,7 +12,7 @@ PCMod = {
 SERVER = true
 CLIENT = false
 
-dofile( "pcmod_drv_network.lua" )
+dofile( "pcmod_subsystem_network.lua" )
 
 local function assertEq( a, b, m )
 	if (a != b) then error( "FAILED: " .. m .. " got " .. tostring( a ) .. " want " .. tostring( b ), 2 ) end
@@ -39,7 +39,7 @@ function ent:SendPacket( portid, dest, port, body, ttl, src )
 end
 
 local drv = {}
-for k, v in pairs( DRV ) do drv[ k ] = v end
+for k, v in pairs( SUBSYSTEM ) do drv[ k ] = v end
 drv.Entity = ent
 drv.NetworkPort = 1
 drv.WirelessConnected = function() return false end

@@ -1,29 +1,29 @@
 
-// Bios Driver for PCMod 2
+// BIOS subsystem for PCMod 2
 // Loads the OS
 
-DRV = PCMod.DeriveDriver( "base" )
+SUBSYSTEM = PCMod.DeriveSubsystem( "base" )
 
-DRV.NiceName = "Computer Bios"
-DRV.Name = "gen_bios"
-DRV.Type = "control"
+SUBSYSTEM.NiceName = "Computer Bios"
+SUBSYSTEM.Name = "bios"
+SUBSYSTEM.Type = "control"
 
-DRV.NextUpdate = 0
+SUBSYSTEM.NextUpdate = 0
 
-function DRV:Initialize()
+function SUBSYSTEM:Initialize()
 	if (!self.Entity) then return end
 	
-	self.Entity:AddEHook( "driver", self.Name, "linked" )
-	self.Entity:AddEHook( "driver", self.Name, "unlinked" )
-	self.Entity:AddEHook( "driver", self.Name, "use" )
-	self.Entity:AddEHook( "driver", self.Name, "turnon" )
-	self.Entity:AddEHook( "driver", self.Name, "turnoff" )
-	self.Entity:AddEHook( "driver", self.Name, "player_input" )
+	self.Entity:AddEHook( "subsystem", self.Name, "linked" )
+	self.Entity:AddEHook( "subsystem", self.Name, "unlinked" )
+	self.Entity:AddEHook( "subsystem", self.Name, "use" )
+	self.Entity:AddEHook( "subsystem", self.Name, "turnon" )
+	self.Entity:AddEHook( "subsystem", self.Name, "turnoff" )
+	self.Entity:AddEHook( "subsystem", self.Name, "player_input" )
 	
 	self:Flush()
 end
 
-function DRV:Think()
+function SUBSYSTEM:Think()
 	if (!self.Data) then self:Flush() end
 	local st = self.Data.State
 	if (!st) then return end
@@ -47,7 +47,7 @@ function DRV:Think()
 	end
 end
 
-function DRV:CallEvent( data )
+function SUBSYSTEM:CallEvent( data )
 	if ((!data) || (!data.Event)) then return end
 	local e = data.Event
 	PCMod.Msg( "Bios CallEvent called! (" .. e .. ")", true )
@@ -120,20 +120,20 @@ function DRV:CallEvent( data )
 	end
 end
 
-function DRV:GetPort()
+function SUBSYSTEM:GetPort()
 	if (!self.Entity) then return end
 	return self.Entity:Ports()[ self.PortID ]
 end
 
-function DRV:GetOSDriver( dname )
-	return PCMod.Data[ self.Entity:EntIndex() ].Drivers[ dname ]
+function SUBSYSTEM:GetOSSubsystem( name )
+	return PCMod.GetSubsystem( self.Entity:Data(), name )
 end
 
-function DRV:Flush()
+function SUBSYSTEM:Flush()
 	PCMod.Msg( "Bios Flushing...", true )
 	self.Data = {}
 	self.Data.State = 0
-	local display = self:GetOSDriver( "gen_display" )
+	local display = self:GetOSSubsystem( "display" )
 	if (!display) then
 		PCMod.Msg( ">> NO DISPLAY DRIVER FOUND! <<", true )
 		return
@@ -142,8 +142,8 @@ function DRV:Flush()
 	return display
 end
 
-function DRV:InitScreen()
-	local display = self:GetOSDriver( "gen_display" )
+function SUBSYSTEM:InitScreen()
+	local display = self:GetOSSubsystem( "display" )
 	if (!display) then
 		PCMod.Msg( ">> NO DISPLAY DRIVER FOUND! <<", true )
 		return
@@ -159,19 +159,19 @@ function DRV:InitScreen()
 	display:SetScreen( ss )
 end
 
-function DRV:BootUp()
+function SUBSYSTEM:BootUp()
 	self:Flush()
 	self:SetState( 1 )
 end
 
-function DRV:ShutDown()
+function SUBSYSTEM:ShutDown()
 	self:Flush()
 	self:SetState( 0 )
 	self.Entity:TurnOff()
 	if (self.OS) then self.OS:ShutDown() end
 end
 
-function DRV:BootDelay( seconds )
+function SUBSYSTEM:BootDelay( seconds )
 	local scale = 1
 	if (PCMod.Cfg && (PCMod.Cfg.BootSpeed != nil)) then
 		scale = tonumber( PCMod.Cfg.BootSpeed )
@@ -182,12 +182,12 @@ function DRV:BootDelay( seconds )
 	return seconds * scale
 end
 
-function DRV:SetState( state )
+function SUBSYSTEM:SetState( state )
 	self.Data.State = state
 	self:TriggerState( state )
 end
 
-function DRV:TriggerState( state )
+function SUBSYSTEM:TriggerState( state )
 	if (state == 0) then
 		self:Flush()
 		self:EnableCursor( false )
@@ -232,7 +232,7 @@ function DRV:TriggerState( state )
 	if (state == 8) then
 		// Blue-screening!
 		self.NextUpdate = CurTime()+self:BootDelay( 1 )
-		local display = self:GetOSDriver( "gen_display" )
+		local display = self:GetOSSubsystem( "display" )
 		local ss = display:GetScreen()
 		if (!ss) then return end
 		ss:ClearAll()
@@ -244,8 +244,8 @@ function DRV:TriggerState( state )
 	end
 end
 
-function DRV:AddStatusText( str )
-	local display = self:GetOSDriver( "gen_display" )
+function SUBSYSTEM:AddStatusText( str )
+	local display = self:GetOSSubsystem( "display" )
 	if (!display) then return end
 	local ss = display:GetScreen()
 	if (!ss) then return end
@@ -256,7 +256,7 @@ function DRV:AddStatusText( str )
 	display:SetScreen( ss )
 end
 
-function DRV:Exec( com )
+function SUBSYSTEM:Exec( com )
 	self:AddStatusText( "] " .. com )
 	if (com == "waitcommand") then
 		self:SetState( 4 )
@@ -296,7 +296,7 @@ function DRV:Exec( com )
 	end
 end
 
-function DRV:ExecFile( filename )
+function SUBSYSTEM:ExecFile( filename )
 	if (!self.Entity:FileFolderExist( filename )) then
 		self:AddStatusText( "-> Couldn't exec '" .. filename .. "'!" )
 		return false
@@ -310,8 +310,8 @@ function DRV:ExecFile( filename )
 	return true
 end
 
-function DRV:SetWaitingCommand( enabled )
-	local display = self:GetOSDriver( "gen_display" )
+function SUBSYSTEM:SetWaitingCommand( enabled )
+	local display = self:GetOSSubsystem( "display" )
 	if (!display) then
 		PCMod.Msg( ">> NO DISPLAY DRIVER FOUND! <<", true )
 		return
@@ -329,8 +329,8 @@ function DRV:SetWaitingCommand( enabled )
 	display:SetScreen( ss )
 end
 
-function DRV:EnableCursor( state )
-	local display = self:GetOSDriver( "gen_display" )
+function SUBSYSTEM:EnableCursor( state )
+	local display = self:GetOSSubsystem( "display" )
 	if (!display) then
 		PCMod.Msg( ">> NO DISPLAY DRIVER FOUND! <<", true )
 		return

@@ -1,16 +1,16 @@
 
-// Display Driver for PCMod 2
+// Display subsystem for PCMod 2
 
-DRV = PCMod.DeriveDriver( "base" )
+SUBSYSTEM = PCMod.DeriveSubsystem( "base" )
 
-DRV.NiceName = "Generic Input Driver"
-DRV.Name = "gen_input"
-DRV.Type = "input"
-DRV.ID = 0
-DRV.PortHook = "ps2"
-DRV.PortID = 0
+SUBSYSTEM.NiceName = "Generic Input"
+SUBSYSTEM.Name = "input"
+SUBSYSTEM.Type = "input"
+SUBSYSTEM.ID = 0
+SUBSYSTEM.PortHook = "ps2"
+SUBSYSTEM.PortID = 0
 
-function DRV:Initialize()
+function SUBSYSTEM:Initialize()
 	if (!self.Entity) then return end
 	
 	// Get our primary PS2 port
@@ -23,12 +23,12 @@ function DRV:Initialize()
 	end
 end
 
-function DRV:GetPort()
+function SUBSYSTEM:GetPort()
 	if (!self.Entity) then return end
 	return self.Entity:Ports()[ self.PortID ]
 end
 
-function DRV:DataRecieved( port, data )
+function SUBSYSTEM:DataRecieved( port, data )
 	local pt = self.Entity:GetPorts()[ port ]
 	if (!pt) then return end
 	if (pt.Type == "vga") then

@@ -82,8 +82,8 @@ assertEq(a.WinW, 0.5, "resize clamped to minimum width")
 assertEq(a.WinH, 0.6, "resize clamped to minimum height")
 a.WinW, a.WinH = 0.1, 0.1
 local minDims = a:GetDimensions()
-assertEq(minDims.w, 0.5, "legacy window widened to the minimum")
-assertEq(minDims.h, 0.6, "legacy window heightened to the minimum")
+assertEq(minDims.w, 0.5, "saved window widened to the minimum")
+assertEq(minDims.h, 0.6, "saved window heightened to the minimum")
 assertEq(a.WinW, 0.5, "minimum stored back on the program")
 assertEq(a.WinH, 0.6, "minimum height stored back on the program")
 

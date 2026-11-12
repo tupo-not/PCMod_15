@@ -81,10 +81,10 @@ prog:DoCommand( "savecontent", { "copy.txt", "a copy" } )
 assertTrue( util.Decompress( ent:ReadFile( "mydocs/text/copy.txt" ) ) == "a copy", "saved new name to SaveRoot" )
 assertTrue( prog.OpenPath == "mydocs/text/copy.txt", "new target tracked" )
 
--- Legacy "open" still works and sets the filename shown by the device.
+-- "open" still works and sets the filename shown by the device.
 prog:DoCommand( "open", { "copy.txt" } )
-assertTrue( prog.DeviceData.TC == "a copy", "legacy open loaded text" )
-assertTrue( prog.DeviceData.FN == "copy.txt", "legacy open filename" )
+assertTrue( prog.DeviceData.TC == "a copy", "open loaded text" )
+assertTrue( prog.DeviceData.FN == "copy.txt", "open filename" )
 
 -- Locked files/folders must reject saves without claiming success or changing
 -- the last-saved document state.

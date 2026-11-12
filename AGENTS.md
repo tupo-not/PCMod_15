@@ -10,7 +10,7 @@ Do not "fix" these to standard Lua. The test toolchain translates them.
 
 ## Layout
 
-- `lua/pcmod/` — server, client, and shared logic; drivers; OSes; programs;
+- `lua/pcmod/` — server, client, and shared logic; hardware subsystems; OSes; programs;
   screen-space devices.
 - `lua/entities/pcmod_base/` — the PC entity (ports, hard drive VFS, networking).
 - `lua/weapons/` — toolgun stools (wiring).
@@ -27,7 +27,7 @@ See `tests/README.md`. Never edit `tests/.build/` — it is generated.
 ## Conventions
 
 - Preserve compatibility with existing PCMod programs, saved PC data, the boot
-  flow, and legacy file-picker/screen-space payloads. Internal names such as
+  flow, and existing file-picker/screen-space payloads. Internal names such as
   `mycomputer` / `window_mycomp` are part of that contract.
 - Server-side changes need a map restart; client-side changes need a reconnect;
   per-PC program changes need `sys_resetprog <name>` (or a respawn) on existing

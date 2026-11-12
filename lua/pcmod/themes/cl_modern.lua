@@ -53,8 +53,8 @@ THEME.Error_Text = Color( 255, 240, 238, 255 )
 THEME.TaskBar = Color( 28, 30, 34, 255 )
 THEME.StartMenuBG = Color( 40, 43, 48, 255 )
 
--- Legacy 3D sub-tables: unused by Modern (Draw handles every id) but defined
--- so no other code path can ever see a nil color table.
+-- 3D sub-tables: unused by Modern (Draw handles every id) but defined so no
+-- other code path can ever see a nil color table.
 THEME.ButtonCol = {
 	UpperOuter = THEME.Border,
 	LowerOuter = THEME.Border,

@@ -45,7 +45,7 @@ PCMod = {
 	Msg = function() end,
 	Cfg = { MaxNetworkPid = 500, MaxNetworkPass = 10, WirelessRange = 0, DefaultTTL = 64 },
 	Network = { Packets = {}, NextSwitchFrame = 0 },
-	DeriveDriver = function() return {} end,
+	DeriveSubsystem = function() return {} end,
 }
 math.Clamp = function( v, a, b ) if (v < a) then return a end if (v > b) then return b end return v end
 function istable( v ) return type( v ) == "table" end
@@ -60,7 +60,7 @@ dofile( "pcmod_sh_arp.lua" )
 dofile( "pcmod_sh_ndp.lua" )
 dofile( "pcmod_sh_l2.lua" )
 dofile( "pcmod_sh_routing.lua" )
-dofile( "pcmod_drv_router.lua" )
+dofile( "pcmod_subsystem_router.lua" )
 
 local function assertEq( a, b, m )
 	if (a ~= b) then error( "FAILED: " .. m .. " got " .. tostring( a ) .. " want " .. tostring( b ), 2 ) end
@@ -131,9 +131,9 @@ connect( modem, 2, backbone, 1 )
 switch.DataRecieved = function( self, port, data ) return PCMod.L2.Receive( self, port, data ) end
 modem.DataRecieved = function( self, port, data ) return PCMod.L2.Receive( self, port, data ) end
 
--- Reuse the real router driver methods (DHCP server side) on a fake entity.
+-- Reuse the real router subsystem methods (DHCP server side) on a fake entity.
 local rdrv = {}
-for k, v in pairs( DRV ) do rdrv[ k ] = v end
+for k, v in pairs( SUBSYSTEM ) do rdrv[ k ] = v end
 rdrv.Entity = backbone
 rdrv.NPorts = {}
 rdrv.OPorts = { 1 }
@@ -299,7 +299,7 @@ function lanRouter:GetFullIP() return "192.168.5.1" end
 function lanRouter:GetFullBIP() return false end
 
 local lrdrv = {}
-for k, v in pairs( DRV ) do lrdrv[ k ] = v end
+for k, v in pairs( SUBSYSTEM ) do lrdrv[ k ] = v end
 lrdrv.Entity = lanRouter
 lrdrv.NPorts = { 1 }
 lrdrv.OPorts = {}

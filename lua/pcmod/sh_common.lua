@@ -35,6 +35,32 @@ function PCMod.IsRouterClass( cls )
 	return (cls == "pcmod_brouter") || PCMod.IsLanRouterClass( cls )
 end
 
+// ---------------------------------------------------------------------------------------------------------
+// Hardware subsystem vocabulary. A subsystem is a per-entity hardware service
+// (BIOS, display, network, router, ...). Names are canonical and lower-case.
+// ---------------------------------------------------------------------------------------------------------
+
+function PCMod.ResolveSubsystemName( name )
+	if (type( name ) != "string" ) then return nil end
+	return string.lower( name )
+end
+
+function PCMod.GetSubsystemStore( data, create )
+	if (!data) then return nil end
+	local store = data.Subsystems
+	if ((!store) && create) then
+		store = {}
+		data.Subsystems = store
+	end
+	return store
+end
+
+function PCMod.GetSubsystem( data, name )
+	local store = PCMod.GetSubsystemStore( data, false )
+	if (!store) then return nil end
+	return store[ PCMod.ResolveSubsystemName( name ) ]
+end
+
 PCMod.MsgDebugBuffer = {}
 PCMod.MsgBuffer = {}
 PCMod.WarningBuffer = {}
@@ -111,13 +137,13 @@ function PCMod.GMsg( msgtext )
 end
 
 // ---------------------------------------------------------------------------------------------------------
-// EnforceJson - SECURITY (stage 1, fix 1.1): the legacy UseJson=false RunString codec was removed.
+// EnforceJson - SECURITY (stage 1, fix 1.1): the old UseJson=false RunString codec was removed.
 //               Forces JSON once (keeps encoder and decoder in sync) and warns the operator.
 // ---------------------------------------------------------------------------------------------------------
 function PCMod.EnforceJson()
 	if (PCMod.Cfg.UseJson) then return end
 	PCMod.Cfg.UseJson = true
-	ErrorNoHalt( "PCMod: UseJson=false is no longer supported (legacy RunString codec removed for security); switching to JSON. Old non-JSON data files will not load - delete them.\n" )
+	ErrorNoHalt( "PCMod: UseJson=false is no longer supported (non-JSON codec removed for security); switching to JSON. Old non-JSON data files will not load - delete them.\n" )
 end
 
 // ---------------------------------------------------------------------------------------------------------
@@ -125,42 +151,12 @@ end
 // ---------------------------------------------------------------------------------------------------------
 function PCMod.TableToString( tbl )
 	PCMod.EnforceJson()
-	if (PCMod.Cfg.UseJson) then
-		 local result = util.TableToJSON( tbl )
-		 return result
+	local ok, result = pcall( util.TableToJSON, tbl )
+	if (!ok) then
+		PCMod.Warning( "Could not encode table as JSON: " .. tostring( result ) )
+		return "{}"
 	end
-	local str = "{"
-	local allnum = table.AllNumerical( tbl )
-	if (allnum) then
-		local cnt
-		for i=1, table.maxn( tbl ) do
-			local v = tbl[ i ]
-			if (v) then
-				local val = ""
-				if (type( v ) == "string") then val = "\"" .. v .. "\"" end
-				if (type( v ) == "boolean") then val = tostring(v) end
-				if (type( v ) == "number") then val = tostring(v) end
-				if (type( v ) == "table") then val = PCMod.TableToString( v ) end
-				str = str .. val .. ","
-			end
-		end
-	else
-		for k, v in pairs( tbl ) do
-			local val = ""
-			local key = ""
-			if (type( v ) == "string") then val = "\"" .. PCMod.CleanString( v ) .. "\"" end
-			if (type( v ) == "boolean") then val = tostring(v) end
-			if (type( v ) == "number") then val = tostring(v) end
-			if (type( v ) == "table") then val = PCMod.TableToString( v ) end
-			if (type( k ) == "string") then key = "[\"" .. k .. "\"]" end
-			if (type( k ) == "number") then key = "[" .. tostring(k) .. "]" end
-			str = str .. key .. "=" .. val .. ","
-		end
-	end
-	str = string.Replace( str, "\n", "#>" )
-	local fstr = str .. "}"
-	// PCMod.Msg( "Final Conversion: " .. fstr, true )
-	return fstr
+	return result
 end
 
 // ---------------------------------------------------------------------------------------------------------
@@ -196,10 +192,14 @@ function PCMod.StringToTable( str )
 		PCMod.Msg( "Tried to convert non-string value to table!", true )
 		return {}
 	end
-	// SECURITY (stage 1, fix 1.1): the legacy RunString decoder was removed.
+	// SECURITY (stage 1, fix 1.1): the non-JSON RunString decoder was removed.
 	// Always decode as JSON (EnforceJson keeps encoder and decoder in sync).
 	PCMod.EnforceJson()
-	local result = util.JSONToTable( str )
+	local ok, result = pcall( util.JSONToTable, str )
+	if (!ok) then
+		PCMod.Warning( "Could not decode JSON table: " .. tostring( result ) )
+		return nil
+	end
 	return result
 end
 
@@ -807,7 +807,7 @@ function PCMod.IPv4.IsBackbone( addr )
 end
 
 // Parse an RFC1918 LAN IPv4 (10/8, 172.16/12 or 192.168/16) into its octets,
-// 32-bit value and the legacy sub/add pair (third/fourth octet). Returns nil
+// 32-bit value and the older sub/add pair (third/fourth octet). Returns nil
 // for anything outside RFC1918.
 function PCMod.IPv4.ParseLan( addr )
 	local value = PCMod.IPv4.ToInt( addr )

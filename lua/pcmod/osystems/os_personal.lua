@@ -119,7 +119,7 @@ function OS:RunCommand( com, args )
 	// broken: a password was cut off at the first space and the text typed
 	// into a program got extra spaces in it.
 	if (!args) then
-		// legacy call with one single string ("command arg1 arg2")
+		// single-string call form: "command arg1 arg2"
 		local coms = string.Explode( " ", com )
 		com = coms[1]
 		table.remove( coms, 1 )

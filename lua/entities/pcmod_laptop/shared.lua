@@ -55,12 +55,12 @@ function ENT:Setup( setupdata )
 	
 	self:WriteFile( "system/firstrun.sys", "1" )
 	
-	// Install drivers
-	local disp = self:InstallDriver( "gen_display" ) -- Display Driver
-	local bios = self:InstallDriver( "gen_bios" ) -- Bios Driver
-	local snd = self:InstallDriver( "gen_sound" ) -- Sound Driver
-	local usb = self:InstallDriver( "gen_usb" ) -- USB Driver
-	local network = self:InstallDriver( "gen_network" ) --Network Driver
+	// Install subsystems
+	local disp = self:InstallSubsystem( "display" ) -- Display subsystem
+	local bios = self:InstallSubsystem( "bios" ) -- BIOS subsystem
+	local snd = self:InstallSubsystem( "sound" ) -- Sound subsystem
+	local usb = self:InstallSubsystem( "usb" ) -- USB subsystem
+	local network = self:InstallSubsystem( "network" ) -- Network subsystem
 	
 	// Setup the screenspace
 	if (disp) then disp:FullFlush() end
@@ -96,14 +96,14 @@ function ENT:DataRecieved( port, data )
 	end
 	local prt = self:Ports()[ port ]
 	if (!prt) then return end
-	if (prt.Type == "network") then self:PushDriverData( "gen_network", port, data ) end
-	if (prt.Type == "usb") then self:PushDriverData( "gen_usb", port, data ) end
+	if (prt.Type == "network") then self:PushSubsystemData( "network", port, data ) end
+	if (prt.Type == "usb") then self:PushSubsystemData( "usb", port, data ) end
 end
 
 function ENT:InstallProgram( progname )
-	if (self:Data().Drivers[ "gen_bios" ]) then
-		if (self:Data().Drivers[ "gen_bios" ].OS) then
-			return self:Data().Drivers[ "gen_bios" ].OS:InstallProgram( progname )
+	if (self:Data().Subsystems[ "bios" ]) then
+		if (self:Data().Subsystems[ "bios" ].OS) then
+			return self:Data().Subsystems[ "bios" ].OS:InstallProgram( progname )
 		end
 	end
 	return false

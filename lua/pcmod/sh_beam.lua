@@ -132,22 +132,33 @@ if (SERVER) then
 	end
 
 	// ---------------------------------------------------------------------------------------------------------
-	// BeamString - Sends a string to the client (larger than 255 bytes)
+	// BeamString - Sends a string to one player, or to everyone when ply is nil
 	// ---------------------------------------------------------------------------------------------------------
+	local function BeamStartUMsg( name, ply )
+		if (ply) then
+			umsg.Start( name, ply )
+		else
+			umsg.Start( name )
+		end
+	end
+
 	function PCMod.Beam.BeamString( ply, tag, str )
+		str = tostring( str or "" )
+		tag = tostring( tag or "" )
 		// Round 30 (M-03): net.WriteString can only carry 65532 bytes. A
 		// bigger payload raised an unhandled Lua error ("net.WriteString:
 		// string too long"), the message never left the server and the
 		// screenspace of that PC stayed frozen for everybody. Big payloads go
 		// through the chunked usermessage channel instead - the same one the
 		// broadcast already used, it just works for a single player as well.
-		if ((ply) && (string.len( str ) <= PCMod.Beam.MaxString)) then
-		net.Start("pcmod_stringhook")
-			net.WriteString(str);
-			net.WriteString(tag);
-		net.Send(ply)
-		else
-		
+		if (string.len( str ) <= PCMod.Beam.MaxString) then
+			net.Start( "pcmod_stringhook" )
+				net.WriteString( str )
+				net.WriteString( tag )
+			if (ply) then net.Send( ply ) else net.Broadcast() end
+			return
+		end
+
 		local rs = 230 - string.len( tag )
 		if (rs < 1) then rs = 1 end
 		local chunks = PCMod.SplitString( str, rs )
@@ -160,22 +171,18 @@ if (SERVER) then
 		end
 		if (!chunks[1]) then return end
 
-		umsg.Start( "pcmod_stringstart", ply )
+		BeamStartUMsg( "pcmod_stringstart", ply )
 			umsg.String( tag )
 			umsg.Short( #chunks )
 			umsg.String( chunks[1] )
 		umsg.End()
-		local i = 0
 		if (#chunks < 2) then return end
 		for i = 2, #chunks do
-			umsg.Start( "pcmod_stringseg", ply )
+			BeamStartUMsg( "pcmod_stringseg", ply )
 				umsg.String( tag )
 				umsg.Short( i )
 				umsg.String( chunks[ i ] )
 			umsg.End()
-		end
-		
-		
 		end
 	end
 	
@@ -210,7 +217,11 @@ if (SERVER) then
 		if (PCMod.EntData[ id ][ key ] == val) then return end
 		PCMod.EntData[ id ][ key ] = val
 		PCMod.Msg( "Beaming ent data...", true )
-		PCMod.Beam.BeamTable( ply, "entdata", PCMod.EntData[ id ] ) --nil'di ply olan kisim
+		// Entity data is global state read by every client (overlays, printer
+		// text, wireless state), so nil means broadcast. The old code passed an
+		// undeclared global `ply` here, which only worked by accident because
+		// the chunked path happened to broadcast nil.
+		PCMod.Beam.BeamTable( nil, "entdata", PCMod.EntData[ id ] )
 	end
 	
 	// ---------------------------------------------------------------------------------------------------------
@@ -220,7 +231,7 @@ if (SERVER) then
 		PCMod.Msg( "Resetting ent data (" .. id .. ")!", true )
 		PCMod.EntData[ id ] = {}
 		PCMod.EntData[ id ].ID = id
-		PCMod.Beam.BeamTable( ply, "entdata", PCMod.EntData[ id ] ) --nil'di ply olan kisim
+		PCMod.Beam.BeamTable( nil, "entdata", PCMod.EntData[ id ] )
 	end
 	
 	// ---------------------------------------------------------------------------------------------------------
@@ -324,16 +335,19 @@ if (CLIENT) then
 		local tag = um:ReadString()
 		local chunks = um:ReadShort()
 		local ca = um:ReadString()
+		if ((!tag) || (chunks < 1) || (chunks > 32000)) then return end
 		if (chunks == 1) then
 			PCMod.Msg( "Small string recieved! (" .. tag .. ")", true )
 			PCMod.Beam.CallHook( tag, ca )
+			return
 		end
-		local sdata = {}
-		sdata.Tag = tag
-		sdata.SegCnt = chunks
-		sdata.SegsR = 1
-		sdata.Segs = { ca }
-		PCMod.Beam.StrSegs[ tag ] = table.Copy( sdata )
+		PCMod.Beam.StrSegs[ tag ] = {
+			Tag = tag,
+			SegCnt = chunks,
+			SegsR = 1,
+			Segs = { ca },
+			Seen = { [ 1 ] = true },
+		}
 		PCMod.Msg( "String beam started! (" .. tag .. ")", true )
 		
 	end
@@ -346,12 +360,19 @@ if (CLIENT) then
 		local tag = um:ReadString()
 		local cid = um:ReadShort()
 		local seg = um:ReadString()
-		if (!PCMod.Beam.StrSegs[ tag ]) then return end
-		PCMod.Beam.StrSegs[ tag ].SegsR = PCMod.Beam.StrSegs[ tag ].SegsR + 1
-		PCMod.Beam.StrSegs[ tag ].Segs[ cid ] = seg
+		local stream = PCMod.Beam.StrSegs[ tag ]
+		if ((!stream) || (!cid) || (cid < 1) || (cid > stream.SegCnt)) then return end
+		// Count each index once. A duplicated segment used to inflate SegsR,
+		// falsely complete the stream, and leave a nil hole for table.concat.
+		if (!stream.Seen[ cid ]) then
+			stream.Seen[ cid ] = true
+			stream.SegsR = stream.SegsR + 1
+		end
+		stream.Segs[ cid ] = seg
 		PCMod.Msg( "String segment recieved! (" .. tag .. ")", true )
-		if (PCMod.Beam.StrSegs[ tag ].SegsR == PCMod.Beam.StrSegs[ tag ].SegCnt) then
-			local str = table.concat( PCMod.Beam.StrSegs[ tag ].Segs, "" )
+		if (stream.SegsR == stream.SegCnt) then
+			local str = table.concat( stream.Segs, "" )
+			PCMod.Beam.StrSegs[ tag ] = nil
 			PCMod.Msg( "String fully recieved! (" .. tag .. ")", true )
 			PCMod.Beam.CallHook( tag, str )
 		end

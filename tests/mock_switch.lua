@@ -53,7 +53,7 @@ local function makeSwitch( idx )
 	function ent:EntIndex() return idx end
 	function ent:IsValid() return true end
 	function ent:SetNWString( k, v ) nw[ idx ] = nw[ idx ] or {}; nw[ idx ][ k ] = v end
-	PCMod.Data[ idx ] = { Drivers = {}, HardDrive = {}, EHooks = {} }
+	PCMod.Data[ idx ] = { Subsystems = {}, HardDrive = {}, EHooks = {} }
 	return ent
 end
 

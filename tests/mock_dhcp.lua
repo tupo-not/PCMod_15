@@ -1,5 +1,5 @@
 -- Direct tests for the MAC-keyed DHCP engine (pcmod/sh_dhcp_server.lua) and
--- the entity release path (pcmod/sh_dhcp_client.lua). No router driver needed.
+-- the entity release path (pcmod/sh_dhcp_client.lua). No router subsystem needed.
 function string.Trim( s )
 	return (string.gsub( s, "^%s*(.-)%s*$", "%1" ))
 end
@@ -9,7 +9,7 @@ PCMod = {
 	Msg = function() end,
 	Cfg = { DHCPStart = 2, DHCPEnd = 10, LanNetmask = 24 },
 	Data = {},
-	DeriveDriver = function() return {} end,
+	DeriveSubsystem = function() return {} end,
 }
 
 dofile( "pcmod_sh_common.lua" )

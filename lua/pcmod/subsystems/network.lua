@@ -1,19 +1,19 @@
 
-// Network Driver for PCMod 2
+// Network subsystem for PCMod 2
 
-DRV = PCMod.DeriveDriver( "base" )
+SUBSYSTEM = PCMod.DeriveSubsystem( "base" )
 
-DRV.NiceName = "Generic Network Driver"
-DRV.Name = "gen_network"
-DRV.Type = "network"
+SUBSYSTEM.NiceName = "Generic Network"
+SUBSYSTEM.Name = "network"
+SUBSYSTEM.Type = "network"
 
-DRV.PTData = {}
-DRV.NetworkPort = 0
-DRV.WirelessEnt = nil
-DRV.WirelessPass = ""
-DRV.WirelessIPv4 = nil
+SUBSYSTEM.PTData = {}
+SUBSYSTEM.NetworkPort = 0
+SUBSYSTEM.WirelessEnt = nil
+SUBSYSTEM.WirelessPass = ""
+SUBSYSTEM.WirelessIPv4 = nil
 
-function DRV:Initialize()
+function SUBSYSTEM:Initialize()
 	if (!self.Entity) then return end
 	// A machine may have more than one Ethernet port (the tower has two).
 	// Keep them all: each can carry its own DHCP lease and segment.
@@ -28,16 +28,16 @@ function DRV:Initialize()
 	// machine does not need to know which router (or how many switches) it is
 	// attached to. Boot and cable events both trigger a fresh discover.
 	if (self.Entity.AddEHook) then
-		self.Entity:AddEHook( "driver", self.Name, "linked" )
-		self.Entity:AddEHook( "driver", self.Name, "unlinked" )
-		self.Entity:AddEHook( "driver", self.Name, "turnon" )
+		self.Entity:AddEHook( "subsystem", self.Name, "linked" )
+		self.Entity:AddEHook( "subsystem", self.Name, "unlinked" )
+		self.Entity:AddEHook( "subsystem", self.Name, "turnon" )
 	end
 end
 
 // A network cable was plugged in (or restored from a save), or the machine
 // booted. Ask for an address like a real DHCP client instead of relying on
 // router-side link topology events.
-function DRV:CallEvent( data )
+function SUBSYSTEM:CallEvent( data )
 	if ((!data) || (!data.Event)) then return end
 	if ((!self.Entity) || (!self.Entity:IsValid())) then return end
 	if (data.Event == "linked") then
@@ -58,7 +58,7 @@ function DRV:CallEvent( data )
 end
 
 // Forget a DHCP-assigned identity (primary LAN/WAN and secondaries).
-function DRV:ClearDHCPAddress()
+function SUBSYSTEM:ClearDHCPAddress()
 	local ent = self.Entity
 	if ((!ent) || (!ent.IsValid) || (!ent:IsValid())) then return false end
 	local ipdata = ent.Data && ent:Data() && ent:Data().IP
@@ -83,7 +83,7 @@ end
 
 // Per-interface DHCP client context. Keeps the shared client state machine
 // unchanged while letting each Ethernet port hold its own lease.
-function DRV:DHCPContext( port )
+function SUBSYSTEM:DHCPContext( port )
 	self.DHCPByPort = self.DHCPByPort or {}
 	local ctx = self.DHCPByPort[ port ]
 	if (!ctx) then
@@ -93,7 +93,7 @@ function DRV:DHCPContext( port )
 	return ctx
 end
 
-function DRV:LinkedNetworkPorts()
+function SUBSYSTEM:LinkedNetworkPorts()
 	local out = {}
 	if ((!self.Entity) || (!self.Entity.Ports)) then
 		if (self.NetworkPort && (self.NetworkPort != 0)) then out[ 1 ] = self.NetworkPort end
@@ -112,7 +112,7 @@ function DRV:LinkedNetworkPorts()
 end
 
 // Describe an interface lease for the UI: IPv4, matching IPv6, and family.
-function DRV:InterfaceInfo( port, cfg )
+function SUBSYSTEM:InterfaceInfo( port, cfg )
 	if ((!port) || (!cfg) || (!cfg.ip)) then return nil end
 	local info = {
 		Port = port,
@@ -147,19 +147,19 @@ function DRV:InterfaceInfo( port, cfg )
 	return info
 end
 
-function DRV:RecordInterface( port, cfg )
+function SUBSYSTEM:RecordInterface( port, cfg )
 	local info = self:InterfaceInfo( port, cfg )
 	if ((info) && self.Entity.SetInterface) then self.Entity:SetInterface( port, info ) end
 end
 
-function DRV:GetInterfaces()
+function SUBSYSTEM:GetInterfaces()
 	if (self.Entity.GetInterfaceList) then return self.Entity:GetInterfaceList() end
 	return {}
 end
 
 // Source address belonging to a specific interface. New outbound traffic uses
 // it so a reply/flow leaves with the address of the NIC that carries it.
-function DRV:SourceFor( ctx, dest )
+function SUBSYSTEM:SourceFor( ctx, dest )
 	local l = ctx && ctx.Lease
 	if ((!l) || (!l.ip)) then return nil end
 	if (PCMod.IPv6.IsIPv6( dest )) then
@@ -175,7 +175,7 @@ end
 
 // Remove the lease held by one interface. The address is kept when another
 // interface still has a lease from the same router.
-function DRV:ReleasePort( port )
+function SUBSYSTEM:ReleasePort( port )
 	local ctx = self.DHCPByPort && self.DHCPByPort[ port ]
 	if (!ctx) then return end
 	local rec = ctx.Lease
@@ -206,7 +206,7 @@ end
 
 // True when the machine has another active link besides `port` (an Ethernet
 // cable or an associated Wi-Fi router).
-function DRV:HasOtherInterface( port )
+function SUBSYSTEM:HasOtherInterface( port )
 	for _, idx in ipairs( self:LinkedNetworkPorts() ) do
 		if (idx != port) then return true end
 	end
@@ -214,7 +214,7 @@ function DRV:HasOtherInterface( port )
 	return false
 end
 
-function DRV:HasNetworkLink()
+function SUBSYSTEM:HasNetworkLink()
 	if ((!self.Entity) || (!self.Entity:IsValid())) then return false end
 	local ports = self.Entity:Ports() or {}
 	for _, port in pairs( ports ) do
@@ -228,7 +228,7 @@ end
 // private address, backbone router -> backbone host). With no port argument,
 // every linked Ethernet port asks on its own. Retries cover a cable that was
 // plugged in before the rest of the segment was ready.
-function DRV:DHCPDiscover( port, retries )
+function SUBSYSTEM:DHCPDiscover( port, retries )
 	if ((!self.Entity) || (!self.Entity:IsValid())) then return false end
 	if (port == nil) then
 		// Ask on every active interface: each Ethernet port and Wi-Fi (port 0)
@@ -275,7 +275,7 @@ function DRV:DHCPDiscover( port, retries )
 	return true
 end
 
-function DRV:HandleDHCP( port, body )
+function SUBSYSTEM:HandleDHCP( port, body )
 	local ctx = self.DHCPByPort && self.DHCPByPort[ port ]
 	if (!ctx) then return false end
 	local ok = PCMod.DHCPClient.Handle( ctx, body )
@@ -285,7 +285,7 @@ end
 
 // ARP is how a router finds us without tracking devices. Answer only for an
 // address we actually own; the reply carries our MAC.
-function DRV:HandleARP( port, body, macs )
+function SUBSYSTEM:HandleARP( port, body, macs )
 	if (!PCMod.Net.IsARP( body )) then return false end
 	if (body[2] == "request") then
 		local target = body[3]
@@ -304,20 +304,20 @@ function DRV:HandleARP( port, body, macs )
 	return true
 end
 
-function DRV:GetOSDriver( dname )
-	return PCMod.Data[ self.Entity:EntIndex() ].Drivers[ dname ]
+function SUBSYSTEM:GetOSSubsystem( name )
+	return PCMod.GetSubsystem( self.Entity:Data(), name )
 end
 
-function DRV:PacketRecieved( packet )
-	if (self:GetOSDriver( "gen_bios" ).OS) then
-		self:GetOSDriver( "gen_bios" ).OS:NetDataRecieved( packet )
+function SUBSYSTEM:PacketRecieved( packet )
+	if (self:GetOSSubsystem( "bios" ).OS) then
+		self:GetOSSubsystem( "bios" ).OS:NetDataRecieved( packet )
 	end
 end
 
 // A directly-connected peer (another PC on a crossover cable) sent us a raw
 // "sendpacket". There is no router on the link to route it, so create the packet
 // and deliver it locally when it is addressed to us.
-function DRV:DataRecieved( port, data )
+function SUBSYSTEM:DataRecieved( port, data )
 	if (istable( data ) && (data[1] == "sendpacket") && istable( data[2] )) then
 		local app = data[2][4]
 		if (istable( app ) && (app[1] == "dhcp")) then
@@ -351,7 +351,7 @@ end
 // Send one frame over the Wi-Fi link. Wireless has its own latency profile
 // and may drop the frame; the router sees the same "sendpacket" shape as a
 // cable frame.
-function DRV:DeliverWireless( data )
+function SUBSYSTEM:DeliverWireless( data )
 	local ent = self.WirelessEnt
 	if ((!ent) || (!ent.DataRecieved)) then return false end
 	local function deliver()
@@ -366,7 +366,7 @@ function DRV:DeliverWireless( data )
 	return true
 end
 
-function DRV:SendPacket( dest, port, body, ttl, src, viaWireless, forcePort )
+function SUBSYSTEM:SendPacket( dest, port, body, ttl, src, viaWireless, forcePort )
 	// Loopback is accepted in IPv4 (127.0.0.1), IPv6 (::1) and hostname form.
 	// Anything addressed to one of our own addresses is local traffic too: the
 	// kernel short-circuits it instead of putting it on the wire. Without this
@@ -426,7 +426,7 @@ end
 
 // Every active interface: linked Ethernet ports, plus Wi-Fi (port 0) when
 // allowed and associated.
-function DRV:CandidatePorts( allowWireless )
+function SUBSYSTEM:CandidatePorts( allowWireless )
 	local ports = self:LinkedNetworkPorts()
 	if (allowWireless && self:WirelessConnected()) then
 		table.insert( ports, 0 )
@@ -445,7 +445,7 @@ end
 // Choose the interface for outbound traffic: the one whose lease owns the
 // source address (replies), else the one whose subnet contains the
 // destination, else the primary identity's interface.
-function DRV:PickPort( dest, src, allowWireless )
+function SUBSYSTEM:PickPort( dest, src, allowWireless )
 	local ports = self:CandidatePorts( allowWireless )
 	if (#ports == 0) then return 0 end
 	local ctxs = self.DHCPByPort or {}
@@ -505,7 +505,7 @@ end
 // The address this PC should use when sending through its Wi-Fi router: the
 // lease that router handed out (primary when it owns our primary address,
 // otherwise the secondary it gave us).
-function DRV:GetWirelessSource( dest )
+function SUBSYSTEM:GetWirelessSource( dest )
 	local ent = self.WirelessEnt
 	if ((!ent) || (!ent:IsValid())) then return nil end
 	local ipdata = self.Entity:Data() && self.Entity:Data().IP
@@ -531,7 +531,7 @@ function DRV:GetWirelessSource( dest )
 end
 
 // The PC has an active in-range wireless link to a router.
-function DRV:WirelessConnected()
+function SUBSYSTEM:WirelessConnected()
 	local ent = self.WirelessEnt
 	if ((!ent) || (!ent:IsValid())) then return false end
 	if ((!self.Entity) || (!self.Entity:IsValid())) then return false end
@@ -545,11 +545,11 @@ end
 
 // Drop the current wireless link and unregister the PC from that router's
 // subnet (if it was registered through this link).
-function DRV:DisconnectWireless()
+function SUBSYSTEM:DisconnectWireless()
 	local ent = self.WirelessEnt
 	if ((ent) && (ent:IsValid())) then
 		local rdata = PCMod.Data[ ent:EntIndex() ]
-		local rdrv = rdata && rdata.Drivers && rdata.Drivers[ "webgr_router" ]
+		local rdrv = rdata && rdata.Subsystems && rdata.Subsystems[ "router" ]
 		if (rdrv && rdrv.RemoveWirelessClient) then rdrv:RemoveWirelessClient( self.Entity ) end
 	end
 	// Drop the Wi-Fi interface's own lease/address; a cable lease stays.
@@ -559,52 +559,52 @@ function DRV:DisconnectWireless()
 	self.WirelessIPv4 = nil
 end
 
-function DRV:GetMAC()
+function SUBSYSTEM:GetMAC()
 	return self.Entity:EnsureMAC()
 end
 
-function DRV:GetIP()
+function SUBSYSTEM:GetIP()
 	return self.Entity:GetIP()
 end
 
-function DRV:GetFullIP()
+function SUBSYSTEM:GetFullIP()
 	return self.Entity:GetFullIP()
 end
 
 // Secondary addresses (leases from other routers this device is linked to).
-function DRV:GetExtraAddresses()
+function SUBSYSTEM:GetExtraAddresses()
 	if (self.Entity.GetExtraAddresses) then return self.Entity:GetExtraAddresses() end
 	return {}
 end
 
-function DRV:GetIPv6()
+function SUBSYSTEM:GetIPv6()
 	return self.Entity:GetIPv6()
 end
 
-function DRV:GetIPv6Prefix()
+function SUBSYSTEM:GetIPv6Prefix()
 	return self.Entity:GetIPv6Prefix()
 end
 
-function DRV:GetIPv6Gateway()
+function SUBSYSTEM:GetIPv6Gateway()
 	return self.Entity:GetIPv6Gateway()
 end
 
-function DRV:GetIPv6LinkLocal()
+function SUBSYSTEM:GetIPv6LinkLocal()
 	return self.Entity:GetIPv6LinkLocal()
 end
 
-function DRV:GetBIPv6Prefix()
+function SUBSYSTEM:GetBIPv6Prefix()
 	return self.Entity:GetBIPv6Prefix()
 end
 
-function DRV:GetBIPv6()
+function SUBSYSTEM:GetBIPv6()
 	return self.Entity:GetBIPv6()
 end
 
-function DRV:GetBIPv6Gateway()
+function SUBSYSTEM:GetBIPv6Gateway()
 	return self.Entity:GetBIPv6Gateway()
 end
 
-function DRV:GetBIPv6LinkLocal()
+function SUBSYSTEM:GetBIPv6LinkLocal()
 	return self.Entity:GetBIPv6LinkLocal()
 end

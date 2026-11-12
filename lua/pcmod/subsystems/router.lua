@@ -1,30 +1,30 @@
 
-// Router Control Driver for PCMod 2 (This is for the router, not the pc)
+// Router subsystem for PCMod 2 (This is for the router, not the pc)
 
-DRV = PCMod.DeriveDriver( "base" )
+SUBSYSTEM = PCMod.DeriveSubsystem( "base" )
 
-DRV.NiceName = "WebGear Router Core"
-DRV.Name = "webgr_router"
-DRV.Type = "networking"
-DRV.ID = 0
-DRV.LAN = {}
-DRV.BLAN = {}
-DRV.NPorts = {}
-DRV.OPorts = {}
-DRV.BSubnet = nil
-DRV.Subnet = nil
-DRV.Wireless = false
+SUBSYSTEM.NiceName = "WebGear Router Core"
+SUBSYSTEM.Name = "router"
+SUBSYSTEM.Type = "networking"
+SUBSYSTEM.ID = 0
+SUBSYSTEM.LAN = {}
+SUBSYSTEM.BLAN = {}
+SUBSYSTEM.NPorts = {}
+SUBSYSTEM.OPorts = {}
+SUBSYSTEM.BSubnet = nil
+SUBSYSTEM.Subnet = nil
+SUBSYSTEM.Wireless = false
 // PCs ("stations") connected to this router over the air, keyed by ent index.
-DRV.WirelessClients = {}
+SUBSYSTEM.WirelessClients = {}
 
-function DRV:Initialize()
+function SUBSYSTEM:Initialize()
 	if (!self.Entity) then return end
 	
 	PCMod.Msg( "Initializing WebGear Router Core..", true )
 	
 	// Hook in our events
-	self.Entity:AddEHook( "driver", self.Name, "linked" ) -- Something has been linked up
-	self.Entity:AddEHook( "driver", self.Name, "unlinked" ) -- Something has been unlinked
+	self.Entity:AddEHook( "subsystem", self.Name, "linked" ) -- Something has been linked up
+	self.Entity:AddEHook( "subsystem", self.Name, "unlinked" ) -- Something has been unlinked
 	
 	// Get a list of valid ports. The WAN side is fibre on the LAN modem and a
 	// flagged Ethernet port on the Router variant, so split by role instead
@@ -83,14 +83,14 @@ function DRV:Initialize()
 	end
 end
 
-function DRV:PortSide( port )
+function SUBSYSTEM:PortSide( port )
 	if (table.HasValue( self.NPorts, port )) then return "lan" end
 	if (table.HasValue( self.OPorts, port )) then return "wan" end
 	if (port == 0) then return "lan" end
 	return nil
 end
 
-function DRV:InterfaceIP( side )
+function SUBSYSTEM:InterfaceIP( side )
 	if (side == "wan") then return (self.Entity.GetFullBIP && self.Entity:GetFullBIP()) or "0.0.0.0" end
 	// A backbone's LAN-side interface is the MGMNT port; it shares the
 	// backbone /24 and answers as the router's .1 address.
@@ -104,7 +104,7 @@ end
 // IPv6 source for neighbor discovery on an interface. A backbone uses its
 // backbone /32 identity on both the fibre and MGMNT segments; a LAN router
 // uses its LAN /64 address on the LAN side.
-function DRV:InterfaceIPv6( side )
+function SUBSYSTEM:InterfaceIPv6( side )
 	if ((side == "wan") || self:IsBackbone()) then
 		return (self.Entity.GetBIPv6 && self.Entity:GetBIPv6()) or false
 	end
@@ -113,12 +113,12 @@ end
 
 // Send a raw frame out one port. Wireless has no port index; deliver to the
 // associated clients and let their DHCP/ARP state filter the frame.
-function DRV:SendOnPort( port, data )
+function SUBSYSTEM:SendOnPort( port, data )
 	if (port == 0) then
 		for _, pc in pairs( self.WirelessClients or {} ) do
 			if ((pc) && (pc.IsValid) && (pc:IsValid())) then
 				local cd = PCMod.Data[ pc:EntIndex() ]
-				local net = cd && cd.Drivers && cd.Drivers[ "gen_network" ]
+				local net = cd && cd.Subsystems && cd.Subsystems[ "network" ]
 				if (net) then
 					local function deliver()
 						if ((pc.IsValid) && (pc:IsValid())) then net:DataRecieved( 0, data ) end
@@ -138,7 +138,7 @@ function DRV:SendOnPort( port, data )
 	self.Entity:PushData( port, data )
 end
 
-function DRV:DataRecieved( port, data )
+function SUBSYSTEM:DataRecieved( port, data )
 	PCMod.Msg( "[webgr]Checking Ports", true )
 	// DHCP, ARP and routing hellos are application frames. Switches/modems
 	// forward them as ordinary L2 traffic; only routers interpret them.
@@ -164,7 +164,7 @@ function DRV:DataRecieved( port, data )
 	// Data is from another port unrelated to us
 end
 
-function DRV:DHCPServerReceive( port, app, macs )
+function SUBSYSTEM:DHCPServerReceive( port, app, macs )
 	local side = self:PortSide( port )
 	if (!side) then return false end
 	local payload = app[5] or {}
@@ -182,7 +182,7 @@ function DRV:DHCPServerReceive( port, app, macs )
 	return true
 end
 
-function DRV:DHCPServerRequest( port, app, macs )
+function SUBSYSTEM:DHCPServerRequest( port, app, macs )
 	local side = self:PortSide( port )
 	if (!side) then return false end
 	// The client names the server whose offer it accepted; other servers that
@@ -213,21 +213,21 @@ function DRV:DHCPServerRequest( port, app, macs )
 	return true
 end
 
-function DRV:DHCPServerRelease( app )
+function SUBSYSTEM:DHCPServerRelease( app )
 	local payload = app[5] or {}
 	PCMod.DHCPServer.Release( self, payload.mac )
 	return true
 end
 
 // Offer/ack meant for this router when it is itself a DHCP client on WAN.
-function DRV:DHCPClientReceive( port, app )
+function SUBSYSTEM:DHCPClientReceive( port, app )
 	if (!self.DHCPState) then return false end
 	return PCMod.DHCPClient.Handle( self, app )
 end
 
 // Ask upstream for this router's own WAN address. The same discover as any
 // host; the answer carries the backbone id and the /64 id it may use.
-function DRV:SendDHCPDiscover( port, retries )
+function SUBSYSTEM:SendDHCPDiscover( port, retries )
 	retries = retries or 3
 	local p = self.Entity:Ports()[ port ]
 	if ((!p) || (!p.Connected)) then return false end
@@ -259,7 +259,7 @@ end
 // Resolve the last hop with the matching discovery protocol, then send. ARP
 // answers "who has this IPv4"; NDP answers "who has this IPv6". Unknown hosts
 // fall back to flooding the interface; switches do the L2 filtering.
-function DRV:DeliverOnInterface( pid, packet, pass, ports, side )
+function SUBSYSTEM:DeliverOnInterface( pid, packet, pass, ports, side )
 	if ((!ports) || (#ports == 0)) then return false end
 	local rec
 	if (PCMod.IPv6.IsIPv6( packet.Dest )) then
@@ -286,7 +286,7 @@ function DRV:DeliverOnInterface( pid, packet, pass, ports, side )
 	return true
 end
 
-function DRV:PushToRouted( pid, packet, pass, port, bb )
+function SUBSYSTEM:PushToRouted( pid, packet, pass, port, bb )
 	if (!port) then return false end
 	// Use the MAC of the immediate next-hop backbone, not the far destination.
 	local route = self.Routes && self.Routes[ bb ]
@@ -297,7 +297,7 @@ function DRV:PushToRouted( pid, packet, pass, port, bb )
 	return true
 end
 
-function DRV:Process( data, side )
+function SUBSYSTEM:Process( data, side )
 	PCMod.Msg( "[webgr]Data check " .. self.Entity:GetClass() .. " " .. tostring(self.Subnet) .. " (" .. tostring(self.BSubnet) .. ")", true )
 	PCMod.Msg( table.ToString(data, "data", false), true )
 	// Round 28 (M-06): the old guard was
@@ -309,8 +309,8 @@ function DRV:Process( data, side )
 	if (!data[1] || (table.maxn( data ) < 2)) then return end
 	local tag = data[1]
 	local body = data[2]
-	// PCMod.Msg( "Router Driver is processing this packet ["..tag.."] { "..body[1]..", "..body[2]..", "..body[3]..", "..body[4].." }", true )
-	PCMod.Msg( "[webgr] Router Driver is processing this packet [" .. tag .. "]", true )
+	// PCMod.Msg( "Router subsystem is processing this packet ["..tag.."] { "..body[1]..", "..body[2]..", "..body[3]..", "..body[4].." }", true )
+	PCMod.Msg( "[router] Router subsystem is processing this packet [" .. tag .. "]", true )
 	PCMod.Msg( "[webgr] Body datatype: " .. type( data ) .. " " .. tostring(body), true )
 	if ((tag == "sendpacket") && (type( body ) == "table")) then
 		local macs = data[4] or {}
@@ -335,7 +335,7 @@ end
 // address space: backbone 100.x vs any RFC1918 LAN. The OnLink flags matter
 // because an unknown on-link IPv6 host must be dropped, while a LAN address
 // that belongs to a different router still has to be forwarded.
-function DRV:ClassifyDestination( dest )
+function SUBSYSTEM:ClassifyDestination( dest )
 	local dest6 = PCMod.IPv6.IsIPv6( dest )
 	local dest4 = PCMod.IPv6.ToIPv4( dest ) or dest
 	local toBackbone = false
@@ -373,7 +373,7 @@ function DRV:ClassifyDestination( dest )
 end
 
 // Short label shown next to a traceroute hop.
-function DRV:TraceLabel()
+function SUBSYSTEM:TraceLabel()
 	if (self.Wireless) then return "WRTR" end
 	if (self.Entity.GetClass && (self.Entity:GetClass() == "pcmod_brouter")) then return "BRTR" end
 	return "RTR"
@@ -382,7 +382,7 @@ end
 // The address a traceroute hop reply should come from. A reply to a LAN-side
 // probe uses the LAN gateway (the address that host knows); a reply to a
 // backbone-side probe uses the WAN/backbone address so the reply routes back.
-function DRV:TraceReplySource( packet, side )
+function SUBSYSTEM:TraceReplySource( packet, side )
 	local v6 = PCMod.IPv6.IsIPv6( packet.Source )
 	local sip
 	if (side == "lan") then
@@ -412,7 +412,7 @@ end
 // Report an expired traceroute probe to its sender: { netTraceHop, hk, thdl,
 // hopAddress, hopLabel, hopNumber }. The reply keeps the probe's source port so
 // it traverses the sender's NAT correctly.
-function DRV:SendTraceHop( packet, side )
+function SUBSYSTEM:SendTraceHop( packet, side )
 	local sip, sid = self:TraceReplySource( packet, side )
 	if (!sip) then return false end
 	local hk = packet.Body && packet.Body[2]
@@ -425,7 +425,7 @@ end
 
 // Consume one TTL for a forwarded packet. Returns false when the packet died
 // here (and, for traceroute probes, a hop report was sent).
-function DRV:CheckTTL( packet, side )
+function SUBSYSTEM:CheckTTL( packet, side )
 	local ttl = tonumber( packet.TTL ) or tonumber( PCMod.Cfg && PCMod.Cfg.DefaultTTL ) or 64
 	if (ttl <= 1) then
 		if ((packet.Body) && (packet.Body[1] == "netTrace")) then
@@ -438,7 +438,7 @@ function DRV:CheckTTL( packet, side )
 	return true
 end
 
-function DRV:ProcessPacket( pid, pass, side )
+function SUBSYSTEM:ProcessPacket( pid, pass, side )
 	pass = (pass or 0) + 1
 	// Round 19 (AUDIT2 A-01): the nil guard must run BEFORE `pid > MaxNetworkPid` -
 	// comparing nil with a number raises a Lua error at language level. Order is
@@ -673,7 +673,7 @@ function DRV:ProcessPacket( pid, pass, side )
 	PCMod.Msg( "[webgr]No uplink for IPv6 target " .. tostring( packet.Dest ) .. "; dropping", true )
 end
 
-function DRV:CallEvent( data )
+function SUBSYSTEM:CallEvent( data )
 	if ((!data) || (!data.Event)) then return end
 	PCMod.Msg( "[webgr]An event was called(" .. table.ToString(data) .. ")", true )
 	local e = data.Event
@@ -708,7 +708,7 @@ function DRV:CallEvent( data )
 			peerEnt:SetUpBB( 0 )
 			peerEnt:SetLanID( 0 )
 			local cdata = PCMod.Data[ peerEnt:EntIndex() ]
-			local child = cdata && cdata.Drivers && cdata.Drivers[ "webgr_router" ]
+			local child = cdata && cdata.Subsystems && cdata.Subsystems[ "router" ]
 			if (child && child.ReconfigureClients) then child:ReconfigureClients() end
 		elseif ((cls == "pcmod_brouter") && (peer == "pcmod_brouter")) then
 			local pbb = peerEnt:GetBSubnet()
@@ -749,29 +749,29 @@ end
 
 // ---------------------------------------------------------------------------
 // DHCP delegation. Leases live in the MAC-keyed engine; these methods keep the
-// driver-facing names and apply the result to an entity.
+// subsystem-facing names and apply the result to an entity.
 // ---------------------------------------------------------------------------
 
-function DRV:DHCPPool( scope )
+function SUBSYSTEM:DHCPPool( scope )
 	return PCMod.DHCPServer.Pool( self, scope )
 end
 
 // The scope this router hands leases out on: a backbone serves the backbone
 // segment, a LAN router serves its own RFC1918 segment.
-function DRV:LeaseScope()
+function SUBSYSTEM:LeaseScope()
 	return self:IsBackbone() and "wan" or "lan"
 end
 
-function DRV:StaticLeases() return PCMod.DHCPServer.StaticList( self, self:LeaseScope() ) end
-function DRV:StaticLeaseForMAC( mac ) return PCMod.DHCPServer.StaticForMAC( self, self:LeaseScope(), mac ) end
-function DRV:DynamicLeases() return PCMod.DHCPServer.List( self, self:LeaseScope() ) end
-function DRV:AddStaticLease( ip, mac ) return PCMod.DHCPServer.AddStatic( self, self:LeaseScope(), ip, mac ) end
-function DRV:DeleteStaticLease( idx ) return PCMod.DHCPServer.DeleteStatic( self, self:LeaseScope(), idx ) end
+function SUBSYSTEM:StaticLeases() return PCMod.DHCPServer.StaticList( self, self:LeaseScope() ) end
+function SUBSYSTEM:StaticLeaseForMAC( mac ) return PCMod.DHCPServer.StaticForMAC( self, self:LeaseScope(), mac ) end
+function SUBSYSTEM:DynamicLeases() return PCMod.DHCPServer.List( self, self:LeaseScope() ) end
+function SUBSYSTEM:AddStaticLease( ip, mac ) return PCMod.DHCPServer.AddStatic( self, self:LeaseScope(), ip, mac ) end
+function SUBSYSTEM:DeleteStaticLease( idx ) return PCMod.DHCPServer.DeleteStatic( self, self:LeaseScope(), idx ) end
 
 // Release every LAN lease that arrived on this router port. Multi-NIC hosts
 // hold one lease per interface, so a cable event must only drop the lease for
 // the interface that was unplugged.
-function DRV:ReleaseLeasesOnPort( port )
+function SUBSYSTEM:ReleaseLeasesOnPort( port )
 	if (port == nil) then return false end
 	local c = PCMod.DHCPServer.Cfg( self )
 	local drop = {}
@@ -786,7 +786,7 @@ end
 
 // Find a live entity by its hardware address. The engine stores only MACs, so
 // re-addressing after a LAN change looks the device up here.
-function DRV:EntityForMAC( mac )
+function SUBSYSTEM:EntityForMAC( mac )
 	mac = PCMod.Net.MACKey( mac )
 	if (!mac) then return nil end
 	for _, data in pairs( PCMod.Data or {} ) do
@@ -803,14 +803,14 @@ function DRV:EntityForMAC( mac )
 end
 
 // Put an existing lease record onto the device that owns it.
-function DRV:ApplyLease( scope, rec, ent )
+function SUBSYSTEM:ApplyLease( scope, rec, ent )
 	if ((!rec) || (!ent)) then return false end
 	return PCMod.DHCPClient.ApplyHost( ent, PCMod.DHCPServer.Config( self, rec ) )
 end
 
 // Reserve and immediately apply a lease. The DORA path uses Offer/Ack; this
 // synchronous form is for renumbering and the control panel.
-function DRV:AssignDHCP( scope, pc, port )
+function SUBSYSTEM:AssignDHCP( scope, pc, port )
 	if ((!pc) || (!pc:IsValid())) then return nil end
 	local mac = pc.GetMAC && pc:GetMAC()
 	local rec = PCMod.DHCPServer.Lease( self, scope, mac, port )
@@ -819,7 +819,7 @@ function DRV:AssignDHCP( scope, pc, port )
 	return rec.host
 end
 
-function DRV:ReleaseDHCP( scope, pc )
+function SUBSYSTEM:ReleaseDHCP( scope, pc )
 	if ((!pc) || (!pc.IsValid) || (!pc:IsValid())) then return end
 	local mac = pc.GetMAC && pc:GetMAC()
 	local rec = mac && PCMod.DHCPServer.Find( self, scope, mac )
@@ -829,7 +829,7 @@ function DRV:ReleaseDHCP( scope, pc )
 	return rec.host
 end
 
-function DRV:RenewDHCP( scope, pc )
+function SUBSYSTEM:RenewDHCP( scope, pc )
 	if ((!pc) || (!pc:IsValid())) then return nil end
 	local mac = pc.GetMAC && pc:GetMAC()
 	local rec = mac && PCMod.DHCPServer.Find( self, scope, mac )
@@ -840,7 +840,7 @@ function DRV:RenewDHCP( scope, pc )
 	return rec.host
 end
 
-function DRV:HasDHCPLease( scope, pc )
+function SUBSYSTEM:HasDHCPLease( scope, pc )
 	if (!pc) then return false end
 	local mac = pc.GetMAC && pc:GetMAC()
 	if (mac && PCMod.DHCPServer.Find( self, scope, mac )) then return true end
@@ -851,19 +851,19 @@ function DRV:HasDHCPLease( scope, pc )
 	return false
 end
 
-function DRV:HasLeaseForMAC( scope, mac )
+function SUBSYSTEM:HasLeaseForMAC( scope, mac )
 	if (!mac) then return false end
 	return (PCMod.DHCPServer.Find( self, scope, mac ) != nil)
 end
 
-function DRV:HasLease( pc )
+function SUBSYSTEM:HasLease( pc )
 	return self:HasDHCPLease( "lan", pc )
 end
 
 // True when the device on this port (or anything behind a switch on it) owns
 // the address. Returned port stays the router's own port, so delivery still
 // goes through the switch.
-function DRV:PortMatchesAddress( port, ip )
+function SUBSYSTEM:PortMatchesAddress( port, ip )
 	local ent = port && port.ConEnt
 	if (!ent) then return false end
 	if (ent.IsAddressedTo && ent:IsAddressedTo( ip )) then return true end
@@ -876,7 +876,7 @@ function DRV:PortMatchesAddress( port, ip )
 	return false
 end
 
-function DRV:HasRouter( ip )
+function SUBSYSTEM:HasRouter( ip )
 	PCMod.Msg( "[webgr]looking for router " .. ip, true )
 	for k, v in pairs( self.BLAN ) do
 		if (v.Connected) then
@@ -889,7 +889,7 @@ function DRV:HasRouter( ip )
 	return false
 end
 
-function DRV:HasPC( ip )
+function SUBSYSTEM:HasPC( ip )
 	PCMod.Msg( "[webgr]looking for pc " .. tostring( ip ), true )
 	for k, v in pairs( self.LAN ) do
 		if (v.Connected) then
@@ -904,8 +904,8 @@ end
 
 // True when the PC is cabled to this router, directly or through a switch.
 // Leases remember whether they arrived on a wired port, so no topology scan
-// is needed; the direct-port check remains for legacy/no-DHCP clients.
-function DRV:IsWiredClient( pc )
+// is needed; the direct-port check remains for clients without DHCP.
+function SUBSYSTEM:IsWiredClient( pc )
 	if ((!pc) || (!pc:IsValid())) then return false end
 	if (pc.GetMAC && PCMod.DHCPServer) then
 		local rec = PCMod.DHCPServer.Find( self, "lan", pc:GetMAC() )
@@ -928,7 +928,7 @@ function DRV:IsWiredClient( pc )
 end
 
 // True when the PC is joined to this router over Wi-Fi.
-function DRV:HasWirelessClient( pc )
+function SUBSYSTEM:HasWirelessClient( pc )
 	if (!pc) then return false end
 	return ((self.WirelessClients) && (self.WirelessClients[ pc:EntIndex() ] != nil)) or false
 end
@@ -936,7 +936,7 @@ end
 // Register a PC that connected to this router over Wi-Fi. Association only
 // handles authentication/range; the client gets its address from DHCP like
 // any other host, so nothing is leased here.
-function DRV:AddWirelessClient( pc )
+function SUBSYSTEM:AddWirelessClient( pc )
 	if ((!pc) || (!pc:IsValid())) then return false end
 	if (!self.WirelessClients) then self.WirelessClients = {} end
 	self.WirelessClients[ pc:EntIndex() ] = pc
@@ -947,7 +947,7 @@ end
 // "Renew" button uses this to pick up the router's current pool/netmask
 // without physically relinking the device. A client with no recorded lease is
 // treated like a fresh link, so a stale lease table self-heals.
-function DRV:RenewLease( pc )
+function SUBSYSTEM:RenewLease( pc )
 	// A backbone router only hands out backbone hosts. Renewing there in the
 	// LAN scope used to invent a LAN lease that the device could not even use.
 	if (self:IsBackbone()) then
@@ -960,23 +960,23 @@ function DRV:RenewLease( pc )
 end
 
 // Netmask prefix for this router's private LAN, anywhere in 16-32.
-function DRV:GetLanNetmask()
+function SUBSYSTEM:GetLanNetmask()
 	local m = tonumber( self:GetCfg().LanNetmask ) or 24
 	return math.Clamp( math.floor( m ), 16, 32 )
 end
 
 // The third octet of the LAN network (0-255), derived from the full base.
-function DRV:GetLanNet()
+function SUBSYSTEM:GetLanNet()
 	return math.floor( self:GetLanBase() / 256 ) % 256
 end
 
 // The fourth octet of the LAN network, derived from the full base.
-function DRV:GetLanLow()
+function SUBSYSTEM:GetLanLow()
 	return self:GetLanBase() % 256
 end
 
 // Number of addresses in one subnet of the given mask.
-function DRV:LanBlockSize( mask )
+function SUBSYSTEM:LanBlockSize( mask )
 	mask = math.Clamp( math.floor( tonumber( mask ) or self:GetLanNetmask() ), 16, 32 )
 	return 2 ^ (32 - mask)
 end
@@ -984,19 +984,19 @@ end
 // Align a full 32-bit LAN base to the subnet size. Masks stay in 16-32, so a
 // LAN subnet always sits inside one RFC1918 block and its host space fits the
 // 16-bit IID used by the emulated IPv6 layer.
-function DRV:ComputeLanBase( mask, base )
+function SUBSYSTEM:ComputeLanBase( mask, base )
 	mask = math.Clamp( math.floor( tonumber( mask ) or self:GetLanNetmask() ), 16, 32 )
 	base = math.floor( tonumber( base ) or tonumber( self:GetCfg().LanBase ) or 0 )
 	local size = self:LanBlockSize( mask )
 	return math.floor( base / size ) * size
 end
 
-function DRV:GetLanBase( mask )
+function SUBSYSTEM:GetLanBase( mask )
 	return self:ComputeLanBase( mask or self:GetLanNetmask(), self:GetCfg().LanBase )
 end
 
 // Human-readable LAN prefix, e.g. "192.168.5.0/24" or "10.20.0.0/16".
-function DRV:GetLanPrefix( mask, base )
+function SUBSYSTEM:GetLanPrefix( mask, base )
 	local m = math.Clamp( math.floor( tonumber( mask ) or self:GetLanNetmask() ), 16, 32 )
 	base = self:ComputeLanBase( m, base or self:GetCfg().LanBase )
 	return PCMod.IPv4.FromInt( base ) .. "/" .. tostring( m )
@@ -1004,13 +1004,13 @@ end
 
 // Last leaseable host id within the subnet. Host 1 is the gateway and the last
 // address is the broadcast, so a /30 has a single client (id 2).
-function DRV:PoolMax()
+function SUBSYSTEM:PoolMax()
 	return math.max( 2, self:LanBlockSize() - 2 )
 end
 
 // Keep the pool inside the current subnet and ordered. Host 1 is the gateway,
 // so the first leaseable id is always 2.
-function DRV:ClampDHCPPool()
+function SUBSYSTEM:ClampDHCPPool()
 	local c = self:GetCfg()
 	local max = self:PoolMax()
 	local start = tonumber( c.DHCPStart ) or 2
@@ -1024,7 +1024,7 @@ end
 // Move this router's own LAN gateway onto the configured network. A backbone
 // has no LAN; its MGMNT segment shares the backbone /24 and uses the backbone
 // address itself as the gateway.
-function DRV:ApplyLanAddress()
+function SUBSYSTEM:ApplyLanAddress()
 	if (self:IsBackbone()) then return end
 	local addr = self:GetLanBase() + 1
 	if (self.Entity.SetLanAddress) then
@@ -1037,7 +1037,7 @@ end
 
 // Re-issue every LAN lease after the addressing changed. Addresses derive from
 // the host id, so the engine recomputes them and each live owner is re-applied.
-function DRV:RenumberLeases()
+function SUBSYSTEM:RenumberLeases()
 	local dropped = PCMod.DHCPServer.Reflow( self, "lan" )
 	PCMod.DHCPServer.Readdress( self, "lan" )
 	for mac, rec in pairs( PCMod.DHCPServer.Cfg( self ).Leases ) do
@@ -1054,7 +1054,7 @@ end
 
 // Change the LAN subnet size (16-32). Existing leases are renumbered onto the
 // new block and the pool is clamped to it.
-function DRV:SetLanNetmask( mask )
+function SUBSYSTEM:SetLanNetmask( mask )
 	mask = math.Clamp( math.floor( tonumber( mask ) or 24 ), 16, 32 )
 	local c = self:GetCfg()
 	if (mask == self:GetLanNetmask()) then return end
@@ -1070,8 +1070,8 @@ function DRV:SetLanNetmask( mask )
 end
 
 // Change the third octet of the LAN network (0-255), keeping the first two
-// octets. Kept for the legacy web field; `lanaddr` sets the full base.
-function DRV:SetLanNet( net )
+// octets. Kept for the web field; `lanaddr` sets the full base.
+function SUBSYSTEM:SetLanNet( net )
 	local n = math.Clamp( math.floor( tonumber( net ) or 0 ), 0, 255 )
 	local base = self:GetLanBase()
 	local newBase = (base - (base % 65536)) + (n * 256)
@@ -1081,7 +1081,7 @@ end
 // Move the LAN network anywhere inside RFC1918. The base is aligned to the
 // subnet size and stored as a full 32-bit value; LanNet/LanLow stay in sync for
 // older saves and displays.
-function DRV:SetLanBase( base )
+function SUBSYSTEM:SetLanBase( base )
 	local c = self:GetCfg()
 	local oldBase = self:GetLanBase()
 	local aligned = PCMod.IPv4.ClampPrivate( base, self:GetLanNetmask() )
@@ -1103,21 +1103,21 @@ end
 
 // LAN-scope aliases. The engine itself is scope-aware; these names exist
 // because most callers only ever deal with their own LAN.
-function DRV:AssignLease( pc )
+function SUBSYSTEM:AssignLease( pc )
 	return self:AssignDHCP( "lan", pc )
 end
 
-function DRV:ReleaseLease( pc )
+function SUBSYSTEM:ReleaseLease( pc )
 	return self:ReleaseDHCP( "lan", pc )
 end
 
 // A new /64 id within this backbone's /32 (one per attached LAN router).
-function DRV:NextLanID()
+function SUBSYSTEM:NextLanID()
 	self.NextLan = (self.NextLan or 0) + 1
 	return self.NextLan
 end
 
-function DRV:IsBackbone()
+function SUBSYSTEM:IsBackbone()
 	return ((self.Entity != nil) && (self.Entity.GetClass != nil) && (self.Entity:GetClass() == "pcmod_brouter"))
 end
 
@@ -1127,7 +1127,7 @@ end
 // sources are all denied by default. Normal forwarding is unaffected (the
 // backbone firewall stays in its default-allow state) and the router's own
 // generated replies never pass through this check.
-function DRV:BackboneWebAllowed( source )
+function SUBSYSTEM:BackboneWebAllowed( source )
 	if (!self:IsBackbone()) then return true end
 	if (self:GetCfg().WebGuard == false) then return true end
 	local ip = source
@@ -1141,7 +1141,7 @@ end
 
 // Re-push this router's own /32 + /64 onto every client lease (a LAN router
 // renumbers its LAN when its upstream changes).
-function DRV:ReconfigureClients()
+function SUBSYSTEM:ReconfigureClients()
 	local ip = self.Entity:Data().IP
 	local upbb = ip.UpBB or 0
 	local lanid = ip.LanID or 0
@@ -1158,7 +1158,7 @@ end
 
 // Renumber one client for this router: its primary address when we handed it
 // out, otherwise the secondary lease it holds from us.
-function DRV:PushClientConfig( pc, upbb, lanid )
+function SUBSYSTEM:PushClientConfig( pc, upbb, lanid )
 	local ipdata = pc.Data && pc:Data() && pc:Data().IP
 	if (ipdata && ((ipdata.Router == self.Entity:EntIndex()) || (ipdata.Router == nil) || (ipdata.Router == false))) then
 		if (pc.SetUpBB) then pc:SetUpBB( upbb ) end
@@ -1175,7 +1175,7 @@ end
 // { dist = hops, via = neighbor /32 }, seeded from direct neighbours, and all
 // backbones reconverge whenever the backbone graph changes.
 // ---------------------------------------------------------------------------
-function DRV:RecalcRoutes()
+function SUBSYSTEM:RecalcRoutes()
 	if (!self:IsBackbone()) then return end
 	local mybb = self.Entity:GetBSubnet()
 	local routes = {}
@@ -1212,7 +1212,7 @@ end
 // Distance vector for a hello. `excludeBB` implements split horizon: routes
 // learned through that neighbour are not advertised back to it, which prevents
 // two backbones from reviving a dead path by pointing at each other.
-function DRV:GetDV( excludeBB )
+function SUBSYSTEM:GetDV( excludeBB )
 	local dv = {}
 	for bb, r in pairs( self.Routes or {} ) do
 		if ((!excludeBB) || (r.via != excludeBB)) then dv[ bb ] = r.dist end
@@ -1220,7 +1220,7 @@ function DRV:GetDV( excludeBB )
 	return dv
 end
 
-function DRV:NeighborDrv( port )
+function SUBSYSTEM:NeighborDrv( port )
 	local p = port
 	if (type( p ) == "number") then
 		local ports = self.Entity.Ports && self.Entity:Ports()
@@ -1229,12 +1229,12 @@ function DRV:NeighborDrv( port )
 	local ent = p && p.ConEnt
 	if ((!ent) || (!ent:IsValid())) then return nil end
 	local data = PCMod.Data[ ent:EntIndex() ]
-	return data && data.Drivers && data.Drivers[ "webgr_router" ]
+	return data && data.Subsystems && data.Subsystems[ "router" ]
 end
 
 // Push this router's distance vector to every neighbouring backbone, with
 // split horizon so a route is never sent back the way it was learned.
-function DRV:AdvertiseRoutes()
+function SUBSYSTEM:AdvertiseRoutes()
 	if (!self:IsBackbone()) then return end
 	for bb, port in pairs( self.Neighbors or {} ) do
 		local drv = self:NeighborDrv( port )
@@ -1244,7 +1244,7 @@ end
 
 // Merge a neighbour's distance vector and recompute the table. Keeping the
 // last advertisement per neighbour lets RecalcRoutes relax multi-hop paths.
-function DRV:RecvRoutes( fromBB, dv )
+function SUBSYSTEM:RecvRoutes( fromBB, dv )
 	if (!self:IsBackbone()) then return end
 	if (!fromBB) then return end
 	self.RouteAdv = self.RouteAdv or {}
@@ -1259,7 +1259,7 @@ function DRV:RecvRoutes( fromBB, dv )
 end
 
 // True when two distance-vector tables disagree about any destination.
-function DRV:RoutesDiffer( a, b )
+function SUBSYSTEM:RoutesDiffer( a, b )
 	if ((!a) || (!b)) then return true end
 	for bb, r in pairs( a ) do
 		local o = b[ bb ]
@@ -1272,13 +1272,13 @@ function DRV:RoutesDiffer( a, b )
 end
 
 // The next-hop optic port for an IPv6 /32 destination (nil = no route).
-function DRV:RouteForBB( bb )
+function SUBSYSTEM:RouteForBB( bb )
 	local r = self.Routes && self.Routes[ bb ]
 	if ((!r) || (!r.via)) then return nil end
 	return self.Neighbors && self.Neighbors[ r.via ]
 end
 
-function DRV:RemoveWirelessClient( pc )
+function SUBSYSTEM:RemoveWirelessClient( pc )
 	if ((!pc) || (!pc:IsValid())) then return end
 	if (self.WirelessClients && self.WirelessClients[ pc:EntIndex() ]) then
 		self.WirelessClients[ pc:EntIndex() ] = nil
@@ -1308,13 +1308,13 @@ end
 
 // Deliver an in-flight packet to a Wi-Fi client on this router. Returns true
 // when a client claimed it (and the packet is marked delivered).
-function DRV:DeliverToWirelessClient( packet )
+function SUBSYSTEM:DeliverToWirelessClient( packet )
 	for _, pc in pairs( self.WirelessClients or {} ) do
 		if ((pc) && (pc:IsValid()) && (pc.IsAddressedTo) && (pc:IsAddressedTo( packet.Dest ))) then
 			packet.Delivered = true
 			packet.ViaWireless = true
 			local data = PCMod.Data[ pc:EntIndex() ]
-			local drv = data && data.Drivers && data.Drivers[ "gen_network" ]
+			local drv = data && data.Subsystems && data.Subsystems[ "network" ]
 			if (drv) then
 				local function deliver()
 					if ((pc.IsValid) && (pc:IsValid())) then drv:PacketRecieved( packet ) end
@@ -1335,24 +1335,24 @@ end
 
 // Emulated IPv6 view of this router. The router's own address is the ::1
 // gateway of its LAN/backbone /64, and GetIPv6Prefix is that /64.
-function DRV:GetIPv6()
+function SUBSYSTEM:GetIPv6()
 	return self.Entity:GetIPv6()
 end
 
-function DRV:GetIPv6Prefix()
+function SUBSYSTEM:GetIPv6Prefix()
 	return self.Entity:GetIPv6Prefix()
 end
 
-function DRV:GetBIPv6()
+function SUBSYSTEM:GetBIPv6()
 	return self.Entity:GetBIPv6()
 end
 
-function DRV:GetBIPv6Prefix()
+function SUBSYSTEM:GetBIPv6Prefix()
 	return self.Entity:GetBIPv6Prefix()
 end
 
 // Is addr on one of this router's directly attached IPv6 subnets?
-function DRV:HasIPv6Subnet( addr )
+function SUBSYSTEM:HasIPv6Subnet( addr )
 	if (PCMod.IPv6.InSubnet( addr, self:GetIPv6Prefix() )) then return true end
 	if (PCMod.IPv6.InSubnet( addr, self:GetBIPv6Prefix() )) then return true end
 	return false
@@ -1362,7 +1362,7 @@ end
 // Router configuration (editable from the web page). Stored per-router in the
 // entity data, seeded from cfg defaults / setup data on first read.
 // ---------------------------------------------------------------------------
-function DRV:GetCfg()
+function SUBSYSTEM:GetCfg()
 	local d = self.Entity:Data()
 	d.RouterCfg = d.RouterCfg or {}
 	local c = d.RouterCfg
@@ -1407,7 +1407,7 @@ function DRV:GetCfg()
 	return c
 end
 
-function DRV:SetWireless( on )
+function SUBSYSTEM:SetWireless( on )
 	on = (on == true)
 	self.Wireless = on
 	local d = self.Entity:Data()
@@ -1421,7 +1421,7 @@ end
 // Publish the look-at overlay state. The overlay is client-side, so the SSID
 // travels as a network string: non-empty means Wi-Fi is on. This is what makes
 // the overlay follow the web panel instead of the spawn-time checkbox.
-function DRV:SyncWirelessOverlay()
+function SUBSYSTEM:SyncWirelessOverlay()
 	local ent = self.Entity
 	if ((!ent) || (!ent.SetNWString)) then return end
 	local c = self:GetCfg()
@@ -1438,7 +1438,7 @@ end
 // source/dest IP + optional port). This is the classic "protect the LAN" model:
 // to expose a service behind the router you open it with an allow rule (or a
 // port-forward rule, which the firewall also gates).
-function DRV:FirewallBlocks( packet, side )
+function SUBSYSTEM:FirewallBlocks( packet, side )
 	local c = self:GetCfg()
 	if (!c.Firewall) then return false end
 	local dir = (side == "wan") and "in" or "out"
@@ -1465,7 +1465,7 @@ end
 // /64 when it belongs to a flow the LAN started, or when an inbound firewall
 // rule explicitly opens it. This mirrors IPv4's "LAN is private" behaviour and
 // keeps freshly spawned routers closed by default.
-function DRV:IsLanIPv6( addr )
+function SUBSYSTEM:IsLanIPv6( addr )
 	local lp = self:GetIPv6Prefix()
 	if (!lp) then return false end
 	return PCMod.IPv6.InSubnet( addr, lp )
@@ -1474,13 +1474,13 @@ end
 // Is addr one of this router's private LAN identities (its gateway IPv4/IPv6)?
 // On the WAN side these must not be treated as local addresses; otherwise a
 // shared L2 segment could reach the LAN admin interface by its private IP.
-function DRV:IsLanSelfAddress( addr )
+function SUBSYSTEM:IsLanSelfAddress( addr )
 	local v4 = self.Entity.GetLanIPv4 && self.Entity:GetLanIPv4()
 	local v6 = self.Entity.GetIPv6 && self.Entity:GetIPv6()
 	return PCMod.IPv6.Matches( addr, v4, v6 )
 end
 
-function DRV:RememberV6Flow( packet )
+function SUBSYSTEM:RememberV6Flow( packet )
 	if ((!packet) || (!packet.Source) || (!packet.Dest)) then return end
 	self.V6Flows = self.V6Flows or {}
 	local key = tostring( packet.Source ) .. "|" .. tostring( packet.Dest ) .. "|" .. tostring( packet.Port or 0 )
@@ -1495,7 +1495,7 @@ end
 // Is this WAN packet a reply to a flow the LAN started? Traceroute hop reports
 // come from routers along the path rather than the final destination, so a
 // port-0 trace flow also accepts netTraceHop replies.
-function DRV:V6ReplyAllowed( packet )
+function SUBSYSTEM:V6ReplyAllowed( packet )
 	self.V6Flows = self.V6Flows or {}
 	local now = CurTime()
 	local port = packet.Port or 0
@@ -1516,7 +1516,7 @@ end
 
 // Explicit inbound allow rule. IPv6 has no port-forward/NAT fallback, so these
 // rules are honoured for LAN ingress even when the general firewall is off.
-function DRV:V6RuleAllowed( packet )
+function SUBSYSTEM:V6RuleAllowed( packet )
 	local c = self:GetCfg()
 	for _, r in ipairs( c.FirewallRules or {} ) do
 		if ((r.dir == "in") || (r.dir == "any")) then
@@ -1530,11 +1530,11 @@ function DRV:V6RuleAllowed( packet )
 	return false
 end
 
-function DRV:WanToLanAllowed( packet )
+function SUBSYSTEM:WanToLanAllowed( packet )
 	return self:V6ReplyAllowed( packet ) || self:V6RuleAllowed( packet )
 end
 
-function DRV:AddFirewallRule( dir, src, dst, port )
+function SUBSYSTEM:AddFirewallRule( dir, src, dst, port )
 	if ((dir != "in") && (dir != "out") && (dir != "any")) then return false end
 	src = tostring( src or "" )
 	dst = tostring( dst or "" )
@@ -1548,13 +1548,13 @@ function DRV:AddFirewallRule( dir, src, dst, port )
 	return true
 end
 
-function DRV:DeleteFirewallRule( idx )
+function SUBSYSTEM:DeleteFirewallRule( idx )
 	local c = self:GetCfg()
 	c.FirewallRules = c.FirewallRules or {}
 	table.remove( c.FirewallRules, idx )
 end
 
-function DRV:ApplyWebQuery( path )
+function SUBSYSTEM:ApplyWebQuery( path )
 	path = tostring( path or "" )
 	local q = string.match( path, "%?(.*)$" )
 	if (!q) then return end
@@ -1594,7 +1594,7 @@ end
 
 // Port forwarding (DNAT): wanPort -> lanIP:lanPort. A matching inbound packet
 // addressed to the router is re-targeted at the internal host.
-function DRV:AddForward( wan, ip, port )
+function SUBSYSTEM:AddForward( wan, ip, port )
 	local wanN = tonumber( wan )
 	local portN = tonumber( port )
 	if ((!wanN) || (!portN) || (wanN < 1) || (portN < 1)) then return false end
@@ -1605,13 +1605,13 @@ function DRV:AddForward( wan, ip, port )
 	return true
 end
 
-function DRV:DeleteForward( wan )
+function SUBSYSTEM:DeleteForward( wan )
 	local c = self:GetCfg()
 	c.Forwards = c.Forwards or {}
 	c.Forwards[ tostring( wan ) ] = nil
 end
 
-function DRV:GetForwardRule( wanPort )
+function SUBSYSTEM:GetForwardRule( wanPort )
 	local c = self:GetCfg()
 	return c.Forwards && c.Forwards[ tostring( wanPort ) ]
 end
@@ -1619,7 +1619,7 @@ end
 // PAT (port-address translation) state: each active connection gets a stable
 // ephemeral source port, so many hosts can share one public /32 or one
 // forwarded port at the same time.
-function DRV:AllocEph()
+function SUBSYSTEM:AllocEph()
 	self.NextEph = (self.NextEph or 40000) + 1
 	if (self.NextEph > 64999) then self.NextEph = 40000 end
 	return self.NextEph
@@ -1627,7 +1627,7 @@ end
 
 // Forward-connection reply mapping, keyed by the ephemeral port the router
 // presented to the internal host.
-function DRV:RememberForwardFlow( eph, src, port, pub )
+function SUBSYSTEM:RememberForwardFlow( eph, src, port, pub )
 	self.ForwardFlows = self.ForwardFlows or {}
 	self.ForwardFlows[ tostring( eph ) ] = { src = src, port = port, pub = pub, time = CurTime() }
 	if (table.Count( self.ForwardFlows ) > 128) then
@@ -1638,7 +1638,7 @@ function DRV:RememberForwardFlow( eph, src, port, pub )
 	end
 end
 
-function DRV:GetForwardFlow( port )
+function SUBSYSTEM:GetForwardFlow( port )
 	local f = self.ForwardFlows && self.ForwardFlows[ tostring( port ) ]
 	if (!f) then return nil end
 	if (f.time < (CurTime() - 120)) then
@@ -1650,7 +1650,7 @@ end
 
 // Outbound masquerade mapping, keyed by the ephemeral source port handed to the
 // WAN, so a reply to this router's /32 is translated back to the internal host.
-function DRV:RememberNatOut( eph, ip, port )
+function SUBSYSTEM:RememberNatOut( eph, ip, port )
 	self.NatOut = self.NatOut or {}
 	self.NatOut[ tostring( eph ) ] = { ip = ip, port = port, time = CurTime() }
 	if (table.Count( self.NatOut ) > 128) then
@@ -1661,7 +1661,7 @@ function DRV:RememberNatOut( eph, ip, port )
 	end
 end
 
-function DRV:GetNatOut( port )
+function SUBSYSTEM:GetNatOut( port )
 	local f = self.NatOut && self.NatOut[ tostring( port ) ]
 	if (!f) then return nil end
 	if (f.time < (CurTime() - 120)) then
@@ -1674,7 +1674,7 @@ end
 // Masquerade an outbound LAN packet (PAT): rewrite its source to this router's
 // WAN /32 and its source port to a stable ephemeral, then forward upstream. The
 // reply is translated back in ProcessPacket (masquerade reply).
-function DRV:MasqueradeAndForward( packet, pass )
+function SUBSYSTEM:MasqueradeAndForward( packet, pass )
 	local wan = self.Entity.GetFullBIP && self.Entity:GetFullBIP()
 	if (!wan) then
 		PCMod.Msg( "[webgr]No WAN /32 to masquerade behind; dropping", true )
@@ -1703,7 +1703,7 @@ end
 // address ("10.5.4.1"). A dotted bound also selects the network: deriveBase
 // true snaps the address to its subnet, false just measures it from the
 // current base.
-function DRV:ParsePoolBound( value, deriveBase )
+function SUBSYSTEM:ParsePoolBound( value, deriveBase )
 	local v = tostring( value or "" )
 	local abs = PCMod.IPv4.ToInt( v )
 	if (!abs) then return tonumber( v ), nil end
@@ -1716,7 +1716,7 @@ function DRV:ParsePoolBound( value, deriveBase )
 	return abs - aligned, aligned
 end
 
-function DRV:ApplyWebSetting( key, value, deriveBase )
+function SUBSYSTEM:ApplyWebSetting( key, value, deriveBase )
 	local c = self:GetCfg()
 	if (key == "wireless") then
 		self:SetWireless( (value == "1") || (value == "on") )
@@ -1765,7 +1765,7 @@ end
 
 // Strip a query string and leading/trailing slashes off a request path to get
 // the page id ("" = home, "wifi"/"lan"/"firewall" = sub-pages).
-function DRV:WebPage( path )
+function SUBSYSTEM:WebPage( path )
 	path = tostring( path or "" )
 	path = string.gsub( path, "%?.*$", "" )
 	path = string.gsub( path, "/+", "/" )
@@ -1776,7 +1776,7 @@ end
 
 // Shared navigation bar linking the pages. A backbone has no LAN, Wi-Fi or
 // firewall/port-forwarding: it only exposes its management segment and leases.
-function DRV:WebNav( current )
+function SUBSYSTEM:WebNav( current )
 	local items
 	if (self:IsBackbone()) then
 		items = { { "", "Home" }, { "lan", "Management" }, { "static", "DHCP Leases" } }
@@ -1792,17 +1792,17 @@ end
 
 // First and last address of a DHCP pool in dotted-quad form. The scope picks
 // the network (LAN RFC1918 or the configured backbone /8).
-function DRV:DHCPPoolRange( scope )
+function SUBSYSTEM:DHCPPoolRange( scope )
 	local start, finish = PCMod.DHCPServer.Pool( self, scope )
 	if (!start) then return nil end
 	return PCMod.DHCPServer.Address( self, scope, start ), PCMod.DHCPServer.Address( self, scope, finish )
 end
 
-function DRV:PoolRange()
+function SUBSYSTEM:PoolRange()
 	return self:DHCPPoolRange( "lan" )
 end
 
-function DRV:PageHome()
+function SUBSYSTEM:PageHome()
 	local e = self.Entity
 	local c = self:GetCfg()
 	local bb = e:GetBSubnet()
@@ -1882,7 +1882,7 @@ function DRV:PageHome()
 	return table.concat( lines, "\n" )
 end
 
-function DRV:PageWifi()
+function SUBSYSTEM:PageWifi()
 	local c = self:GetCfg()
 	local lines = {}
 	table.insert( lines, "<h1>Wi-Fi</h1>" )
@@ -1900,7 +1900,7 @@ end
 // Backbone management page. The MGMNT port is a separate physical segment but
 // shares the backbone's own /24, so the web panel is reached at the router's
 // backbone address (.1) and DHCP hands out .2-.11 on that port.
-function DRV:PageManagement()
+function SUBSYSTEM:PageManagement()
 	local bb = self.Entity:GetBSubnet()
 	local lines = {}
 	table.insert( lines, "<h1>Management</h1>" )
@@ -1922,7 +1922,7 @@ function DRV:PageManagement()
 	return table.concat( lines, "\n" )
 end
 
-function DRV:PageLAN()
+function SUBSYSTEM:PageLAN()
 	local c = self:GetCfg()
 	local lines = {}
 	table.insert( lines, "<h1>LAN / DHCP</h1>" )
@@ -1956,7 +1956,7 @@ end
 
 // DHCP page: active (dynamic) leases plus static IP <-> MAC reservations.
 // The scope follows the router role, so LAN and backbone pages look the same.
-function DRV:PageStaticLeases()
+function SUBSYSTEM:PageStaticLeases()
 	local scope = self:LeaseScope()
 	local isWan = (scope == "wan")
 	local bb = self.Entity:GetBSubnet()
@@ -2021,7 +2021,7 @@ function DRV:PageStaticLeases()
 	return table.concat( lines, "\n" )
 end
 
-function DRV:PageFirewall()
+function SUBSYSTEM:PageFirewall()
 	local c = self:GetCfg()
 	local lines = {}
 	table.insert( lines, "<h1>Firewall & Port Forwarding</h1>" )
@@ -2073,7 +2073,7 @@ function DRV:PageFirewall()
 end
 
 // A config/status "web page" served to the in-game browser (port 80).
-function DRV:GetWebPage( path )
+function SUBSYSTEM:GetWebPage( path )
 	local page = self:WebPage( path )
 	// A backbone has no Wi-Fi or firewall/port-forwarding UI; those paths fall
 	// back to the home page instead of exposing controls that do nothing.
@@ -2091,7 +2091,7 @@ function DRV:GetWebPage( path )
 end
 
 // Reply to an in-game HTTP request: apply any ?query settings, then serve.
-function DRV:HandleWebRequest( packet )
+function SUBSYSTEM:HandleWebRequest( packet )
 	local path = (packet.Body && packet.Body[2]) or ""
 	self:ApplyWebQuery( path )
 	local page = self:GetWebPage( path )
@@ -2109,7 +2109,7 @@ function DRV:HandleWebRequest( packet )
 	return true
 end
 
-function DRV:OnRemove()
+function SUBSYSTEM:OnRemove()
 	if (PCMod.Routing && PCMod.Routing.Stop) then PCMod.Routing.Stop( self ) end
 	self.LAN = {}
 	self.BLAN = {}

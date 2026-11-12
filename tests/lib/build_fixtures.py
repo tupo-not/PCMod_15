@@ -7,6 +7,7 @@ translated form of a real addon source file, so the mocks always exercise the
 current code instead of a stale copy.
 """
 import os
+import shutil
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -14,6 +15,13 @@ TESTS = os.path.dirname(HERE)
 ADDON = os.path.dirname(TESTS)
 LUA = os.path.join(ADDON, "lua")
 BUILD = os.path.join(TESTS, ".build")
+
+# Lua 5.1 cannot parse GLua, so every source is translated first. These
+# directories are deliberately excluded from the syntax gate:
+#   - oldstools: retired tools that are not loaded by the addon
+SOURCE_IGNORE = (
+    os.path.join("weapons", "gmod_tool", "oldstools"),
+)
 
 sys.path.insert(0, HERE)
 from glua_translate import translate, compile_check  # noqa: E402
@@ -49,9 +57,9 @@ FIXTURES = {
     "pcmod_sh_l2.lua": "pcmod/sh_l2.lua",
     "pcmod_sh_routing.lua": "pcmod/sh_routing.lua",
     "pcmod_sh_latency.lua": "pcmod/sh_latency.lua",
-    "pcmod_drv_router.lua": "pcmod/drivers/drv_router.lua",
-    "pcmod_drv_network.lua": "pcmod/drivers/drv_network.lua",
-    "pcmod_drv_bios.lua": "pcmod/drivers/drv_bios.lua",
+    "pcmod_subsystem_router.lua": "pcmod/subsystems/router.lua",
+    "pcmod_subsystem_network.lua": "pcmod/subsystems/network.lua",
+    "pcmod_subsystem_bios.lua": "pcmod/subsystems/bios.lua",
     "pcmod_network.lua": "pcmod/sv_network.lua",
     "pcmod_wiring.lua": "pcmod/sv_wiring.lua",
     "pcmod_shared.lua": "entities/pcmod_base/shared.lua",
@@ -60,6 +68,8 @@ FIXTURES = {
     "pcmod_erouter.lua": "entities/pcmod_erouter/shared.lua",
     "pcmod_modem.lua": "entities/pcmod_modem/shared.lua",
     "pcmod_sh_common.lua": "pcmod/sh_common.lua",
+    "pcmod_sh_beam.lua": "pcmod/sh_beam.lua",
+    "pcmod_sh_plugins.lua": "pcmod/sh_plugins.lua",
     "cl2d3d.lua": "pcmod/cl_2d3d.lua",
     "cl_vgui.lua": "pcmod/cl_vgui.lua",
     "sselements_base.lua": "pcmod/sselements/base.lua",
@@ -68,31 +78,26 @@ FIXTURES = {
     "pcmod_installdisk.lua": "weapons/pcmod_installdisk/shared.lua",
 }
 
-# Additional sources that only need a syntax check.
-CHECK_ONLY = [
-    "pcmod/cl_gui.lua",
-    "pcmod/cl_camera.lua",
-    "pcmod/sh_beam.lua",
-    "pcmod/themes/cl_pcmod15.lua",
-    "pcmod/sh_config.lua",
-    "autorun/sh_pcmod_launch.lua",
-    "pcmod/drivers/drv_network.lua",
-    "entities/pcmod_tower/shared.lua",
-    "pcmod/osystems/os_personal.lua",
-    "pcmod/osystems/os_server.lua",
-    "pcmod/programs/pr_nettools.lua",
-    "pcmod/ssdevices/dev_win_nettools.lua",
-    "pcmod/ssdevices/dev_win_browser.lua",
-    "weapons/pcmod_installdisk/shared.lua",
-    "weapons/gmod_tool/stools/pcspawn_switch.lua",
-    "weapons/gmod_tool/stools/pcspawn_router.lua",
-    "weapons/gmod_tool/stools/pcspawn_erouter.lua",
-    "weapons/gmod_tool/stools/pcspawn_modem.lua",
-    "weapons/gmod_tool/stools/pcwire.lua",
-]
+def source_paths():
+    """Every addon Lua file that the syntax gate should compile."""
+    out = []
+    for root, dirs, files in os.walk(LUA):
+        relroot = os.path.relpath(root, LUA)
+        if any(
+            relroot == ignored or relroot.startswith(ignored + os.sep)
+            for ignored in SOURCE_IGNORE
+        ):
+            continue
+        for name in files:
+            if name.endswith(".lua"):
+                out.append(os.path.join(root, name))
+    return sorted(out)
 
 
 def main():
+    # Rebuild from scratch so removed/renamed fixtures cannot linger.
+    if os.path.isdir(BUILD):
+        shutil.rmtree(BUILD)
     os.makedirs(BUILD, exist_ok=True)
     for name, rel in FIXTURES.items():
         src_path = os.path.join(LUA, rel)
@@ -109,16 +114,9 @@ def main():
             with open(os.path.join(BUILD, name), "w", encoding="utf-8", errors="surrogateescape") as fh:
                 fh.write(translate(src))
 
-    check_paths = [os.path.join(LUA, rel) for rel in FIXTURES.values()]
-    check_paths += [os.path.join(LUA, rel) for rel in CHECK_ONLY]
-    # Keep the printed list stable and free of duplicates.
-    seen = set()
-    unique = []
-    for path in check_paths:
-        if path not in seen:
-            seen.add(path)
-            unique.append(path)
-    return compile_check(unique)
+    check_paths = source_paths()
+    print(f"Checking {len(check_paths)} addon source file(s) for syntax.")
+    return compile_check(check_paths)
 
 
 if __name__ == "__main__":

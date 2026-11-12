@@ -3,12 +3,12 @@ PCMod = {
     Msg = function() end,
     Warning = function() end,
     Notice = function() end,
-    DeriveDriver = function() return {} end,
+    DeriveSubsystem = function() return {} end,
     Data = {},
     Cfg = { MaxNetworkPid = 500, DHCPStart = 2, DHCPEnd = 254, LanNetmask = 24 },
 }
 dofile( "pcmod_network.lua" )
-dofile( "pcmod_drv_router.lua" )
+dofile( "pcmod_subsystem_router.lua" )
 
 local function assertTrue( v, m )
     if (not v) then error( "FAILED: " .. m, 2 ) end
@@ -28,7 +28,7 @@ local b1, b2, b3 = makeBackbone( 11, 1 ), makeBackbone( 12, 2 ), makeBackbone( 1
 
 local function makeDrv( ent )
     local d = {}
-    for k, v in pairs( DRV ) do d[ k ] = v end
+    for k, v in pairs( SUBSYSTEM ) do d[ k ] = v end
     d.Entity = ent
     d.Neighbors = {}
     d.Routes = {}
@@ -43,9 +43,9 @@ d2.Neighbors[ 1 ] = { ConEnt = b1 }
 d2.Neighbors[ 3 ] = { ConEnt = b3 }
 d3.Neighbors[ 2 ] = { ConEnt = b2 }
 
-PCMod.Data[ 11 ] = { Drivers = { webgr_router = d1 } }
-PCMod.Data[ 12 ] = { Drivers = { webgr_router = d2 } }
-PCMod.Data[ 13 ] = { Drivers = { webgr_router = d3 } }
+PCMod.Data[ 11 ] = { Subsystems = { router = d1 } }
+PCMod.Data[ 12 ] = { Subsystems = { router = d2 } }
+PCMod.Data[ 13 ] = { Subsystems = { router = d3 } }
 PCMod.Network.Backbones = { [1] = { Ent = b1 }, [2] = { Ent = b2 }, [3] = { Ent = b3 } }
 
 PCMod.Network.Reconverge()

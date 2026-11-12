@@ -45,7 +45,7 @@ PCMod.Warning = function() end
 timer = { Simple = function() end }
 PCMod.Cfg = { MaxNetworkPid = 500, MaxNetworkPass = 10, WirelessRange = 0 }
 PCMod.Network = { Packets = {} }
-PCMod.DeriveDriver = function() return {} end
+PCMod.DeriveSubsystem = function() return {} end
 PCMod.MAC = {
 	BROADCAST = "FF:FF:FF:FF:FF:FF",
 	Normalize = function( mac )
@@ -65,7 +65,7 @@ dofile( "pcmod_sh_dhcp_client.lua" )
 dofile( "pcmod_sh_arp.lua" )
 dofile( "pcmod_sh_ndp.lua" )
 dofile( "pcmod_sh_routing.lua" )
-dofile( "pcmod_drv_router.lua" )
+dofile( "pcmod_subsystem_router.lua" )
 
 local ent = { LanPrefix = false, BackPrefix = false }
 function ent:GetIPv6Prefix() return self.LanPrefix end
@@ -73,7 +73,7 @@ function ent:GetBIPv6Prefix() return self.BackPrefix end
 function ent:GetIPv6() return false end
 function ent:GetBIPv6() return false end
 function ent:GetMAC() return "AA:BB:CC:DD:EE:FF" end
-DRV.Entity = ent
+SUBSYSTEM.Entity = ent
 
 local function assertEq( a, b, msg )
 	if (a ~= b) then error( "FAILED: " .. msg .. " (got " .. tostring( a ) .. ", want " .. tostring( b ) .. ")", 2 ) end
@@ -85,54 +85,54 @@ end
 -- LAN router: owns fd00:3:0:5::/64, part of backbone fd00:3::/32.
 ent.LanPrefix = "fd00:3:0:5::/64"
 ent.BackPrefix = "fd00:3::/32"
-local r = DRV:ClassifyDestination( "fd00:3:0:5::3" )
+local r = SUBSYSTEM:ClassifyDestination( "fd00:3:0:5::3" )
 assertTrue( r.IsIPv6, "own LAN is IPv6" )
 assertTrue( r.LAN, "own LAN classified as LAN" )
 assertTrue( r.OnLinkLAN, "own LAN is on-link" )
 assertTrue( not r.Backbone, "own LAN is not backbone" )
 assertEq( r.IPv4, "192.168.5.3", "own LAN translates to IPv4" )
 
-r = DRV:ClassifyDestination( "fd00:3:0:5::99" )
+r = SUBSYSTEM:ClassifyDestination( "fd00:3:0:5::99" )
 assertTrue( r.OnLinkLAN, "unknown host on own LAN is still on-link (drop)" )
 
-r = DRV:ClassifyDestination( "fd00:3:0:6::3" )
+r = SUBSYSTEM:ClassifyDestination( "fd00:3:0:6::3" )
 assertTrue( r.Backbone, "sibling LAN is in our backbone /32" )
 assertTrue( r.OnLinkBackbone, "sibling LAN is on-link backbone" )
 assertEq( r.IPv4, "192.168.6.3", "sibling LAN translates to IPv4" )
 
-r = DRV:ClassifyDestination( "fd00:4:0:5::3" )
+r = SUBSYSTEM:ClassifyDestination( "fd00:4:0:5::3" )
 assertTrue( not r.LAN, "other backbone /32 is not retrofitted as LAN" )
 assertTrue( not r.Backbone, "other backbone /32 is not our backbone" )
 
-r = DRV:ClassifyDestination( "192.168.5.2" )
+r = SUBSYSTEM:ClassifyDestination( "192.168.5.2" )
 assertTrue( not r.IsIPv6, "IPv4 target" )
 assertTrue( r.LAN, "IPv4 LAN target" )
 assertTrue( not r.OnLinkLAN, "IPv4 does not use on-link drop" )
 
-r = DRV:ClassifyDestination( "100.0.3.2" )
+r = SUBSYSTEM:ClassifyDestination( "100.0.3.2" )
 assertTrue( r.Backbone, "IPv4 backbone target" )
 assertTrue( not r.OnLinkBackbone, "IPv4 backbone is not on-link" )
 
-r = DRV:ClassifyDestination( "192.168.10.5" )
+r = SUBSYSTEM:ClassifyDestination( "192.168.10.5" )
 assertTrue( r.LAN, "192.168 with a 10 octet is LAN, not backbone" )
 assertTrue( not r.Backbone, "192.168.10.5 is not backbone" )
 
-r = DRV:ClassifyDestination( "10.20.30.40" )
+r = SUBSYSTEM:ClassifyDestination( "10.20.30.40" )
 assertTrue( r.LAN, "RFC1918 10/8 is LAN, not backbone" )
 assertTrue( not r.Backbone, "10/8 is not backbone" )
 
-assertTrue( DRV:HasIPv6Subnet( "fd00:3:0:5::3" ), "HasIPv6Subnet own LAN" )
-assertTrue( DRV:HasIPv6Subnet( "fd00:3:0:6::3" ), "HasIPv6Subnet sibling in same /32" )
-assertTrue( not DRV:HasIPv6Subnet( "fd00:4:0:5::3" ), "HasIPv6Subnet other backbone" )
+assertTrue( SUBSYSTEM:HasIPv6Subnet( "fd00:3:0:5::3" ), "HasIPv6Subnet own LAN" )
+assertTrue( SUBSYSTEM:HasIPv6Subnet( "fd00:3:0:6::3" ), "HasIPv6Subnet sibling in same /32" )
+assertTrue( not SUBSYSTEM:HasIPv6Subnet( "fd00:4:0:5::3" ), "HasIPv6Subnet other backbone" )
 
 -- Backbone router: owns fd00:3::/32, no LAN prefix.
 ent.LanPrefix = false
 ent.BackPrefix = "fd00:3::/32"
-r = DRV:ClassifyDestination( "fd00:3:0:2::1" )
+r = SUBSYSTEM:ClassifyDestination( "fd00:3:0:2::1" )
 assertTrue( r.Backbone, "own backbone classified as backbone" )
 assertTrue( r.OnLinkBackbone, "own backbone is on-link" )
 
-r = DRV:ClassifyDestination( "fd00:4:0:2::1" )
+r = SUBSYSTEM:ClassifyDestination( "fd00:4:0:2::1" )
 assertTrue( not r.OnLinkBackbone, "other backbone is not on-link" )
 assertTrue( not r.LAN, "other backbone is not LAN" )
 assertTrue( not r.Backbone, "other backbone is not ours" )
@@ -159,48 +159,48 @@ function ent:SetGVar( k, v )
 end
 PCMod.Cfg.DHCPStart = 2
 PCMod.Cfg.DHCPEnd = 250
-DRV.Wireless = true
-DRV.WirelessClients = { [10] = true, [11] = true }
+SUBSYSTEM.Wireless = true
+SUBSYSTEM.WirelessClients = { [10] = true, [11] = true }
 
--- InstallDriver seeds RouterCfg before Setup knows the spawn options. The
+-- InstallSubsystem seeds RouterCfg before Setup knows the spawn options. The
 -- spawn setter must override that seed, or Wi-Fi silently stays off and the
 -- overlay loses its SSID line.
 routData.RouterCfg = { Wireless = false }
-DRV:SetWireless( true )
+SUBSYSTEM:SetWireless( true )
 assertEq( routData.RouterCfg.Wireless, true, "spawn wireless overrides a pre-seeded config" )
 assertTrue( (entNW.WifiSSID ~= nil) and (entNW.WifiSSID ~= ""), "spawn wireless publishes an overlay SSID" )
 routData.RouterCfg = nil
-DRV.Wireless = true
-local page = DRV:GetWebPage( "" )
+SUBSYSTEM.Wireless = true
+local page = SUBSYSTEM:GetWebPage( "" )
 assertTrue( string.find( page, "<h1>WebGear Router</h1>", 1, true ) ~= nil, "home page has an h1 heading" )
 assertTrue( string.find( page, "192.168.5.1", 1, true ) ~= nil, "home page shows IPv4 LAN" )
 assertTrue( string.find( page, "fd00:3:0:5::/64", 1, true ) ~= nil, "home page shows IPv6 prefix" )
 assertTrue( string.find( page, "Wi-Fi clients:", 1, true ) ~= nil, "home page shows client count" )
 assertTrue( string.find( page, "Status", 1, true ) ~= nil, "home page has a status section" )
 
-local wifipage = DRV:GetWebPage( "/wifi" )
+local wifipage = SUBSYSTEM:GetWebPage( "/wifi" )
 assertTrue( string.find( wifipage, "name=\"wpass\"", 1, true ) ~= nil, "wifi page has a password field" )
 assertTrue( string.find( wifipage, "name=\"wname\"", 1, true ) ~= nil, "wifi page has a name field" )
 assertTrue( string.find( wifipage, "Wireless", 1, true ) == nil, "wifi page uses Status not raw wireless" )
 assertTrue( routData.RouterCfg.WireName ~= nil, "wifi gets a default network name" )
-DRV:ApplyWebQuery( "?wname=HomeNet" )
+SUBSYSTEM:ApplyWebQuery( "?wname=HomeNet" )
 assertEq( routData.RouterCfg.WireName, "HomeNet", "custom wifi name applied" )
-wifipage = DRV:GetWebPage( "/wifi" )
+wifipage = SUBSYSTEM:GetWebPage( "/wifi" )
 assertTrue( string.find( wifipage, "value=\"HomeNet\"", 1, true ) ~= nil, "wifi page shows the custom name" )
-DRV:ApplyWebQuery( "?wname=" )
+SUBSYSTEM:ApplyWebQuery( "?wname=" )
 assertTrue( (routData.RouterCfg.WireName ~= nil) && (routData.RouterCfg.WireName ~= ""), "empty name restores the default" )
 
 -- The look-at overlay follows the web panel: an enabled router publishes its
 -- SSID, and renaming the network updates it immediately.
 assertEq( entNW.WifiSSID, routData.RouterCfg.WireName, "overlay SSID tracks the wifi name" )
-DRV:ApplyWebQuery( "?wireless=0" )
+SUBSYSTEM:ApplyWebQuery( "?wireless=0" )
 assertEq( entNW.WifiSSID, "", "disabling wifi removes the overlay SSID" )
-assertEq( ent.GVars.wireless, false, "disabling wifi updates the legacy overlay flag" )
-DRV:ApplyWebQuery( "?wireless=1" )
+assertEq( ent.GVars.wireless, false, "disabling wifi updates the overlay flag" )
+SUBSYSTEM:ApplyWebQuery( "?wireless=1" )
 assertEq( entNW.WifiSSID, routData.RouterCfg.WireName, "enabling wifi publishes the overlay SSID" )
-assertEq( ent.GVars.wireless, true, "enabling wifi updates the legacy overlay flag" )
+assertEq( ent.GVars.wireless, true, "enabling wifi updates the overlay flag" )
 
-local lanpage = DRV:GetWebPage( "/lan" )
+local lanpage = SUBSYSTEM:GetWebPage( "/lan" )
 assertTrue( string.find( lanpage, "name=\"dhcpstart\"", 1, true ) ~= nil, "lan page has DHCP start field" )
 assertTrue( string.find( lanpage, "NAT:", 1, true ) ~= nil, "lan page shows NAT" )
 assertTrue( string.find( lanpage, "Netmask", 1, true ) ~= nil, "lan page shows the netmask row" )
@@ -208,148 +208,148 @@ assertTrue( string.find( lanpage, "192.168.0.2", 1, true ) ~= nil, "lan page sho
 assertTrue( string.find( lanpage, "192.168.0.0/24", 1, true ) ~= nil, "lan page shows the /24 network" )
 
 -- Netmask + third octet query settings, with the pool clamped to the mask.
-DRV:ApplyWebQuery( "?netmask=16&dhcpend=99999" )
+SUBSYSTEM:ApplyWebQuery( "?netmask=16&dhcpend=99999" )
 assertEq( routData.RouterCfg.LanNetmask, 16, "netmask query applied" )
 assertEq( routData.RouterCfg.DHCPEnd, 65534, "pool end clamped to /16 maximum" )
-local lan16 = DRV:GetWebPage( "/lan" )
+local lan16 = SUBSYSTEM:GetWebPage( "/lan" )
 assertTrue( string.find( lan16, "192.168.0.0/16", 1, true ) ~= nil, "lan page shows the /16 network" )
-DRV:ApplyWebQuery( "?netmask=24&lannet=7" )
+SUBSYSTEM:ApplyWebQuery( "?netmask=24&lannet=7" )
 assertEq( routData.RouterCfg.LanNetmask, 24, "netmask query back to /24" )
 assertEq( routData.RouterCfg.LanNet, 7, "third octet query applied" )
 assertEq( routData.RouterCfg.DHCPEnd, 254, "pool end clamped back to /24 maximum" )
-local lan7 = DRV:GetWebPage( "/lan" )
+local lan7 = SUBSYSTEM:GetWebPage( "/lan" )
 assertTrue( string.find( lan7, "192.168.7.0/24", 1, true ) ~= nil, "lan page shows the custom /24 network" )
-local home7 = DRV:GetWebPage( "" )
+local home7 = SUBSYSTEM:GetWebPage( "" )
 assertTrue( string.find( home7, "192.168.7.", 1, true ) ~= nil, "home page pool uses the third octet" )
 assertTrue( string.find( home7, "/24", 1, true ) ~= nil, "home page shows the LAN prefix" )
-DRV:ApplyWebQuery( "?lannet=0" )
+SUBSYSTEM:ApplyWebQuery( "?lannet=0" )
 assertEq( routData.RouterCfg.LanNet, 0, "third octet reset" )
 
 -- In /24 mode a full dotted pool bound also selects the third octet.
-DRV:ApplyWebQuery( "?dhcpstart=192.168.9.20&dhcpend=192.168.9.40" )
+SUBSYSTEM:ApplyWebQuery( "?dhcpstart=192.168.9.20&dhcpend=192.168.9.40" )
 assertEq( routData.RouterCfg.LanNet, 9, "dotted pool bound selects the third octet" )
 assertEq( routData.RouterCfg.DHCPStart, 20, "dotted pool start keeps its host id" )
 assertEq( routData.RouterCfg.DHCPEnd, 40, "dotted pool end keeps its host id" )
-local lan9 = DRV:GetWebPage( "/lan" )
+local lan9 = SUBSYSTEM:GetWebPage( "/lan" )
 assertTrue( string.find( lan9, "192.168.9.20", 1, true ) ~= nil, "lan page shows the dotted pool start" )
 assertTrue( string.find( lan9, "192.168.9.40", 1, true ) ~= nil, "lan page shows the dotted pool end" )
 
 -- Typing the gateway address (192.168.4.1) as a bound sets the octet to 4,
 -- while .1 stays reserved for the router and clients start at .2.
-DRV:ApplyWebQuery( "?dhcpstart=192.168.4.1&dhcpend=192.168.4.100" )
+SUBSYSTEM:ApplyWebQuery( "?dhcpstart=192.168.4.1&dhcpend=192.168.4.100" )
 assertEq( routData.RouterCfg.LanNet, 4, "gateway-style pool bound sets the third octet" )
 assertEq( routData.RouterCfg.DHCPStart, 2, "gateway address .1 is reserved for the router" )
 assertEq( routData.RouterCfg.DHCPEnd, 100, "dotted pool end keeps its host id" )
-DRV:ApplyWebQuery( "?lannet=0&dhcpstart=2&dhcpend=254" )
+SUBSYSTEM:ApplyWebQuery( "?lannet=0&dhcpstart=2&dhcpend=254" )
 assertEq( routData.RouterCfg.LanNet, 0, "network reset after dotted pool test" )
 
 -- Arbitrary netmask sizes via the web page (16-32).
-DRV:ApplyWebQuery( "?netmask=26" )
+SUBSYSTEM:ApplyWebQuery( "?netmask=26" )
 assertEq( routData.RouterCfg.LanNetmask, 26, "/26 query applied" )
 assertEq( routData.RouterCfg.DHCPEnd, 62, "/26 pool clamps to the block" )
-assertEq( DRV:GetLanPrefix(), "192.168.0.0/26", "/26 prefix" )
-local lan26 = DRV:GetWebPage( "/lan" )
+assertEq( SUBSYSTEM:GetLanPrefix(), "192.168.0.0/26", "/26 prefix" )
+local lan26 = SUBSYSTEM:GetWebPage( "/lan" )
 assertTrue( string.find( lan26, "name=\"netmask\"", 1, true ) ~= nil, "lan page has the netmask field" )
 assertTrue( string.find( lan26, "192.168.0.0/26", 1, true ) ~= nil, "lan page shows the /26 network" )
 assertTrue( string.find( lan26, "192.168.0.2", 1, true ) ~= nil, "lan page shows the /26 pool start" )
 
 -- A dotted pool bound can pick a network inside the larger address space
 -- (192.168.4.x is valid inside 192.168.0.0/20).
-DRV:ApplyWebQuery( "?netmask=20&dhcpstart=192.168.4.2&dhcpend=192.168.4.200" )
+SUBSYSTEM:ApplyWebQuery( "?netmask=20&dhcpstart=192.168.4.2&dhcpend=192.168.4.200" )
 assertEq( routData.RouterCfg.LanNetmask, 20, "/20 query applied" )
-assertEq( DRV:GetLanPrefix(), "192.168.0.0/20", "/20 prefix" )
+assertEq( SUBSYSTEM:GetLanPrefix(), "192.168.0.0/20", "/20 prefix" )
 assertEq( routData.RouterCfg.DHCPStart, 1026, "/20 dotted start is a host offset" )
 assertEq( routData.RouterCfg.DHCPEnd, 1224, "/20 dotted end is a host offset" )
 
 -- Quick /30 link (no pool fields) clamps the pool to one client.
-DRV:ApplyWebQuery( "?netmask=30" )
-assertEq( DRV:GetLanPrefix(), "192.168.0.0/30", "/30 prefix" )
+SUBSYSTEM:ApplyWebQuery( "?netmask=30" )
+assertEq( SUBSYSTEM:GetLanPrefix(), "192.168.0.0/30", "/30 prefix" )
 assertEq( routData.RouterCfg.DHCPEnd, 2, "/30 pool clamps to one client" )
 
-DRV:ApplyWebQuery( "?netmask=24&lannet=0&dhcpstart=2&dhcpend=254" )
+SUBSYSTEM:ApplyWebQuery( "?netmask=24&lannet=0&dhcpstart=2&dhcpend=254" )
 assertEq( routData.RouterCfg.LanNetmask, 24, "netmask reset to /24" )
 
 -- A dotted last bound alone also picks the network.
-DRV:ApplyWebQuery( "?dhcpstart=2&dhcpend=192.168.12.50" )
+SUBSYSTEM:ApplyWebQuery( "?dhcpstart=2&dhcpend=192.168.12.50" )
 assertEq( routData.RouterCfg.LanNet, 12, "dotted last bound sets the network" )
 assertEq( routData.RouterCfg.DHCPStart, 2, "bare first bound stays a host id" )
 assertEq( routData.RouterCfg.DHCPEnd, 50, "dotted last bound keeps its host id" )
-DRV:ApplyWebQuery( "?lannet=0&dhcpstart=2&dhcpend=254" )
+SUBSYSTEM:ApplyWebQuery( "?lannet=0&dhcpstart=2&dhcpend=254" )
 assertEq( routData.RouterCfg.LanNet, 0, "network reset after the last-bound test" )
 
-local fwpage = DRV:GetWebPage( "/firewall" )
+local fwpage = SUBSYSTEM:GetWebPage( "/firewall" )
 assertTrue( string.find( fwpage, "Firewall", 1, true ) ~= nil, "firewall page renders" )
 
 -- Nav links are present and relative paths route to the right pages.
-local nav = DRV:GetWebPage( "/wifi" )
+local nav = SUBSYSTEM:GetWebPage( "/wifi" )
 assertTrue( string.find( nav, 'href="/lan"', 1, true ) ~= nil, "nav links to LAN page" )
 assertTrue( string.find( nav, 'href="/firewall"', 1, true ) ~= nil, "nav links to firewall page" )
 
 -- Query-string config application.
-DRV:ApplyWebQuery( "?wireless=0&dhcpstart=5&firewall=1&wpass=random" )
+SUBSYSTEM:ApplyWebQuery( "?wireless=0&dhcpstart=5&firewall=1&wpass=random" )
 assertTrue( routData.RouterCfg.Wireless == false, "wireless toggled off" )
 assertTrue( routData.RouterCfg.DHCPStart == 5, "DHCP start updated" )
 assertTrue( routData.RouterCfg.Firewall == true, "firewall enabled" )
 assertTrue( routData.RouterCfg.WirePass ~= "abc", "password regenerated" )
 
 -- Port-forwarding rules: add, look up, list, delete.
-DRV:ApplyWebQuery( "?pfwan=8080&pfip=192.168.0.2&pfport=80" )
-local pfrule = DRV:GetForwardRule( 8080 )
+SUBSYSTEM:ApplyWebQuery( "?pfwan=8080&pfip=192.168.0.2&pfport=80" )
+local pfrule = SUBSYSTEM:GetForwardRule( 8080 )
 assertTrue( pfrule ~= nil and pfrule.ip == "192.168.0.2" and pfrule.port == 80, "forward rule added" )
-assertTrue( DRV:GetForwardRule( 9999 ) == nil, "missing rule returns nil" )
-local fwpage2 = DRV:GetWebPage( "/firewall" )
+assertTrue( SUBSYSTEM:GetForwardRule( 9999 ) == nil, "missing rule returns nil" )
+local fwpage2 = SUBSYSTEM:GetWebPage( "/firewall" )
 assertTrue( string.find( fwpage2, 'name="pfwan"', 1, true ) ~= nil, "firewall page has port-forward input fields" )
 assertTrue( string.find( fwpage2, "8080", 1, true ) ~= nil, "firewall page lists the forward rule" )
-DRV:ApplyWebQuery( "?delpf=8080" )
-assertTrue( DRV:GetForwardRule( 8080 ) == nil, "forward rule deleted" )
+SUBSYSTEM:ApplyWebQuery( "?delpf=8080" )
+assertTrue( SUBSYSTEM:GetForwardRule( 8080 ) == nil, "forward rule deleted" )
 
 -- Firewall rules: add, list, delete.
-DRV:ApplyWebQuery( "?fwdir=in&fwsrc=10.0.0.9&fwdst=&fwport=75" )
+SUBSYSTEM:ApplyWebQuery( "?fwdir=in&fwsrc=10.0.0.9&fwdst=&fwport=75" )
 assertTrue( routData.RouterCfg.FirewallRules[ 1 ].dir == "in", "firewall rule added" )
 assertTrue( routData.RouterCfg.FirewallRules[ 1 ].src == "10.0.0.9", "firewall rule source" )
 assertTrue( routData.RouterCfg.FirewallRules[ 1 ].port == 75, "firewall rule port" )
-DRV:ApplyWebQuery( "?delfw=1" )
+SUBSYSTEM:ApplyWebQuery( "?delfw=1" )
 assertTrue( #(routData.RouterCfg.FirewallRules) == 0, "firewall rule deleted" )
 
 -- Default-deny firewall: on blocks non-control-plane; allow rules open holes.
 local function pkt( port, src, dst ) return { Port = port, Source = src, Dest = dst } end
 routData.RouterCfg.Firewall = true
 routData.RouterCfg.FirewallRules = {}
-assertTrue( DRV:FirewallBlocks( pkt( 72, "fd00:1:0:5::2", "fd00:2:0:1::1" ), "wan" ), "firewall on blocks chat by default" )
-assertTrue( not DRV:FirewallBlocks( pkt( 80, "fd00:1:0:5::2", "fd00:2:0:1::1" ), "wan" ), "web always allowed" )
-assertTrue( not DRV:FirewallBlocks( pkt( 0, "fd00:1:0:5::2", "fd00:2:0:1::1" ), "wan" ), "ping always allowed" )
+assertTrue( SUBSYSTEM:FirewallBlocks( pkt( 72, "fd00:1:0:5::2", "fd00:2:0:1::1" ), "wan" ), "firewall on blocks chat by default" )
+assertTrue( not SUBSYSTEM:FirewallBlocks( pkt( 80, "fd00:1:0:5::2", "fd00:2:0:1::1" ), "wan" ), "web always allowed" )
+assertTrue( not SUBSYSTEM:FirewallBlocks( pkt( 0, "fd00:1:0:5::2", "fd00:2:0:1::1" ), "wan" ), "ping always allowed" )
 routData.RouterCfg.Firewall = false
-assertTrue( not DRV:FirewallBlocks( pkt( 72, "fd00:1:0:5::2", "fd00:2:0:1::1" ), "wan" ), "firewall off allows" )
+assertTrue( not SUBSYSTEM:FirewallBlocks( pkt( 72, "fd00:1:0:5::2", "fd00:2:0:1::1" ), "wan" ), "firewall off allows" )
 routData.RouterCfg.Firewall = true
-DRV:AddFirewallRule( "in", "", "", 72 )
-assertTrue( not DRV:FirewallBlocks( pkt( 72, "fd00:1:0:5::2", "fd00:2:0:1::1" ), "wan" ), "allow rule opens port 72" )
-assertTrue( DRV:FirewallBlocks( pkt( 75, "fd00:1:0:5::2", "fd00:2:0:1::1" ), "wan" ), "other ports still blocked" )
+SUBSYSTEM:AddFirewallRule( "in", "", "", 72 )
+assertTrue( not SUBSYSTEM:FirewallBlocks( pkt( 72, "fd00:1:0:5::2", "fd00:2:0:1::1" ), "wan" ), "allow rule opens port 72" )
+assertTrue( SUBSYSTEM:FirewallBlocks( pkt( 75, "fd00:1:0:5::2", "fd00:2:0:1::1" ), "wan" ), "other ports still blocked" )
 routData.RouterCfg.FirewallRules = {}
 routData.RouterCfg.Firewall = false
 
 -- PAT forward flow: keyed by the ephemeral port the router presents internally.
-DRV:RememberForwardFlow( 40001, "10.0.1.2", 40010, "10.0.2.2" )
-local fl = DRV:GetForwardFlow( 40001 )
+SUBSYSTEM:RememberForwardFlow( 40001, "10.0.1.2", 40010, "10.0.2.2" )
+local fl = SUBSYSTEM:GetForwardFlow( 40001 )
 assertTrue( fl ~= nil and fl.src == "10.0.1.2" and fl.port == 40010 and fl.pub == "10.0.2.2", "forward flow stores peer + public addr" )
-assertTrue( DRV:GetForwardFlow( 72 ) == nil, "unrelated port has no forward flow" )
+assertTrue( SUBSYSTEM:GetForwardFlow( 72 ) == nil, "unrelated port has no forward flow" )
 
 -- Outbound masquerade (PAT) flow: remember the internal host by ephemeral port.
-DRV:RememberNatOut( 40011, "192.168.0.2", 72 )
-local nf = DRV:GetNatOut( 40011 )
+SUBSYSTEM:RememberNatOut( 40011, "192.168.0.2", 72 )
+local nf = SUBSYSTEM:GetNatOut( 40011 )
 assertTrue( nf ~= nil and nf.ip == "192.168.0.2" and nf.port == 72, "masquerade flow stores internal host + port" )
-assertTrue( DRV:GetNatOut( 58 ) == nil, "unrelated port has no masquerade flow" )
+assertTrue( SUBSYSTEM:GetNatOut( 58 ) == nil, "unrelated port has no masquerade flow" )
 
 -- With the firewall on, an established NAT reply still passes (stateful), even
 -- without an allow rule for the ephemeral port.
 routData.RouterCfg.Firewall = true
 routData.RouterCfg.FirewallRules = {}
-assertTrue( not DRV:FirewallBlocks( { Port = 40001, Source = "192.168.0.2", Dest = "192.168.0.1" }, "lan" ), "forwarded reply passes firewall (stateful flow)" )
-assertTrue( not DRV:FirewallBlocks( { Port = 40011, Source = "10.0.2.2", Dest = "10.0.1.2" }, "wan" ), "masquerade reply passes firewall (stateful NAT)" )
+assertTrue( not SUBSYSTEM:FirewallBlocks( { Port = 40001, Source = "192.168.0.2", Dest = "192.168.0.1" }, "lan" ), "forwarded reply passes firewall (stateful flow)" )
+assertTrue( not SUBSYSTEM:FirewallBlocks( { Port = 40011, Source = "10.0.2.2", Dest = "10.0.1.2" }, "wan" ), "masquerade reply passes firewall (stateful NAT)" )
 routData.RouterCfg.Firewall = false
 
 -- Ephemeral ports are unique and wrap within the PAT range.
-local e1 = DRV:AllocEph()
-local e2 = DRV:AllocEph()
+local e1 = SUBSYSTEM:AllocEph()
+local e2 = SUBSYSTEM:AllocEph()
 assertTrue( e1 ~= e2, "ephemeral ports differ" )
 assertTrue( e1 >= 40000 and e1 <= 65000, "ephemeral in PAT range" )
 
@@ -357,7 +357,7 @@ assertTrue( e1 >= 40000 and e1 <= 65000, "ephemeral in PAT range" )
 -- address that was pinged and preserving the source port (NAT-safe).
 PCMod.Msg = function() end
 local pingDrv = {}
-for k, v in pairs( DRV ) do pingDrv[ k ] = v end
+for k, v in pairs( SUBSYSTEM ) do pingDrv[ k ] = v end
 local pingEnt = {}
 function pingEnt:Memory() return {} end
 function pingEnt:UpdateMemory() end
@@ -380,7 +380,7 @@ assertEq( replied[ 2 ][ 4 ][ 1 ], "netPingResponse", "ping reply body" )
 -- TTL: routers decrement once per hop and expire at zero.
 PCMod.Cfg.DefaultTTL = 64
 local traceDrv = {}
-for k, v in pairs( DRV ) do traceDrv[ k ] = v end
+for k, v in pairs( SUBSYSTEM ) do traceDrv[ k ] = v end
 local traceEnt = {}
 function traceEnt:Memory() return {} end
 function traceEnt:UpdateMemory() end
@@ -444,16 +444,16 @@ assertEq( traceSent[ 2 ][ 4 ][ 6 ], 1, "first hop number" )
 
 local sent
 PCMod.Network.CreatePacket = function( src, dst, port, body ) sent = { src = src, dst = dst, port = port, body = body } end
-DRV.ProcessPacket = function() end
+SUBSYSTEM.ProcessPacket = function() end
 local req = { Source = "10.0.1.2", Body = { "http", "/" } }
-DRV:HandleWebRequest( req )
+SUBSYSTEM:HandleWebRequest( req )
 assertTrue( sent and sent.port == 80 and sent.body[1] == "http-response", "web reply packet created" )
 assertEq( sent.src, "192.168.5.1", "web reply sourced from router" )
 assertTrue( req.Delivered == true, "request marked delivered" )
 
 -- The request path selects the sub-page.
 local req2 = { Source = "10.0.1.2", Body = { "http", "/wifi" } }
-DRV:HandleWebRequest( req2 )
+SUBSYSTEM:HandleWebRequest( req2 )
 assertTrue( string.find( sent.body[2], 'name="wpass"', 1, true ) ~= nil, "wifi sub-page served for /wifi" )
 
 -- A LAN router behind a switch gets the same backbone /64 + WAN address as a
@@ -463,7 +463,7 @@ table.ToString = function() return "" end
 PCMod.Msg = function() end
 PCMod.Data = PCMod.Data or {}
 local bdrv = {}
-for k, v in pairs( DRV ) do bdrv[ k ] = v end
+for k, v in pairs( SUBSYSTEM ) do bdrv[ k ] = v end
 local bport = { Connected = true }
 local fakeSwitch = { IsSwitch = true }
 function fakeSwitch:GetBridgePeers() return {} end
@@ -605,7 +605,7 @@ local ndpEnt = {}
 function ndpEnt:PushData( port, data ) ndpPushed[ #ndpPushed + 1 ] = { port = port, data = data } end
 function ndpEnt:GetMAC() return "AA:BB:CC:DD:EE:10" end
 local ndpDrv = {}
-for k, v in pairs( DRV ) do ndpDrv[ k ] = v end
+for k, v in pairs( SUBSYSTEM ) do ndpDrv[ k ] = v end
 ndpDrv.Entity = ndpEnt
 ndpDrv.ArpCache = {}
 ndpDrv.NdpCache = {}
@@ -631,12 +631,12 @@ function eent:Ports() return eports end
 function eent:GetBSubnet() return 0 end
 function eent:GetSubnet() return 0 end
 function eent:AddEHook() end
-DRV.Entity = eent
-DRV:Initialize()
-assertEq( #DRV.NPorts, 4, "Ethernet WAN router keeps four LAN ports" )
-assertEq( #DRV.OPorts, 1, "Ethernet WAN router has one WAN port" )
-assertTrue( table.HasValue( DRV.NPorts, 4 ), "LAN ports are network ports without WAN" )
-assertTrue( table.HasValue( DRV.OPorts, 5 ), "flagged WAN port is treated as WAN" )
+SUBSYSTEM.Entity = eent
+SUBSYSTEM:Initialize()
+assertEq( #SUBSYSTEM.NPorts, 4, "Ethernet WAN router keeps four LAN ports" )
+assertEq( #SUBSYSTEM.OPorts, 1, "Ethernet WAN router has one WAN port" )
+assertTrue( table.HasValue( SUBSYSTEM.NPorts, 4 ), "LAN ports are network ports without WAN" )
+assertTrue( table.HasValue( SUBSYSTEM.OPorts, 5 ), "flagged WAN port is treated as WAN" )
 
 -- Ingress ports decide the DHCP scope; no device-type logic is involved.
 local wports = {
@@ -649,15 +649,15 @@ local wports = {
 local went = {}
 function went:GetClass() return "pcmod_erouter" end
 function went:Ports() return wports end
-DRV.Entity = went
-DRV.NPorts = { 1, 2, 3, 4 }
-assertEq( DRV:PortSide( 1 ), "lan", "network port is the LAN side" )
-assertEq( DRV:PortSide( 5 ), "wan", "flagged WAN port is the WAN side" )
-assertEq( DRV:PortSide( 9 ), nil, "unknown port has no side" )
+SUBSYSTEM.Entity = went
+SUBSYSTEM.NPorts = { 1, 2, 3, 4 }
+assertEq( SUBSYSTEM:PortSide( 1 ), "lan", "network port is the LAN side" )
+assertEq( SUBSYSTEM:PortSide( 5 ), "wan", "flagged WAN port is the WAN side" )
+assertEq( SUBSYSTEM:PortSide( 9 ), nil, "unknown port has no side" )
 
--- Earlier tests replace a few driver methods inline; reload the driver so the
--- ingress tests run against the real implementation.
-dofile( "pcmod_drv_router.lua" )
+-- Earlier tests replace a few subsystem methods inline; reload the subsystem
+-- so the ingress tests run against the real implementation.
+dofile( "pcmod_subsystem_router.lua" )
 
 -- IPv6 WAN -> LAN ingress: IPv6 has no NAT, so the LAN edge must keep the
 -- same "private network" boundary IPv4 gets for free. A fresh router must not
@@ -692,7 +692,7 @@ function ingressEnt:PushData( port, data )
 end
 
 local ingress = {}
-for k, v in pairs( DRV ) do ingress[ k ] = v end
+for k, v in pairs( SUBSYSTEM ) do ingress[ k ] = v end
 ingress.Entity = ingressEnt
 ingress.Uplink = 5
 ingress.V6Flows = {}

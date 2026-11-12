@@ -36,8 +36,8 @@ function ENT:Setup( setupdata )
 	if ((uplink != "network") && (uplink != "optic")) then uplink = "optic" end
 	local pts = {}
 	local wan = self:CreatePort( uplink )
-	// An Ethernet WAN still looks like a normal network cable to the driver,
-	// so flag it; the driver splits LAN and WAN by this flag rather than by
+	// An Ethernet WAN still looks like a normal network cable to the router,
+	// so flag it; the router splits LAN and WAN by this flag rather than by
 	// the physical cable type.
 	if ((uplink == "network") && (wan.Type == "network")) then wan.WAN = true end
 	table.insert( pts, wan )
@@ -46,8 +46,8 @@ function ENT:Setup( setupdata )
 	end
 	dt.Ports = pts
 	
-	// Install the main driver
-	local drv = self:InstallDriver( "webgr_router" )
+	// Install the router subsystem
+	local drv = self:InstallSubsystem( "router" )
 	drv.Wireless = setupdata.Wireless
 
 	// Register our data
@@ -62,7 +62,7 @@ function ENT:Setup( setupdata )
 	if (drv.ApplyLanAddress) then drv:ApplyLanAddress() end
 	dt.IsWireless = setupdata.Wireless
 	dt.WirePass = setupdata.WirePass or "123"
-	// InstallDriver's Initialize may have seeded RouterCfg before the setup
+	// InstallSubsystem's Initialize may have seeded RouterCfg before the setup
 	// options were known. Re-apply the spawn choice through the normal setter,
 	// which also publishes the SSID for the look-at overlay.
 	self:UpdateData( dt )
@@ -78,7 +78,7 @@ function ENT:RunOnRemove()
 end
 
 function ENT:DataRecieved( port, data )
-	// Feed it straight through to the driver
-	if (!PCMod.Data[ self:EntIndex() ].Drivers[ "webgr_router" ]) then return end
-	PCMod.Data[ self:EntIndex() ].Drivers[ "webgr_router" ]:DataRecieved( port, data )
+	// Feed it straight through to the subsystem
+	if (!PCMod.Data[ self:EntIndex() ].Subsystems[ "router" ]) then return end
+	PCMod.Data[ self:EntIndex() ].Subsystems[ "router" ]:DataRecieved( port, data )
 end

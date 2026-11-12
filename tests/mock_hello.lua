@@ -40,7 +40,7 @@ PCMod = {
 	Msg = function() end,
 	Cfg = { MaxNetworkPid = 500, MaxNetworkPass = 10, WirelessRange = 0, DefaultTTL = 64 },
 	Network = { Packets = {}, NextSwitchFrame = 0 },
-	DeriveDriver = function() return {} end,
+	DeriveSubsystem = function() return {} end,
 	Data = {},
 }
 math.Clamp = function( v, a, b ) if (v < a) then return a end if (v > b) then return b end return v end
@@ -55,7 +55,7 @@ timer = { Simple = function() end }
 dofile( "pcmod_sh_common.lua" )
 dofile( "pcmod_sh_netproto.lua" )
 dofile( "pcmod_sh_routing.lua" )
-dofile( "pcmod_drv_router.lua" )
+dofile( "pcmod_subsystem_router.lua" )
 
 local function assertTrue( v, m )
 	if (not v) then error( "FAILED: " .. m, 2 ) end
@@ -85,13 +85,13 @@ local function makeBackbone( idx, bb )
 		if ((!p) || (!p.Connected) || (!p.ConEnt)) then return 2 end
 		return p.ConEnt:GivenData( p.RemotePort, data )
 	end
-	function o:GivenData( port, data ) return self.Driver:DataRecieved( port, data ) end
+	function o:GivenData( port, data ) return self.Subsystem:DataRecieved( port, data ) end
 	return o
 end
 
-local function makeDriver( ent )
+local function makeSubsystem( ent )
 	local d = {}
-	for k, v in pairs( DRV ) do d[ k ] = v end
+	for k, v in pairs( SUBSYSTEM ) do d[ k ] = v end
 	d.Entity = ent
 	d.Neighbors = {}
 	d.NeighborMAC = {}
@@ -100,8 +100,8 @@ local function makeDriver( ent )
 	d.PrefixRoutes = {}
 	d.NPorts = {}
 	d.OPorts = { 1 }
-	ent.Driver = d
-	PCMod.Data[ ent:EntIndex() ] = { Drivers = { webgr_router = d } }
+	ent.Subsystem = d
+	PCMod.Data[ ent:EntIndex() ] = { Subsystems = { router = d } }
 	return d
 end
 
@@ -120,7 +120,7 @@ end
 local b1 = makeBackbone( 1, 1 )
 local b2 = makeBackbone( 2, 2 )
 link( b1, b2 )
-local d1, d2 = makeDriver( b1 ), makeDriver( b2 )
+local d1, d2 = makeSubsystem( b1 ), makeSubsystem( b2 )
 
 PCMod.Routing.Send( d1, true )
 assertEq( d2.Neighbors[ 1 ], 1, "B2 records B1 as a direct neighbour" )
@@ -139,7 +139,7 @@ b2.PortList[ 2 ] = newPort( "optic" )
 link( b2, b3, 2, 1 )
 d1.OPorts = { 1 }
 d2.OPorts = { 1, 2 }
-d3 = makeDriver( b3 )
+d3 = makeSubsystem( b3 )
 d3.OPorts = { 1 }
 
 for _ = 1, 4 do

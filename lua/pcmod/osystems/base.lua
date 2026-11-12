@@ -31,31 +31,31 @@ end
 function OS:Bios()
 	local ent = self.Entity
 	if ((!ent) || (!ent:IsValid())) then return end
-	return PCMod.Data[ ent:EntIndex() ].Drivers[ "gen_bios" ]
+	return PCMod.Data[ ent:EntIndex() ].Subsystems[ "bios" ]
 end
 
 function OS:Display()
 	local ent = self.Entity
 	if ((!ent) || (!ent:IsValid())) then return end
-	return PCMod.Data[ ent:EntIndex() ].Drivers[ "gen_display" ]
+	return PCMod.Data[ ent:EntIndex() ].Subsystems[ "display" ]
 end
 
 function OS:Sound()
 	local ent = self.Entity
 	if ((!ent) || (!ent:IsValid())) then return end
-	return PCMod.Data[ ent:EntIndex() ].Drivers[ "gen_sound" ]
+	return PCMod.Data[ ent:EntIndex() ].Subsystems[ "sound" ]
 end
 
 function OS:USB()
 	local ent = self.Entity
 	if ((!ent) || (!ent:IsValid())) then return end
-	return PCMod.Data[ ent:EntIndex() ].Drivers[ "gen_usb" ]
+	return PCMod.Data[ ent:EntIndex() ].Subsystems[ "usb" ]
 end
 
 function OS:Network()
 	local ent = self.Entity
 	if ((!ent) || (!ent:IsValid())) then return end
-	return PCMod.Data[ ent:EntIndex() ].Drivers[ "gen_network" ]
+	return PCMod.Data[ ent:EntIndex() ].Subsystems[ "network" ]
 end
 
 function OS:RequestControl()

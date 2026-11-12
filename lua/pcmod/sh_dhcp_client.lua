@@ -199,7 +199,7 @@ end
 
 // A router's WAN address: the lease carries the upstream backbone and the
 // LAN /64 id it may use, but the same discover is used as any other host.
-function PCMod.DHCPClient.ApplyRouter( ent, driver, cfg, port )
+function PCMod.DHCPClient.ApplyRouter( ent, router, cfg, port )
 	if ((!ent) || (!cfg) || (!cfg.ip)) then return false end
 	local ipdata = ent.Data && ent:Data() && ent:Data().IP
 	if (!ipdata) then return false end
@@ -210,12 +210,12 @@ function PCMod.DHCPClient.ApplyRouter( ent, driver, cfg, port )
 	if (cfg.upbb && ent.SetUpBB) then ent:SetUpBB( cfg.upbb ) end
 	if (ent.SetLanID) then ent:SetLanID( cfg.lanid or cfg.host or 0 ) end
 	ipdata.Router = cfg.server
-	if (driver && port) then
-		driver.Uplink = ent:Ports()[ port ] or driver.Uplink
+	if (router && port) then
+		router.Uplink = ent:Ports()[ port ] or router.Uplink
 	end
 	// Existing LAN clients were numbered under the old /64; renumber them.
-	if (driver && driver.ReconfigureClients) then driver:ReconfigureClients() end
+	if (router && router.ReconfigureClients) then router:ReconfigureClients() end
 	// Advertise the new /64 immediately instead of waiting for the next hello.
-	if (driver && PCMod.Routing && PCMod.Routing.Send) then PCMod.Routing.Send( driver, true ) end
+	if (router && PCMod.Routing && PCMod.Routing.Send) then PCMod.Routing.Send( router, true ) end
 	return true
 end

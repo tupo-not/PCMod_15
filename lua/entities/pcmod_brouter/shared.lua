@@ -42,8 +42,8 @@ function ENT:Setup( setupdata )
 	table.insert( pts, mgmt )
 	dt.Ports = pts
 	
-	// Install the main driver
-	self:InstallDriver( "webgr_router" )
+	// Install the router subsystem
+	self:InstallSubsystem( "router" )
 
 	local registered = PCMod.Network.RegisterRouter( self.Entity )
 	if (!registered) then
@@ -61,7 +61,7 @@ function ENT:RunOnRemove()
 end
 
 function ENT:DataRecieved( port, data )
-	// Feed it straight through to the driver
-	if (!PCMod.Data[ self:EntIndex() ].Drivers[ "webgr_router" ]) then return end
-	PCMod.Data[ self:EntIndex() ].Drivers[ "webgr_router" ]:DataRecieved( port, data )
+	// Feed it straight through to the subsystem
+	if (!PCMod.Data[ self:EntIndex() ].Subsystems[ "router" ]) then return end
+	PCMod.Data[ self:EntIndex() ].Subsystems[ "router" ]:DataRecieved( port, data )
 end

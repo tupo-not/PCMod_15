@@ -44,8 +44,8 @@ PCMod.Network = {
 	RegisterRouter = function() return true end,
 	UnRegisterRouter = function() end,
 }
-PCMod.Drivers = {}
-PCMod.Drivers[ "webgr_router" ] = {
+PCMod.Subsystems = {}
+PCMod.Subsystems[ "router" ] = {
 	Initialize = function() end,
 	ApplyLanAddress = function() end,
 }
@@ -72,7 +72,7 @@ local function makeEnt( idx, prototype )
 	function ent:IsValid() return true end
 	function ent:SetNWString() end
 	function ent:SetGVar() end
-	PCMod.Data[ idx ] = { Drivers = {}, HardDrive = {}, EHooks = {} }
+	PCMod.Data[ idx ] = { Subsystems = {}, HardDrive = {}, EHooks = {} }
 	return ent
 end
 
@@ -97,7 +97,7 @@ assertTrue( PCMod.MAC.IsValid( PCMod.Data[ 1 ].MAC ), "modem gets a MAC" )
 assertEq( #PCMod.Data[ 1 ].PortMACs, 2, "modem gets one MAC per port" )
 
 -- Router variant: same LAN behaviour as the LAN modem, but the WAN port is an
--- Ethernet port flagged for the router driver.
+-- Ethernet port flagged for the router subsystem.
 ENT = setmetatable( {}, { __index = BaseENT } )
 dofile( "pcmod_router.lua" )
 RouterENT = ENT
@@ -131,7 +131,7 @@ local switchable = makeEnt( 4, RouterENT )
 switchable:Setup( { Wireless = false, Uplink = "network" } )
 local sports = PCMod.Data[ 4 ].Ports
 assertEq( sports[ 1 ].Type, "network", "selected Ethernet WAN medium" )
-assertTrue( sports[ 1 ].WAN, "selected Ethernet WAN is flagged for the driver" )
+assertTrue( sports[ 1 ].WAN, "selected Ethernet WAN is flagged for the subsystem" )
 for i = 2, 5 do assertEq( sports[ i ].Type, "network", "remaining ports stay LAN Ethernet" ) end
 
 -- Shared class helpers treat both LAN router variants alike.

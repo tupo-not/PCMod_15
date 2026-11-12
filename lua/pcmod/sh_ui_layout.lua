@@ -105,7 +105,7 @@ function UI.Anchor( parent, fx, fy, fw, fh )
 	return UI.Box( parent, fx, fy, fw, fh )
 end
 
-// Unpack helper for the legacy Create* functions that still take four numbers.
+// Unpack helper for the Create* functions that still take four numbers.
 function UI.Fields( rect )
 	local r = UI.Rect( rect )
 	return r.x, r.y, r.w, r.h

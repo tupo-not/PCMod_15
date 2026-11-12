@@ -2,8 +2,9 @@
 # PCMod test runner.
 #
 # Rebuilds the translated Lua 5.1 fixtures from the current addon sources,
-# syntax-checks them, then runs every mock_*.lua suite. Safe for CI and manual
-# use: it never touches the real addon files (only tests/.build/).
+# syntax-checks every addon Lua file, checks project contracts, then runs every
+# discovered mock_*.lua suite. Safe for CI and manual use: it never touches the
+# real addon files (only tests/.build/).
 #
 # Usage:
 #   ./run_tests.sh              run everything
@@ -28,65 +29,33 @@ for dep in python3 luac5.1 lua5.1; do
     fi
 done
 
-# --- build fixtures (also compile-checks every listed source) ---------------
+# --- build fixtures (also compile-checks every source) ----------------------
 echo "${C_BOLD}== Building translated fixtures and syntax-checking sources ==${C_RESET}"
 if ! python3 lib/build_fixtures.py; then
     echo "${C_RED}Fixture build / syntax check failed.${C_RESET}" >&2
     exit 1
 fi
 
-TESTS=(
-    mock_fs
-    mock_notepad
-    mock_notepad_ui
-    mock_files
-    mock_files_ui
-    mock_open_ui
-    mock_ipv6
-    mock_ndp
-    mock_portanchors
-    mock_latency
-    mock_ifacemac
-    mock_multinic
-    mock_multihome
-    mock_entity_ipv6
-    mock_overlay
-    mock_entity_sounds
-    mock_switch
-    mock_dora
-    mock_netvariants
-    mock_router
-    mock_trace
-    mock_bios
-    mock_os_programs
-    mock_network
-    mock_selfping
-    mock_leases
-    mock_dhcp
-    mock_dhcp_conflict
-    mock_routing
-    mock_hello
-    mock_wiring
-    mock_windows
-    mock_keyboard
-    mock_convar
-    mock_ui_core
-    mock_mycomp
-    mock_mycomp_prog
-    mock_chatserv
-    mock_browser
-    mock_web
-    mock_ui_scale
-    mock_hackyclicky
-    mock_elements
-    mock_install
-    mock_notify
-    mock_diskui
-)
+if ! python3 lib/check_sources.py; then
+    echo "${C_RED}Source contract check failed.${C_RESET}" >&2
+    exit 1
+fi
 
-# Allow narrowing to a single suite: ./run_tests.sh mock_fs
+# Discover suites automatically so a new mock_*.lua cannot be forgotten.
+# CLI arguments still narrow the run: ./run_tests.sh mock_fs
 if [ "$#" -gt 0 ]; then
     TESTS=( "$@" )
+else
+    TESTS=()
+    for suite in mock_*.lua; do
+        [ -e "$suite" ] || continue
+        TESTS+=( "${suite%.lua}" )
+    done
+fi
+
+if [ "${#TESTS[@]}" -eq 0 ]; then
+    echo "${C_RED}No mock_*.lua suites found.${C_RESET}" >&2
+    exit 1
 fi
 
 run_suite() {

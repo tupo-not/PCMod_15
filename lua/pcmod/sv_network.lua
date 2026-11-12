@@ -87,7 +87,7 @@ function PCMod.Network.CreatePacket( source, dest, port, body, sourcePort, sourc
 		// delivery (or when the slot was already empty).
 		if (!pid) then return nil end
 		// The slot held a delivered packet - routers remember every pid they
-		// processed (drv_router mem.P), so forget it everywhere or the new
+		// processed (router subsystem mem.P), so forget it everywhere or the new
 		// packet would be dropped as "Already processed".
 		if (PCMod.Network.Packets[ pid ]) then
 			PCMod.Network.ClearPacketMemory( pid )
@@ -243,14 +243,14 @@ function PCMod.Network.Reconverge()
 	end
 	for _, ent in ipairs( list ) do
 		local data = PCMod.Data[ ent:EntIndex() ]
-		local drv = data && data.Drivers && data.Drivers[ "webgr_router" ]
+		local drv = data && data.Subsystems && data.Subsystems[ "router" ]
 		if (drv && drv.RecalcRoutes) then drv:RecalcRoutes() end
 	end
 	// A path graph of N backbones converges in N iterations.
 	for i = 1, 32 do
 		for _, ent in ipairs( list ) do
 			local data = PCMod.Data[ ent:EntIndex() ]
-			local drv = data && data.Drivers && data.Drivers[ "webgr_router" ]
+			local drv = data && data.Subsystems && data.Subsystems[ "router" ]
 			if (drv && drv.AdvertiseRoutes) then drv:AdvertiseRoutes() end
 		end
 	end

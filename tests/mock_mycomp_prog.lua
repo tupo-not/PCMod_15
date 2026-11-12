@@ -1,4 +1,4 @@
--- Control Panel server data and legacy command compatibility.
+-- Control Panel server data and command compatibility.
 SERVER = true
 CLIENT = false
 function string.Left( s, n ) return string.sub( s, 1, n ) end
@@ -27,6 +27,12 @@ end
 PCMod = { Data = { [1] = { Password = "old", HardDrive = {} } }, Msg = function() end, Cfg = { WirelessRange = 1024 } }
 PCMod.MAC = { IsValid = function( m ) return ((type( m ) == "string") && (m != "") && (m != "bad")) end }
 util = { Compress = function( s ) return s end }
+function PCMod.GetSubsystem( data, name )
+    if (!data) then return nil end
+    local store = data.Subsystems
+    if (!store) then return nil end
+    return store[ name ]
+end
 local ent = {}
 function ent:EntIndex() return 1 end
 function ent:IsValid() return true end
@@ -71,12 +77,12 @@ ents = {
     FindByClass = function() return {} end,
 }
 
--- Wi-Fi connect machinery: a fake network driver on the PC and a fake wireless
+-- Wi-Fi connect machinery: a fake network subsystem on the PC and a fake wireless
 -- router the Control Panel can connect to.
 local netDrv = { WirelessEnt = nil, WirelessPass = "" }
 function netDrv:DisconnectWireless()
     if (self.WirelessEnt) then
-        local r = PCMod.Data[ self.WirelessEnt:EntIndex() ].Drivers.webgr_router
+        local r = PCMod.Data[ self.WirelessEnt:EntIndex() ].Subsystems.router
         if (r and r.RemoveWirelessClient) then r:RemoveWirelessClient( ent ) end
     end
     self.WirelessEnt = nil
@@ -89,8 +95,8 @@ function routerDrv:AddWirelessClient( pc ) self.Added = pc return regResult end
 function routerDrv:RemoveWirelessClient( pc ) self.Added = nil end
 function routerDrv:HasLease( pc ) return self.Added == pc end
 function routerDrv:RenewLease( pc ) self.Renewed = pc return 2 end
-PCMod.Data[ 1 ].Drivers = { gen_network = netDrv }
-PCMod.Data[ 50 ] = { Drivers = { webgr_router = routerDrv } }
+PCMod.Data[ 1 ].Subsystems = { network = netDrv }
+PCMod.Data[ 50 ] = { Subsystems = { router = routerDrv } }
 local wifi = { IsPCMod = true }
 function wifi:IsValid() return true end
 function wifi:EntIndex() return 50 end
@@ -158,7 +164,7 @@ prog:DoCommand( "connect_wifi", { "50", "123" } )
 assertTrue( prog.DeviceData.Wifi.Connected, "Wi-Fi connected" )
 assertEq( prog.DeviceData.Wifi.EntIndex, 50, "Wi-Fi router index" )
 assertEq( prog.DeviceData.Wifi.Name, "TestNet", "Wi-Fi status shows the network name" )
-assertTrue( netDrv.WirelessEnt == wifi, "network driver holds the link" )
+assertTrue( netDrv.WirelessEnt == wifi, "network subsystem holds the link" )
 assertTrue( routerDrv.Added == ent, "router recorded the wireless client" )
 
 -- A delayed DHCP answer must not leave the Wi-Fi status stuck on
@@ -181,7 +187,7 @@ local wiredRouter = { IsPCMod = true }
 function wiredRouter:IsValid() return true end
 function wiredRouter:EntIndex() return 60 end
 function wiredRouter:GetClass() return "pcmod_router" end
-PCMod.Data[ 60 ] = { Drivers = { webgr_router = wiredDrv } }
+PCMod.Data[ 60 ] = { Subsystems = { router = wiredDrv } }
 local sw = { IsSwitch = true }
 function sw:IsValid() return true end
 function sw:EntIndex() return 70 end
@@ -200,7 +206,7 @@ assertEq( #prog.DeviceData.Wireless, 2, "wifi rescan returns the in-range router
 
 prog:DoCommand( "disconnect_wifi", {} )
 assertTrue( !prog.DeviceData.Wifi.Connected, "Wi-Fi disconnected" )
-assertTrue( netDrv.WirelessEnt == nil, "network driver cleared the link" )
+assertTrue( netDrv.WirelessEnt == nil, "network subsystem cleared the link" )
 
 -- Full DHCP pool: still connected, but marked IPv6-only instead of refused.
 regResult = "full"
@@ -217,9 +223,9 @@ prog:DoCommand( "changepass", { "old", "new" } )
 assertEq( PCMod.Data[ 1 ].Password, "new", "password changed" )
 assertEq( prog.DeviceData.PWE, 2, "password success status" )
 prog:DoCommand( "open_devman", {} )
-assertEq( os.LastCommand, "sys_openprog deviceman", "legacy Device Manager command" )
+assertEq( os.LastCommand, "sys_openprog deviceman", "Device Manager command" )
 prog:DoCommand( "open_nettools", {} )
-assertEq( os.LastCommand, "sys_openprog nettools", "legacy Network Tools command" )
+assertEq( os.LastCommand, "sys_openprog nettools", "Network Tools command" )
 
 -- Static IP: set_static_ip forwards to the entity and RefreshNetwork surfaces it.
 prog:DoCommand( "set_static_ip", { "192.168.5.7" } )

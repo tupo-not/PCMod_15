@@ -10,7 +10,7 @@ PCMod = {
 	Msg = function() end,
 	Cfg = { DHCPStart = 2, DHCPEnd = 254 },
 	Network = {},
-	DeriveDriver = function() return {} end,
+	DeriveSubsystem = function() return {} end,
 }
 
 dofile( "pcmod_sh_common.lua" )

@@ -43,7 +43,7 @@ OnDeactivate()    when the program loses focus / stops
 OnStart()         when state becomes 1 (after activation)
 OnEnd()           when state becomes 0 (before the window is removed)
 Think()           every OS tick while running
-ProcessPacket()   legacy packet hook
+ProcessPacket()   packet hook
 PingSuccess()     network ping reply
 TraceSuccess()    network traceroute reply
 MessageFailed()   network error reply
@@ -108,7 +108,7 @@ ShowFilePicker( path, mode ) / ShowOpenFile( path ) / CloseOpenFile()
     Picker navigation/selection is handled by the base class; override
     OnFilePicked( path ) to receive the chosen full path (the default calls
     DoCommand( "openpath", { path } )).
-    ShowOpenFile( path ) is the legacy alias for mode "open".
+    ShowOpenFile( path ) is the short form for mode "open".
 
     Commands picker_nav / picker_sel / picker_close are intercepted by
     ProcessCommand(), so programs do not need to implement them.

@@ -24,13 +24,27 @@ function PCMod.RegisterPlugin( id, tbl )
 end
 
 // ---------------------------------------------------------------------------------------------------------
-// CallHook - Calls a hook on all plugins until something is returned
+// CallHook - Calls a named handler on every plugin until one returns a value.
+// The plugin table is passed as self, so plugins can keep state on themselves.
 // ---------------------------------------------------------------------------------------------------------
 function PCMod.CallHook( hookname, ... )
-	for plugin, _ in pairs( PCMod.Plugins ) do
-		//local result = PCMod.Plugins[ plugin ]:Hook( hookname, ... )
-		//if (result) then return result end
+	if (!hookname) then return nil end
+	local ids = {}
+	for id, _ in pairs( PCMod.Plugins ) do table.insert( ids, id ) end
+	table.sort( ids, function( a, b ) return tostring( a ) < tostring( b ) end )
+	for _, id in ipairs( ids ) do
+		local plugin = PCMod.Plugins[ id ]
+		local handler = plugin && plugin[ hookname ]
+		if (type( handler ) == "function") then
+			local ok, result = pcall( handler, plugin, ... )
+			if (!ok) then
+				PCMod.Warning( "Plugin '" .. tostring( id ) .. "' failed in '" .. tostring( hookname ) .. "': " .. tostring( result ) )
+			elseif (result != nil) then
+				return result
+			end
+		end
 	end
+	return nil
 end
 
 

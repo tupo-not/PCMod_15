@@ -168,7 +168,8 @@ function PCMod.Gui.Notify( msg, isError )
 	if (!PCMod.Gui.NotifyState.IsError) then surface.PlaySound( NOTIFY.Sound ) end
 end
 
-// Kept for compatibility with older callers (pc_testicon, pcmod_hdcopier).
+// Compatibility wrapper for callers that use FlashIcon (pc_testicon,
+// pcmod_hdcopier).
 function PCMod.Gui.FlashIcon( ico, dir )
 	PCMod.Gui.Notify( "Installed", false )
 end
