@@ -590,6 +590,16 @@
 			// IP TTL travels with the frame until a router turns it into a
 			// packet. data[3] is already used by switches for loop detection.
 			if (ttl) then data[5] = ttl end
+			// Packet tracing (pcmod_debug_packets 1): host-originated frames
+			// are pushed straight to the peer instead of through PushData, so
+			// DHCP discover/request used to be invisible in the log and the
+			// router's offer/ack looked unsolicited.
+			if (SERVER && PCMod.Network && PCMod.Network.LogPacket &&
+				((prt.Type == "network") || (prt.Type == "optic"))) then
+				local atIp = (self.GetFullIP && self:GetFullIP()) or (self.GetFullBIP && self:GetFullBIP()) or "?"
+				local out = "at " .. tostring( atIp ) .. " out " .. self:GetClass() .. ":" .. tostring( portid or "?" )
+				PCMod.Network.LogPacket( "send", data[2][1], data[2][2], data[2][3], data[2][4], out )
+			end
 			// Simulate the one-way delay of the physical link the frame is
 			// leaving on. The peer may be a switch, modem or router.
 			local kind = PCMod.Latency && PCMod.Latency.KindForPort && PCMod.Latency.KindForPort( prt )

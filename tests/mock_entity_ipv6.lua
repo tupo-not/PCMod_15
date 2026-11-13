@@ -325,4 +325,32 @@ assertTrue( ent:SetStaticIP( "" ) == true, "clear accepted" )
 assertEq( ent:GetStaticIP(), false, "static cleared" )
 assertEq( ent:GetIP(), false, "host cleared for DHCP" )
 
+-- Host-originated frames are traced too. DHCP discover/request are L2 frames
+-- that bypass PushData, so the router's offer/ack used to look unsolicited.
+local frames = {}
+PCMod.Network = {
+	LogPacket = function( tag, src, dst, port, body, extra )
+		frames[ #frames + 1 ] = { tag = tag, src = src, dst = dst, port = port, body = body, extra = extra }
+	end,
+}
+local logEnt = setmetatable( {}, { __index = ENT } )
+logEnt.Entity = logEnt
+function logEnt:EntIndex() return 77 end
+function logEnt:IsValid() return true end
+function logEnt:GetClass() return "pcmod_base" end
+function logEnt:GetFullIP() return "192.168.0.2" end
+function logEnt:GetFullBIP() return false end
+function logEnt:GetSourceAddress() return "192.168.0.2" end
+function logEnt:EnsureInterfaceMAC() return "AA:BB:CC:DD:EE:01" end
+function logEnt:Ports()
+	return { [ 1 ] = { Type = "network", Connected = true, ConEnt = false, RemotePort = 1 } }
+end
+logEnt:SendPacket( 1, "255.255.255.255", 67, { "dhcp", "discover", 1, nil, { mac = "AA:BB:CC:DD:EE:01" } }, nil, "0.0.0.0" )
+assertEq( #frames, 1, "host frames are traced" )
+assertEq( frames[ 1 ].tag, "send", "host frame uses the send tag" )
+assertEq( frames[ 1 ].src, "0.0.0.0", "DHCP discover logs its unconfigured source" )
+assertEq( frames[ 1 ].dst, "255.255.255.255", "DHCP discover logs its broadcast destination" )
+assertEq( frames[ 1 ].port, 67, "DHCP discover logs the server port" )
+assertEq( frames[ 1 ].body[ 1 ], "dhcp", "host frame logs the DHCP body" )
+
 print( "ALL ENTITY IPV6 TESTS PASSED" )
