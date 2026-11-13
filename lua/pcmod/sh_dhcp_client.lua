@@ -77,7 +77,10 @@ end
 // multi-homing model: a lease from a different router becomes a secondary.
 // `keep` is set for machines with more than one interface, where a LAN lease
 // and a WAN/backbone lease must coexist instead of replacing each other.
-function PCMod.DHCPClient.ApplyHost( ent, cfg, keep )
+// `port` identifies the adapter; the first adapter to apply owns the primary
+// identity and later adapters never steal it (renewals on the owner still
+// update it).
+function PCMod.DHCPClient.ApplyHost( ent, cfg, keep, port )
 	if ((!ent) || (!cfg) || (!cfg.ip)) then return false end
 	local data = ent.Data && ent:Data()
 	local ipdata = data && data.IP
@@ -122,6 +125,20 @@ function PCMod.DHCPClient.ApplyHost( ent, cfg, keep )
 		local oent = odata && odata.Ent
 		if ((!odata) || (oent && oent.IsValid && (!oent:IsValid()))) then ownerGone = true end
 	end
+	// Multi-NIC: the adapter that owns the primary keeps it. A second NIC on
+	// the same router (same subnet, distinct per-interface MAC lease) is an
+	// additional interface address, not a replacement. Without this the two
+	// NICs kept promoting their own lease and the primary flipped on every
+	// renew.
+	if (keep && primary && owner && (!ownerGone)) then
+		local ownerPort = ipdata.PrimaryPort
+		if ((ownerPort != nil) && (port != nil) && (ownerPort != port)) then
+			if ((cfg.ip != ipdata.LAN) && ent.AddExtraIP) then
+				ent:AddExtraIP( cfg.ip, cfg.upbb or 0, cfg.lanid or 0, cfg.server )
+			end
+			return true
+		end
+	end
 	if (primary && owner && (owner != cfg.server) && (keep || (!sameLan)) && (!ownerGone)) then
 		if (ent.AddExtraIP) then
 			ent:AddExtraIP( cfg.ip, cfg.upbb or 0, cfg.lanid or 0, cfg.server )
@@ -150,6 +167,7 @@ function PCMod.DHCPClient.ApplyHost( ent, cfg, keep )
 		if (ent.SetBIP) then ent:SetBIP( false ) end
 	end
 	ipdata.Router = cfg.server
+	if (port != nil) then ipdata.PrimaryPort = port end
 	return true
 end
 

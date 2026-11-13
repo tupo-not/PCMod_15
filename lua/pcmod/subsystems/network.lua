@@ -72,6 +72,7 @@ function SUBSYSTEM:ClearDHCPAddress()
 	ipdata.MaskBits = nil
 	ipdata.Gateway = nil
 	if (ent.ClearInterfaces) then ent:ClearInterfaces() end
+	ipdata.PrimaryPort = nil
 	for _, ctx in pairs( self.DHCPByPort or {} ) do
 		ctx.DHCPState = nil
 		ctx.LastDHCP = nil
@@ -184,6 +185,10 @@ function SUBSYSTEM:ReleasePort( port )
 	ctx.LastDHCP = nil
 	if (port == 0) then self.WirelessIPv4 = nil end
 	if (self.Entity.ClearInterface) then self.Entity:ClearInterface( port ) end
+	// The released adapter may have owned the primary identity. Forget that
+	// ownership so a surviving adapter can take it over cleanly.
+	local ipdata = self.Entity.Data && self.Entity:Data() && self.Entity:Data().IP
+	if (ipdata && (ipdata.PrimaryPort == port)) then ipdata.PrimaryPort = nil end
 	local latest
 	for _, other in pairs( self.DHCPByPort ) do
 		if (other.LastDHCP) then latest = other.LastDHCP end
@@ -198,7 +203,7 @@ function SUBSYSTEM:ReleasePort( port )
 	// other family: another adapter may still be using it.
 	for _, other in pairs( self.DHCPByPort ) do
 		if (other.Lease && PCMod.DHCPClient.ApplyHost) then
-			PCMod.DHCPClient.ApplyHost( self.Entity, other.Lease, true )
+			PCMod.DHCPClient.ApplyHost( self.Entity, other.Lease, true, other.Port )
 			break
 		end
 	end
@@ -262,7 +267,7 @@ function SUBSYSTEM:DHCPDiscover( port, retries )
 		apply = function( cfg )
 			ctx.Lease = cfg
 			if (port == 0) then self.WirelessIPv4 = true end
-			PCMod.DHCPClient.ApplyHost( self.Entity, cfg, self:HasOtherInterface( port ) )
+			PCMod.DHCPClient.ApplyHost( self.Entity, cfg, self:HasOtherInterface( port ), port )
 			self:RecordInterface( port, cfg )
 		end,
 	} )

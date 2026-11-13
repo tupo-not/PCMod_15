@@ -388,6 +388,30 @@ assertEq( lanHostData.IP.LAN, "192.168.5.2", "different LAN leaves the primary i
 assertEq( #lanHostData.IP.Extra, 1, "different LAN becomes a secondary address" )
 assertEq( lanHostData.IP.Extra[ 1 ].IPv4, "192.168.9.5", "secondary address recorded" )
 
+-- Multi-NIC: a second adapter on the same router must not steal the primary
+-- identity, while a renewal on the owning adapter still updates it.
+lanHostData.IP.LAN = false
+lanHostData.IP.Router = false
+lanHostData.IP.Extra = {}
+lanHostData.IP.PrimaryPort = nil
+local function sameRouterLease( ip )
+	return {
+		ip = ip, scope = "lan", upbb = 7, lanid = 12, server = 2001,
+		maskbits = 24, netmask = "255.255.255.0", gateway = "192.168.5.1",
+	}
+end
+PCMod.DHCPClient.ApplyHost( lanHost, sameRouterLease( "192.168.5.2" ), true, 1 )
+assertEq( lanHostData.IP.LAN, "192.168.5.2", "first adapter takes the primary" )
+assertEq( lanHostData.IP.PrimaryPort, 1, "primary adapter recorded" )
+PCMod.DHCPClient.ApplyHost( lanHost, sameRouterLease( "192.168.5.3" ), true, 2 )
+assertEq( lanHostData.IP.LAN, "192.168.5.2", "second adapter keeps the primary" )
+assertEq( lanHostData.IP.PrimaryPort, 1, "primary adapter did not move" )
+assertEq( #lanHostData.IP.Extra, 1, "second adapter becomes an extra address" )
+assertEq( lanHostData.IP.Extra[ 1 ].IPv4, "192.168.5.3", "second adapter address stored" )
+PCMod.DHCPClient.ApplyHost( lanHost, sameRouterLease( "192.168.5.4" ), true, 1 )
+assertEq( lanHostData.IP.LAN, "192.168.5.4", "renewal on the primary adapter updates it" )
+assertEq( lanHostData.IP.PrimaryPort, 1, "primary adapter stays put" )
+
 -- A LAN static reservation is honoured and skipped by the dynamic pool.
 assertTrue( lrdrv:AddStaticLease( "192.168.5.30", "AA:BB:CC:00:01:99" ), "LAN static reservation accepted" )
 local lanRec = PCMod.DHCPServer.Offer( lrdrv, "lan", "AA:BB:CC:00:01:99", 9002 )
