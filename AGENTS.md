@@ -26,9 +26,7 @@ See `tests/README.md`. Never edit `tests/.build/` — it is generated.
 
 ## Conventions
 
-- Preserve compatibility with existing PCMod programs, saved PC data, the boot
-  flow, and existing file-picker/screen-space payloads. Internal names such as
-  `mycomputer` / `window_mycomp` are part of that contract.
+- Rework existing PCMod programs logic if backbone changed.
 - Server-side changes need a map restart; client-side changes need a reconnect;
   per-PC program changes need `sys_resetprog <name>` (or a respawn) on existing
   PCs.
@@ -40,7 +38,7 @@ See `tests/README.md`. Never edit `tests/.build/` — it is generated.
 
 - Do not commit straight after editing. Once a batch of N changes (all edits for
   the current request) is complete, explicitly ask the user whether those
-  changes work as expected in-game/on their setup. If yes, run the full test
+  changes work as expected(not through ****code 'Questions' tool) in-game/on their setup. If yes, run the full test
   suite and commit. If no, fix the problems, re-test, and ask again — repeat
   this fix → verify → ask cycle until the user confirms.
 - Keep generated files out of git (see `.gitignore`).
