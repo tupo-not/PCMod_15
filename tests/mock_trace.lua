@@ -1,6 +1,6 @@
--- TTL-based traceroute state machine: the OS sends a probe with TTL 1, a
--- router reports itself when the TTL expires, and the OS retries with the next
--- TTL until the destination answers.
+-- ICMP traceroute state machine: the OS sends an echo probe with TTL 1, a
+-- router reports itself with time-exceeded when the TTL expires, and the OS
+-- retries with the next TTL until the destination answers with an echo reply.
 PCMod = {
 	Msg = function() end,
 	Cfg = { DefaultTTL = 64, TraceMaxHops = 30 },
@@ -18,6 +18,7 @@ function table.Copy( t )
 end
 
 OS = {}
+dofile( "pcmod_sh_icmp.lua" )
 dofile( "pcmod_os_base.lua" )
 function OS:DoPacket() end
 
@@ -42,6 +43,7 @@ function CurTime() return now end
 
 local os = table.Copy( OS )
 os.TraceRouteData = {}
+os.PingData = {}
 os.Progs = {}
 os.NetPorts = {}
 os.Network = function() return net end
@@ -54,27 +56,28 @@ end
 -- Initial probe: TTL 1, carrying the trace handle and probe number.
 os:NetTrace( "10.0.1.4", "os" )
 assertEq( #sent, 1, "traceroute starts with one probe" )
-assertEq( sent[ 1 ].body[ 1 ], "netTrace", "probe body type" )
+assertEq( sent[ 1 ].body[ 1 ], "icmp", "probe is an ICMP message" )
+assertEq( sent[ 1 ].body[ 2 ], "echo", "probe is an ICMP echo" )
 assertEq( sent[ 1 ].body[ 3 ], 1, "probe carries the trace handle" )
 assertEq( sent[ 1 ].body[ 4 ], 1, "first probe carries TTL 1" )
 assertEq( sent[ 1 ].ttl, 1, "first probe is sent with TTL 1" )
 
 -- Hop 1 expired at the first router: record it and probe again with TTL 2.
 now = 0.012
-os:ProcessPacket( 0, { "netTraceHop", "os", 1, "192.168.5.1", "RTR", 1 }, { "192.168.5.1", 0 } )
-assertEq( #sent, 2, "a hop report triggers the next probe" )
+os:ProcessPacket( 0, { "icmp", "time-exceeded", 1, 1, "192.168.5.1", "RTR" }, { "192.168.5.1", 0 } )
+assertEq( #sent, 2, "a time-exceeded report triggers the next probe" )
 assertEq( sent[ 2 ].body[ 4 ], 2, "second probe carries TTL 2" )
 assertEq( sent[ 2 ].ttl, 2, "second probe is sent with TTL 2" )
 
 -- Hop 2 expired at the backbone router.
 now = 0.030
-os:ProcessPacket( 0, { "netTraceHop", "os", 1, "10.0.1.1", "BRTR", 2 }, { "10.0.1.1", 0 } )
+os:ProcessPacket( 0, { "icmp", "time-exceeded", 1, 2, "10.0.1.1", "BRTR" }, { "10.0.1.1", 0 } )
 assertEq( #sent, 3, "second hop report triggers the third probe" )
 assertEq( sent[ 3 ].ttl, 3, "third probe is sent with TTL 3" )
 
--- The destination is a router and answers as the final hop.
+-- The destination is a router and answers as the final hop with an echo reply.
 now = 0.045
-os:ProcessPacket( 0, { "netTraceResponse", "os", 1, "Router" }, { "10.0.1.4", 0 } )
+os:ProcessPacket( 0, { "icmp", "echo-reply", 1, 3, "Router" }, { "10.0.1.4", 0 } )
 assertTrue( done ~= nil, "destination response completes the trace" )
 assertEq( done.ip, "10.0.1.4", "trace reports the destination address" )
 assertEq( done.trace[ 1 ], "192.168.5.1 - RTR  (12 ms)", "hop 1 result includes RTT" )
@@ -84,7 +87,7 @@ assertTrue( os.TraceRouteData[ 1 ] == nil, "trace state released on completion" 
 assertEq( #sent, 3, "no probe is sent after the destination answers" )
 
 -- A late hop report for a finished trace is ignored.
-os:ProcessPacket( 0, { "netTraceHop", "os", 1, "10.0.9.9", "RTR", 9 }, { "10.0.9.9", 0 } )
+os:ProcessPacket( 0, { "icmp", "time-exceeded", 1, 9, "10.0.9.9", "RTR" }, { "10.0.9.9", 0 } )
 assertEq( #sent, 3, "late hop report ignored" )
 
 -- A large backbone must not stop at the old 30-hop probe ceiling.
@@ -96,14 +99,15 @@ function os:TraceSuccess( ip, trace )
 end
 os:NetTrace( "10.0.200.4", "os" )
 assertEq( #sent, beforeLarge + 1, "large trace starts" )
+local largeSession = sent[ #sent ].body[ 3 ]
 for hop = 1, 200 do
 	now = now + 0.003
-	os:ProcessPacket( 0, { "netTraceHop", "os", 1, "10.0." .. hop .. ".1", "RTR", hop }, { "10.0." .. hop .. ".1", 0 } )
+	os:ProcessPacket( 0, { "icmp", "time-exceeded", largeSession, hop, "10.0." .. hop .. ".1", "RTR" }, { "10.0." .. hop .. ".1", 0 } )
 end
 assertEq( sent[ #sent ].body[ 4 ], 201, "trace keeps probing past 200 hops" )
 assertEq( sent[ #sent ].ttl, 201, "large trace raises the probe TTL" )
 now = now + 0.003
-os:ProcessPacket( 0, { "netTraceResponse", "os", 1, "HOST" }, { "10.0.200.4", 0 } )
+os:ProcessPacket( 0, { "icmp", "echo-reply", largeSession, 201, "HOST" }, { "10.0.200.4", 0 } )
 assertTrue( largeDone ~= nil, "large trace reaches the destination" )
 assertEq( largeDone.ip, "10.0.200.4", "large trace reports the destination address" )
 assertEq( #largeDone.trace, 201, "large trace records every hop" )

@@ -29,6 +29,7 @@ if (!PCMod_NoInclude) then
 	include( "pcmod/sh_baseconfig.lua" ) -- Configuration file
 	include( "pcmod/sh_common.lua" ) -- Common functions
 	include( "pcmod/sh_netproto.lua" ) -- DHCP/ARP/hello wire formats
+	include( "pcmod/sh_icmp.lua" ) -- Ping/traceroute ICMP wire format
 	include( "pcmod/sh_dhcp_server.lua" ) -- MAC-keyed DHCP server
 	include( "pcmod/sh_dhcp_client.lua" ) -- DHCP client state machine
 	include( "pcmod/sh_arp.lua" ) -- ARP next-hop resolution

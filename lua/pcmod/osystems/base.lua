@@ -7,6 +7,7 @@ OS.USBDevices = {}
 
 OS.NetPorts = {}
 OS.TraceRouteData = {}
+OS.PingData = {}
 
 // Simulated wall-clock seconds for RTT measurement. The mock suites do not
 // provide CurTime, so fall back to a monotonic zero rather than erroring.
@@ -196,6 +197,7 @@ function OS:ShutDown()
 	self.Progs = {}
 	self.NetPorts = {}
 	self.TraceRouteData = {}
+	self.PingData = {}
 	self.State = 0
 	self.NUpdate = 0
 	self.Mode = nil
@@ -357,8 +359,21 @@ end
 function OS:ProcessPacket( pt, dat, handle )
 	if ((dat[1] == "netPortClosed") || (dat[1] == "netPortLocked")) then
 		local olddat = dat[2]
-		// Olddat is the data we sent
-		local hk = olddat[2]
+		// Olddat is the data we sent. An ICMP probe only carries its session,
+		// so look the program handle up in the probe state instead of reading
+		// it from the wire body.
+		local hk
+		if ((PCMod.ICMP) && (PCMod.ICMP.Is( olddat ))) then
+			local sid = PCMod.ICMP.Session( olddat )
+			local ping = self.PingData && self.PingData[ sid ]
+			local trace = self.TraceRouteData && self.TraceRouteData[ sid ]
+			local rec = ping or trace
+			hk = rec && rec.HK
+			if (ping) then self.PingData[ sid ] = nil end
+			if (trace) then self.TraceRouteData[ sid ] = nil end
+		else
+			hk = olddat[2]
+		end
 		if (hk) then
 			if (hk == "os") then
 				self:MessageFailed( handle, dat[1], olddat )
@@ -368,54 +383,51 @@ function OS:ProcessPacket( pt, dat, handle )
 		end
 	end
 	if (pt == 0) then
-		// We have been pinged / tracerouted!
-		PCMod.Msg( "OS BASE: " .. dat[1], true )
-		if (dat[1] == "netPing") then self:ReplyNetMessage( handle, { "netPingResponse", dat[2], "Computer Tower OS" } ) end
-		if (dat[1] == "netPing_DEBUG") then
-			PCMod.Msg( "==] 'netPing_DEBUG' has been recieved! (OS BASE, ent " .. self.Entity:EntIndex() .. ")" )
-			if (dat[2]) then dat[2]:Say( "Ping was recieved! (OS BASE, ent " .. self.Entity:EntIndex() .. ")" ) end
-		end
-		if (dat[1] == "netTrace") then self:ReplyNetMessage( handle, { "netTraceResponse", dat[2], dat[3], "Computer Tower OS" } ) end
-		if (dat[1] == "netPingResponse") then
-			local hk = dat[2]
-			if (hk) then
-				if (hk == "os") then
-					self:PingSuccess( handle[1] )
+		// We have been pinged / tracerouted, or a probe reply came back.
+		PCMod.Msg( "OS BASE: " .. tostring( dat[1] ), true )
+		local icmp = PCMod.ICMP
+		if ((icmp) && (icmp.Is( dat ))) then
+			local typ = icmp.Type( dat )
+			if (typ == icmp.Echo) then
+				// An echo request addressed to this machine: answer it.
+				self:ReplyNetMessage( handle, icmp.Reply( icmp.Session( dat ), icmp.Seq( dat ), "Computer Tower OS" ) )
+			elseif (typ == icmp.EchoReply) then
+				local sid = icmp.Session( dat )
+				local ping = self.PingData && self.PingData[ sid ]
+				if (ping) then
+					self.PingData[ sid ] = nil
+					local hk = ping.HK
+					if (hk == "os") then
+						self:PingSuccess( handle[1] )
+					else
+						if (self.Progs[ hk ]) then self.Progs[ hk ]:PingSuccess( handle[1], icmp.ReplyLabel( dat ) ) end
+					end
 				else
-					if (self.Progs[ hk ]) then self.Progs[ hk ]:PingSuccess( handle[1], dat[3] ) end
+					local st = self.TraceRouteData && self.TraceRouteData[ sid ]
+					if (st) then
+						self.TraceRouteData[ sid ] = nil
+						local hop = icmp.Seq( dat ) or st.TTL
+						local ms = ElapsedMs( st.SentAt )
+						st.HopMs = st.HopMs or {}
+						st.HopMs[ hop ] = ms
+						st.Hops[ hop ] = tostring( handle[1] ) .. " - " .. tostring( icmp.ReplyLabel( dat ) or "HOST" ) .. "  (" .. tostring( ms ) .. " ms)"
+						if (st.HK == "os") then
+							self:TraceSuccess( handle[1], st.Hops )
+						else
+							if (self.Progs[ st.HK ]) then self.Progs[ st.HK ]:TraceSuccess( handle[1], st.Hops ) end
+						end
+					end
 				end
-			end
-		end
-		if (dat[1] == "netTraceHop") then
-			local hk = dat[2]
-			local thdl = dat[3]
-			local st = self.TraceRouteData[ thdl ]
-			if (st) then
-				local hop = tonumber( dat[6] ) or st.TTL
-				local ms = ElapsedMs( st.SentAt )
-				st.HopMs = st.HopMs or {}
-				st.HopMs[ hop ] = ms
-				st.Hops[ hop ] = tostring( dat[4] or handle[1] ) .. " - " .. tostring( dat[5] or "HOP" ) .. "  (" .. tostring( ms ) .. " ms)"
-				st.TTL = hop + 1
-				self:SendTraceProbe( thdl )
-			end
-		end
-		if (dat[1] == "netTraceResponse") then
-			local hk = dat[2]
-			if (hk) then
-				local thdl = dat[3]
-				local st = self.TraceRouteData[ thdl ]
-				self.TraceRouteData[ thdl ] = nil
+			elseif (typ == icmp.TimeExceeded) then
+				local st = self.TraceRouteData && self.TraceRouteData[ icmp.Session( dat ) ]
 				if (st) then
+					local hop = icmp.Seq( dat ) or st.TTL
 					local ms = ElapsedMs( st.SentAt )
 					st.HopMs = st.HopMs or {}
-					st.HopMs[ st.TTL ] = ms
-					st.Hops[ st.TTL ] = tostring( handle[1] ) .. " - " .. tostring( dat[4] or "HOST" ) .. "  (" .. tostring( ms ) .. " ms)"
-					if (hk == "os") then
-						self:TraceSuccess( handle[1], st.Hops )
-					else
-						if (self.Progs[ hk ]) then self.Progs[ hk ]:TraceSuccess( handle[1], st.Hops ) end
-					end
+					st.HopMs[ hop ] = ms
+					st.Hops[ hop ] = tostring( icmp.Address( dat ) or handle[1] ) .. " - " .. tostring( icmp.ExpiredLabel( dat ) or "HOP" ) .. "  (" .. tostring( ms ) .. " ms)"
+					st.TTL = hop + 1
+					self:SendTraceProbe( icmp.Session( dat ) )
 				end
 			end
 		end
@@ -523,10 +535,33 @@ function OS:GetAddressType( addr )
 end
 
 function OS:NetPing( dest, hk )
-	return self:SendNetMessage( dest, 0, { "netPing", hk } )
+	// Pings use a string session ("p1", "p2", ...) so they can never collide
+	// with a numeric traceroute handle in the shared ICMP reply path.
+	self.PingSeq = (self.PingSeq or 0) + 1
+	local sid = "p" .. tostring( self.PingSeq )
+	self.PingData = self.PingData or {}
+	// Drop probes whose reply never came back, so a host left pinging an
+	// unreachable address does not grow this table forever.
+	local now = NowSeconds()
+	for old in pairs( self.PingData ) do
+		local p = self.PingData[ old ]
+		if (((now - (p.SentAt or 0)) > 60)) then self.PingData[ old ] = nil end
+	end
+	self.PingData[ sid ] = {
+		Dest = dest,
+		HK = hk,
+		SentAt = now,
+	}
+	return self:SendNetMessage( dest, 0, PCMod.ICMP.Request( sid, 1, PCMod.Cfg && PCMod.Cfg.DefaultTTL ) )
 end
 
 function OS:NetTrace( dest, hk )
+	// Abandon traces that stopped receiving hop reports.
+	local now = NowSeconds()
+	for old in pairs( self.TraceRouteData ) do
+		local st = self.TraceRouteData[ old ]
+		if (((now - (st.SentAt or 0)) > 120)) then self.TraceRouteData[ old ] = nil end
+	end
 	// Get a trace handle
 	local thdl
 	local cnt = 0
@@ -548,7 +583,7 @@ function OS:NetTrace( dest, hk )
 		Hops = {},
 		HopMs = {},
 		TTL = 1,
-		SentAt = NowSeconds(),
+		SentAt = now,
 	}
 	return self:SendTraceProbe( thdl )
 end
@@ -562,7 +597,9 @@ function OS:SendTraceProbe( thdl )
 		return false
 	end
 	st.SentAt = NowSeconds()
-	return self:SendNetMessage( st.Dest, 0, { "netTrace", st.HK, thdl, st.TTL }, st.TTL )
+	// `seq` doubles as the probe number, so a time-exceeded reply can be
+	// matched to the hop it belongs to.
+	return self:SendNetMessage( st.Dest, 0, PCMod.ICMP.Request( thdl, st.TTL, st.TTL ), st.TTL )
 end
 
 function OS:MessageFailed( hdl, code, data )
@@ -571,7 +608,7 @@ end
 
 
 // Callbacks for OS-level ping / traceroute replies (hk == "os").
-// ProcessPacket calls these on every netPingResponse / netTraceResponse;
+// ProcessPacket calls these on every ICMP echo reply / time-exceeded;
 // without them it died with "attempt to call method 'PingSuccess' (a nil value)".
 function OS:PingSuccess( ip )
 	PCMod.Msg( "OS Base pinged " .. tostring( ip ) .. " successfully!", true )

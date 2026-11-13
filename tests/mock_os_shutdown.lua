@@ -3,6 +3,7 @@ PCMod = { Cfg = {}, Msg = function() end }
 util = { AddNetworkString = function() end }
 OS = {}
 
+dofile( "pcmod_sh_icmp.lua" )
 dofile( "pcmod_os_base.lua" )
 
 local function assertTrue( v, msg )

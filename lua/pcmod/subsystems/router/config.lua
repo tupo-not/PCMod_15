@@ -137,9 +137,9 @@ function SUBSYSTEM:RememberV6Flow( packet )
 	}
 end
 
-// Is this WAN packet a reply to a flow the LAN started? Traceroute hop reports
-// come from routers along the path rather than the final destination, so a
-// port-0 trace flow also accepts netTraceHop replies.
+// Is this WAN packet a reply to a flow the LAN started? Traceroute
+// time-exceeded reports come from routers along the path rather than the final
+// destination, so a port-0 ICMP flow also accepts them.
 function SUBSYSTEM:V6ReplyAllowed( packet )
 	self.V6Flows = self.V6Flows or {}
 	local now = CurTime()
@@ -153,7 +153,7 @@ function SUBSYSTEM:V6ReplyAllowed( packet )
 				flow.time = now
 				return true
 			end
-			if ((port == 0) && (packet.Body) && (packet.Body[1] == "netTraceHop")) then return true end
+			if ((port == 0) && (packet.Body) && (PCMod.ICMP.IsTimeExceeded( packet.Body ))) then return true end
 		end
 	end
 	return false

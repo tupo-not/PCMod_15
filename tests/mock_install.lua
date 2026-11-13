@@ -12,6 +12,7 @@ function table.Copy( t )
 end
 
 OS = {}
+dofile( "pcmod_sh_icmp.lua" )
 dofile( "pcmod_os_base.lua" )
 
 local function assertEq( a, b, msg )

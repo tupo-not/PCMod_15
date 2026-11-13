@@ -87,8 +87,8 @@ function PROG:MessageFailed( hdl, code, data )
 	if (code == "netPortClosed") then statcode = 25 end
 	if (code == "netPortLocked") then statcode = 26 end
 	if (port == 0) then
-		if (data[1] == "netPing") then
-			if (!self.Pinging) then return end
+		local probe = PCMod.ICMP && PCMod.ICMP.Is( data )
+		if (probe && self.Pinging) then
 			self.DeviceData.St = statcode
 			self.DeviceData.IP = ip
 			self.DeviceData.Tg = ""
@@ -96,8 +96,7 @@ function PROG:MessageFailed( hdl, code, data )
 			self.P_TimeOut = 0
 			self.Pinging = false
 		end
-		if (data[1] == "netTrace") then
-			if (!self.Tracing) then return end
+		if (probe && self.Tracing) then
 			self.DeviceData.St = statcode
 			self.DeviceData.IP = ip
 			self.DeviceData.Tg = ""

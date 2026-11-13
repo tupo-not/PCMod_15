@@ -33,6 +33,7 @@ AddCSLuaFile( "pcmod/sh_config.lua" ) -- Give config file to client
 
 include( "pcmod/sh_common.lua" ) -- Common functions
 include( "pcmod/sh_netproto.lua" ) -- DHCP/ARP/hello wire formats
+include( "pcmod/sh_icmp.lua" ) -- Ping/traceroute ICMP wire format
 include( "pcmod/sh_dhcp_server.lua" ) -- MAC-keyed DHCP server
 include( "pcmod/sh_dhcp_client.lua" ) -- DHCP client state machine
 include( "pcmod/sh_arp.lua" ) -- ARP next-hop resolution
@@ -42,6 +43,7 @@ include( "pcmod/sh_routing.lua" ) -- Broadcast hello routing
 include( "pcmod/sh_latency.lua" ) -- Emulated link latency / Wi-Fi loss
 include( "pcmod/sh_portanchors.lua" ) -- Hardcoded cable attachment points
 AddCSLuaFile( "pcmod/sh_netproto.lua" )
+AddCSLuaFile( "pcmod/sh_icmp.lua" )
 AddCSLuaFile( "pcmod/sh_dhcp_server.lua" )
 AddCSLuaFile( "pcmod/sh_dhcp_client.lua" )
 AddCSLuaFile( "pcmod/sh_arp.lua" )

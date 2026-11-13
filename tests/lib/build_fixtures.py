@@ -47,6 +47,7 @@ FIXTURES = {
     "pcmod_notepad.lua": "pcmod/programs/pr_notepad.lua",
     "pcmod_notepad_ui.lua": "pcmod/ssdevices/dev_win_notepad.lua",
     "pcmod_sh_netproto.lua": "pcmod/sh_netproto.lua",
+    "pcmod_sh_icmp.lua": "pcmod/sh_icmp.lua",
     "pcmod_sh_dhcp_server.lua": "pcmod/sh_dhcp_server.lua",
     "pcmod_sh_dhcp_client.lua": "pcmod/sh_dhcp_client.lua",
     "pcmod_sh_arp.lua": "pcmod/sh_arp.lua",

@@ -60,6 +60,7 @@ function table.Count( t ) local n = 0 for _ in pairs( t ) do n = n + 1 end retur
 
 dofile( "pcmod_sh_common.lua" )
 dofile( "pcmod_sh_netproto.lua" )
+dofile( "pcmod_sh_icmp.lua" )
 dofile( "pcmod_sh_dhcp_server.lua" )
 dofile( "pcmod_sh_dhcp_client.lua" )
 dofile( "pcmod_sh_arp.lua" )
@@ -368,14 +369,17 @@ local replied
 pingDrv.Process = function( self, data ) replied = data return true end
 PCMod.Network.Packets[ 200 ] = {
 	Source = "10.0.1.3", Dest = "10.0.1.4", Port = 0, SourcePort = 40001,
-	Body = { "netPing", "nettools" },
+	Body = PCMod.ICMP.Request( "p1", 1, 64 ),
 }
 pingDrv:ProcessPacket( 200, nil, nil )
 assertTrue( replied and replied[ 1 ] == "sendpacket", "router replies to a ping" )
 assertEq( replied[ 2 ][ 1 ], "10.0.1.4", "ping reply comes from the pinged address" )
 assertEq( replied[ 2 ][ 2 ], "10.0.1.3", "ping reply goes back to the sender" )
 assertEq( replied[ 2 ][ 3 ], 40001, "ping reply preserves the source port for NAT" )
-assertEq( replied[ 2 ][ 4 ][ 1 ], "netPingResponse", "ping reply body" )
+assertEq( replied[ 2 ][ 4 ][ 1 ], "icmp", "ping reply is an ICMP message" )
+assertEq( replied[ 2 ][ 4 ][ 2 ], "echo-reply", "ping reply is an ICMP echo reply" )
+assertEq( replied[ 2 ][ 4 ][ 3 ], "p1", "ping reply keeps the ping session" )
+assertEq( replied[ 2 ][ 4 ][ 4 ], 1, "ping reply keeps the sequence number" )
 
 -- TTL: routers decrement once per hop and expire at zero.
 PCMod.Cfg.DefaultTTL = 64
@@ -396,37 +400,69 @@ local traceSent
 traceDrv.Process = function( self, data ) traceSent = data return true end
 
 -- A packet above one TTL continues and is decremented exactly once.
-local ttlPkt = { TTL = 4, Body = { "netTrace", "nettools", 1, 4 } }
+local ttlPkt = { TTL = 4, Body = PCMod.ICMP.Request( 1, 4, 4 ) }
 assertTrue( traceDrv:CheckTTL( ttlPkt, "lan" ), "ttl above one is forwarded" )
 assertEq( ttlPkt.TTL, 3, "ttl decremented once per hop" )
 
 -- A TTL of one dies at the router and reports the hop to the sender.
-local expired = { Source = "192.168.5.2", Port = 0, SourcePort = 0, TTL = 1, Body = { "netTrace", "nettools", 1, 1 } }
+local expired = { Source = "192.168.5.2", Port = 0, SourcePort = 0, TTL = 1, Body = PCMod.ICMP.Request( 1, 1, 1 ) }
 assertTrue( not traceDrv:CheckTTL( expired, "lan" ), "ttl of one expires" )
 assertTrue( traceSent and traceSent[ 1 ] == "sendpacket", "expired trace probe reports a hop" )
 assertEq( traceSent[ 2 ][ 1 ], "192.168.5.1", "LAN probe reports from the LAN gateway" )
 assertEq( traceSent[ 2 ][ 3 ], 0, "hop reply preserves the probe source port" )
-assertEq( traceSent[ 2 ][ 4 ][ 1 ], "netTraceHop", "hop report body type" )
-assertEq( traceSent[ 2 ][ 4 ][ 4 ], "192.168.5.1", "hop report carries the reporting address" )
-assertEq( traceSent[ 2 ][ 4 ][ 5 ], "RTR", "hop report carries the router label" )
-assertEq( traceSent[ 2 ][ 4 ][ 6 ], 1, "hop report carries the probe number" )
+assertEq( traceSent[ 2 ][ 4 ][ 1 ], "icmp", "hop report is an ICMP message" )
+assertEq( traceSent[ 2 ][ 4 ][ 2 ], "time-exceeded", "hop report is time-exceeded" )
+assertEq( traceSent[ 2 ][ 4 ][ 5 ], "192.168.5.1", "hop report carries the reporting address" )
+assertEq( traceSent[ 2 ][ 4 ][ 6 ], "RTR", "hop report carries the router label" )
+assertEq( traceSent[ 2 ][ 4 ][ 4 ], 1, "hop report carries the probe number" )
 
 -- A probe arriving from the backbone reports from the WAN address and keeps
 -- the source port so it can pass back through the sender's NAT.
 traceSent = nil
-local expiredWan = { Source = "10.0.1.3", Port = 0, SourcePort = 40003, TTL = 1, Body = { "netTrace", "nettools", 1, 1 } }
+local expiredWan = { Source = "10.0.1.3", Port = 0, SourcePort = 40003, TTL = 1, Body = PCMod.ICMP.Request( 1, 1, 1 ) }
 assertTrue( not traceDrv:CheckTTL( expiredWan, "wan" ), "WAN ttl of one expires" )
 assertEq( traceSent[ 2 ][ 1 ], "10.0.1.5", "WAN probe reports from the backbone address" )
 assertEq( traceSent[ 2 ][ 3 ], 40003, "WAN hop keeps the source port for NAT" )
+
+-- An IPv6 probe arriving on a backbone's MGMNT (LAN-side) port has no private
+-- /64 to reply from. It must fall back to the backbone IPv6 identity instead
+-- of dropping the hop report (which left an IPv6 traceroute blank at hop 1).
+local v6Drv = {}
+for k, v in pairs( SUBSYSTEM ) do v6Drv[ k ] = v end
+local v6Ent = {}
+function v6Ent:Memory() return {} end
+function v6Ent:UpdateMemory() end
+function v6Ent:Data() return {} end
+function v6Ent:GetClass() return "pcmod_brouter" end
+function v6Ent:GetSubnet() return 0 end
+function v6Ent:GetFullIP() return false end
+function v6Ent:GetBSubnet() return 10 end
+function v6Ent:GetFullBIP() return "100.0.10.1" end
+function v6Ent:GetIPv6Prefix() return false end
+function v6Ent:GetIPv6Gateway() return false end
+function v6Ent:GetIPv6() return false end
+function v6Ent:GetBIPv6Prefix() return "fd00:a::/32" end
+function v6Ent:GetBIPv6() return "fd00:a::1" end
+function v6Ent:GetBIPv6Gateway() return "fd00:a::1" end
+function v6Ent:IsAddressedTo() return false end
+v6Drv.Entity = v6Ent
+local v6Sent
+v6Drv.Process = function( self, data ) v6Sent = data return true end
+local expiredV6 = { Source = "fd00:a::2", Port = 0, SourcePort = 0, TTL = 1, Body = PCMod.ICMP.Request( 1, 1, 1 ) }
+assertTrue( not v6Drv:CheckTTL( expiredV6, "lan" ), "IPv6 MGMNT probe expires" )
+assertTrue( v6Sent and v6Sent[ 1 ] == "sendpacket", "IPv6 MGMNT probe reports a hop" )
+assertEq( v6Sent[ 2 ][ 1 ], "fd00:a::1", "IPv6 hop report comes from the backbone gateway" )
+assertEq( v6Sent[ 2 ][ 2 ], "fd00:a::2", "IPv6 hop report goes to the probe source" )
+assertEq( v6Sent[ 2 ][ 4 ][ 2 ], "time-exceeded", "IPv6 hop report is time-exceeded" )
 
 -- A probe addressed to the router itself is the final hop.
 traceSent = nil
 PCMod.Network.Packets[ 301 ] = {
 	Source = "10.0.1.3", Dest = "10.0.1.4", Port = 0, SourcePort = 40002,
-	Body = { "netTrace", "nettools", 2, 3 }, TTL = 1, Delivered = false,
+	Body = PCMod.ICMP.Request( 2, 3, 3 ), TTL = 1, Delivered = false,
 }
 traceDrv:ProcessPacket( 301, nil, "wan" )
-assertTrue( traceSent and traceSent[ 2 ][ 4 ][ 1 ] == "netTraceResponse", "router answers a trace probe to itself" )
+assertTrue( traceSent and traceSent[ 2 ][ 4 ][ 2 ] == "echo-reply", "router answers a trace probe to itself" )
 assertEq( traceSent[ 2 ][ 1 ], "10.0.1.4", "trace reply comes from the traced address" )
 assertEq( traceSent[ 2 ][ 2 ], "10.0.1.3", "trace reply goes to the probe source" )
 assertEq( traceSent[ 2 ][ 3 ], 40002, "trace reply preserves the source port" )
@@ -436,11 +472,11 @@ assertEq( traceSent[ 2 ][ 3 ], 40002, "trace reply preserves the source port" )
 traceSent = nil
 PCMod.Network.Packets[ 302 ] = {
 	Source = "192.168.5.2", Dest = "10.0.1.9", Port = 0, SourcePort = 0,
-	Body = { "netTrace", "nettools", 3, 1 }, TTL = 1, Delivered = false,
+	Body = PCMod.ICMP.Request( 3, 1, 1 ), TTL = 1, Delivered = false,
 }
 traceDrv:ProcessPacket( 302, nil, "lan" )
-assertTrue( traceSent and traceSent[ 2 ][ 4 ][ 1 ] == "netTraceHop", "first hop reports at ttl 1" )
-assertEq( traceSent[ 2 ][ 4 ][ 6 ], 1, "first hop number" )
+assertTrue( traceSent and traceSent[ 2 ][ 4 ][ 2 ] == "time-exceeded", "first hop reports at ttl 1" )
+assertEq( traceSent[ 2 ][ 4 ][ 4 ], 1, "first hop number" )
 
 local sent
 PCMod.Network.CreatePacket = function( src, dst, port, body ) sent = { src = src, dst = dst, port = port, body = body } end
@@ -753,7 +789,7 @@ ingress.Process = function( self, data ) pingReplies[ #pingReplies + 1 ] = data 
 pushed = {}
 PCMod.Network.Packets[ 416 ] = {
 	Source = "fd00:4::9", Dest = "fd00:3::6", Port = 0,
-	Body = { "netPing", "hk" }, TTL = 64, Delivered = false,
+	Body = PCMod.ICMP.Request( "p1", 1, 64 ), TTL = 64, Delivered = false,
 }
 ingress:ProcessPacket( 416, nil, "wan" )
 assertEq( #pingReplies, 1, "router WAN address still answers pings" )
@@ -761,7 +797,7 @@ assertEq( #pingReplies, 1, "router WAN address still answers pings" )
 pushed = {}
 PCMod.Network.Packets[ 423 ] = {
 	Source = "fd00:4::9", Dest = "100.0.3.5", Port = 0,
-	Body = { "netPing", "hk" }, TTL = 64, Delivered = false,
+	Body = PCMod.ICMP.Request( "p1", 1, 64 ), TTL = 64, Delivered = false,
 }
 ingress:ProcessPacket( 423, nil, "wan" )
 assertEq( #pingReplies, 2, "router WAN IPv4 still answers pings" )
@@ -774,11 +810,11 @@ ingressData.RouterCfg.FirewallRules = {}
 
 -- Traceroute hop replies from routers along the path are still allowed when
 -- the LAN itself started the trace, but probes cannot enter the LAN.
-got = runPacket( 418, "fd00:3:0:5::2", "fd00:4::9", 0, "lan", { "netTrace", "hk", 1, 1 } )
+got = runPacket( 418, "fd00:3:0:5::2", "fd00:4::9", 0, "lan", PCMod.ICMP.Request( 1, 1, 1 ) )
 assertEq( #got, 1, "LAN trace probe is forwarded" )
-got = runPacket( 419, "fd00:3::1", "fd00:3:0:5::2", 0, "wan", { "netTraceHop", "hk", 1, "fd00:3::1", "BRTR", 1 } )
+got = runPacket( 419, "fd00:3::1", "fd00:3:0:5::2", 0, "wan", PCMod.ICMP.Expired( 1, 1, "fd00:3::1", "BRTR" ) )
 assertEq( #got, 1, "path hop reply reaches the tracing LAN host" )
-got = runPacket( 420, "fd00:4::66", "fd00:3:0:5::2", 0, "wan", { "netTrace", "hk", 2, 1 } )
+got = runPacket( 420, "fd00:4::66", "fd00:3:0:5::2", 0, "wan", PCMod.ICMP.Request( 2, 1, 1 ) )
 assertEq( #got, 0, "WAN traceroute probes cannot enter the LAN" )
 
 print( "ALL ROUTER IPV6 TESTS PASSED" )

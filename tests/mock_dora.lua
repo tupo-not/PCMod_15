@@ -54,6 +54,7 @@ timer = { Simple = function() end }
 
 dofile( "pcmod_sh_common.lua" )
 dofile( "pcmod_sh_netproto.lua" )
+dofile( "pcmod_sh_icmp.lua" )
 dofile( "pcmod_sh_dhcp_server.lua" )
 dofile( "pcmod_sh_dhcp_client.lua" )
 dofile( "pcmod_sh_arp.lua" )

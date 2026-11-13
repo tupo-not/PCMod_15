@@ -389,6 +389,12 @@ function SUBSYSTEM:TraceReplySource( packet, side )
 		if (v6) then
 			sip = self.Entity.GetIPv6Gateway && self.Entity:GetIPv6Gateway()
 			if (!sip) then sip = self.Entity.GetIPv6 && self.Entity:GetIPv6() end
+			// A backbone's LAN-side port is MGMNT, which shares the backbone
+			// /32 and has no private /64. Its IPv6 identity (and the gateway a
+			// MGMNT host knows) is the backbone address, so fall back to it
+			// instead of failing to report the hop.
+			if (!sip) then sip = self.Entity.GetBIPv6Gateway && self.Entity:GetBIPv6Gateway() end
+			if (!sip) then sip = self.Entity.GetBIPv6 && self.Entity:GetBIPv6() end
 		else
 			if (self.Entity.GetClass && (self.Entity:GetClass() == "pcmod_brouter")) then
 				if (PCMod.IPv4 && self.Entity.GetBSubnet) then
@@ -409,22 +415,21 @@ function SUBSYSTEM:TraceReplySource( packet, side )
 	return sip, self:TraceLabel()
 end
 
-// Report an expired traceroute probe to its sender: { netTraceHop, hk, thdl,
-// hopAddress, hopLabel, hopNumber }. The reply keeps the probe's source port so
-// it traverses the sender's NAT correctly.
-function SUBSYSTEM:SendTraceHop( packet, side )
+// Report an expired ICMP echo probe to its sender with a time-exceeded
+// message. The reply keeps the probe's source port so it traverses the
+// sender's NAT correctly.
+function SUBSYSTEM:SendICMPExpired( packet, side )
 	local sip, sid = self:TraceReplySource( packet, side )
 	if (!sip) then return false end
-	local hk = packet.Body && packet.Body[2]
-	local thdl = packet.Body && packet.Body[3]
-	local hop = (packet.Body && packet.Body[4]) or packet.TTL
+	local session = PCMod.ICMP.Session( packet.Body )
+	local seq = PCMod.ICMP.Seq( packet.Body )
 	packet.Delivered = true
-	self:Process( { "sendpacket", { sip, packet.Source, packet.SourcePort or packet.Port, { "netTraceHop", hk, thdl, sip, sid, hop } } } )
+	self:Process( { "sendpacket", { sip, packet.Source, packet.SourcePort or packet.Port, PCMod.ICMP.Expired( session, seq, sip, sid ) } } )
 	return true
 end
 
 // Consume one TTL for a forwarded packet. Returns false when the packet died
-// here (and, for traceroute probes, a hop report was sent).
+// here (and, for ICMP echo probes, a time-exceeded report was sent).
 function SUBSYSTEM:CheckTTL( packet, side )
 	local ttl = tonumber( packet.TTL ) or tonumber( PCMod.Cfg && PCMod.Cfg.DefaultTTL ) or 64
 	if (ttl <= 1) then
@@ -432,8 +437,8 @@ function SUBSYSTEM:CheckTTL( packet, side )
 			PCMod.Network.LogPacket( "expire", packet.Source, packet.Dest, packet.Port, packet.Body,
 				"ttl exhausted at " .. self.Entity:GetClass() .. ":" .. tostring( self.Entity:EntIndex() ) )
 		end
-		if ((packet.Body) && (packet.Body[1] == "netTrace")) then
-			self:SendTraceHop( packet, side )
+		if (PCMod.ICMP.IsEcho( packet.Body )) then
+			self:SendICMPExpired( packet, side )
 		end
 		packet.Delivered = true
 		return false
@@ -541,22 +546,13 @@ function SUBSYSTEM:ProcessPacket( pid, pass, side )
 			return
 		end
 	end
-	// Routers answer pings addressed to their own LAN/WAN address, the same way
-	// a computer OS does. Reply from the address that was pinged so NAT on the
-	// sender's router translates the response back correctly.
-	if ((packet.Body) && (packet.Body[1] == "netPing") && (self.Entity.IsAddressedTo && self.Entity:IsAddressedTo( packet.Dest ))) then
-		local hdl = { packet.Source, packet.SourcePort or packet.Port }
-		local rbody = { "netPingResponse", packet.Body[2], "Router" }
+	// A router answers an ICMP echo addressed to its own LAN/WAN address,
+	// exactly like a host OS. This is both a ping and the final traceroute hop.
+	// Reply from the address that was probed so NAT on the sender's router
+	// translates the response back correctly.
+	if ((packet.Body) && (PCMod.ICMP.IsEcho( packet.Body )) && (self.Entity.IsAddressedTo && self.Entity:IsAddressedTo( packet.Dest ))) then
 		packet.Delivered = true
-		self:Process( { "sendpacket", { packet.Dest, hdl[1], hdl[2], rbody } } )
-		return
-	end
-	// A traceroute probe addressed to this router has reached its final hop.
-	// Answer it as the destination, exactly like a host OS does.
-	if ((isSelf) && (packet.Body) && (packet.Body[1] == "netTrace")) then
-		local sid = self:TraceLabel()
-		packet.Delivered = true
-		self:Process( { "sendpacket", { packet.Dest, packet.Source, packet.SourcePort or packet.Port, { "netTraceResponse", packet.Body[2], packet.Body[3], sid } } } )
+		self:Process( { "sendpacket", { packet.Dest, packet.Source, packet.SourcePort or packet.Port, PCMod.ICMP.Reply( PCMod.ICMP.Session( packet.Body ), PCMod.ICMP.Seq( packet.Body ), "Router" ) } } )
 		return
 	end
 	// Minimal web server: a request to port 80 addressed to the router itself

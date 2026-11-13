@@ -83,10 +83,10 @@ assertEq( net.FindSubByEnt( again ), 1, "released /32 is reused" )
 local logged = {}
 PCMod.Msg = function( m ) logged[ #logged + 1 ] = m end
 net.DebugPackets = function() return true end
-net.LogPacket( "new", "10.0.1.2", "10.0.2.3", 0, { "netPing", "hk", 1, 2, 3, 4 }, "pid=7 ttl=64" )
+net.LogPacket( "new", "10.0.1.2", "10.0.2.3", 0, { "icmp", "echo", 1, 1, 64, 9 }, "pid=7 ttl=64" )
 assertTrue( #logged == 1, "packet trace prints once" )
 assertTrue( string.find( logged[ 1 ], "10.0.1.2 -> 10.0.2.3", 1, true ) ~= nil, "packet trace has src/dest" )
-assertTrue( string.find( logged[ 1 ], "body5=[netPing hk 1 2 3]", 1, true ) ~= nil, "packet trace has first 5 fields" )
+assertTrue( string.find( logged[ 1 ], "body5=[icmp echo 1 1 64]", 1, true ) ~= nil, "packet trace has first 5 fields" )
 assertTrue( string.find( logged[ 1 ], "pid=7 ttl=64", 1, true ) ~= nil, "packet trace has extra info" )
 
 print( "ALL NETWORK TESTS PASSED" )

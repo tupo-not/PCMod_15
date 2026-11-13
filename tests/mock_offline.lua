@@ -42,7 +42,7 @@ for k, v in pairs( SUBSYSTEM ) do net[ k ] = v end
 net.Entity = entity
 
 assertTrue( not net:IsPoweredOn(), "off host reports powered off" )
-net:PacketRecieved( { Source = "1.2.3.4", Port = 0, Body = { "netPing" } } )
+net:PacketRecieved( { Source = "1.2.3.4", Port = 0, Body = { "icmp", "echo", "p1", 1, 64 } } )
 assertEq( delivered, 0, "off host ignores an incoming ping" )
 
 local dhcp = 0
@@ -50,12 +50,12 @@ net.HandleDHCP = function() dhcp = dhcp + 1; return true end
 net:DataRecieved( 1, { "sendpacket", { "1.2.3.4", "5.6.7.8", 0, { "dhcp" } } } )
 assertEq( dhcp, 0, "off host ignores link-layer frames" )
 
-net:SendPacket( "1.2.3.4", 0, { "netPing" } )
+net:SendPacket( "1.2.3.4", 0, { "icmp", "echo", "p1", 1, 64 } )
 assertEq( sent, 0, "off host does not transmit" )
 
 data.IsOn = true
 assertTrue( net:IsPoweredOn(), "on host reports powered on" )
-net:PacketRecieved( { Source = "1.2.3.4", Port = 0, Body = { "netPing" } } )
+net:PacketRecieved( { Source = "1.2.3.4", Port = 0, Body = { "icmp", "echo", "p1", 1, 64 } } )
 assertEq( delivered, 1, "on host answers a ping" )
 net:DataRecieved( 1, { "sendpacket", { "1.2.3.4", "5.6.7.8", 0, { "dhcp" } } } )
 assertEq( dhcp, 1, "on host handles link-layer frames" )

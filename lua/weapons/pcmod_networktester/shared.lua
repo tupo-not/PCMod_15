@@ -86,7 +86,7 @@ if (SERVER) then
 			for k, v in pairs( pts ) do
 				if ((v.Type == "network") || (v.Type == "optic")) then
 					self:Say( "Sending net packet..." )
-					enta:SendPacket( k, entb:GetFullIP(), 0, { "netPing_DEBUG", self.Weapon } )
+					enta:SendPacket( k, entb:GetFullIP(), 0, PCMod.ICMP.Request( "nettester", 1, PCMod.Cfg.DefaultTTL ) )
 				end
 			end
 		
