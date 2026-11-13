@@ -4,10 +4,18 @@ SERVER = true
 CLIENT = false
 util = { AddNetworkString = function() end }
 net = {
+	log = {},
 	Start = function( name ) net.channel = name end,
 	WriteString = function() end,
-	Send = function( ply ) net.sent = ply end,
-	Broadcast = function() net.broadcast = true end,
+	WriteUInt = function() end,
+	Send = function( ply )
+		net.sent = ply
+		table.insert( net.log, { name = net.channel, ply = ply } )
+	end,
+	Broadcast = function()
+		net.broadcast = true
+		table.insert( net.log, { name = net.channel, ply = nil } )
+	end,
 }
 umsg = {
 	log = {},
@@ -68,13 +76,15 @@ assertEq( net.channel, "pcmod_stringhook", "small strings use the net channel" )
 assertEq( net.sent, "player1", "small strings target one player" )
 assertTrue( not net.broadcast, "small targeted strings do not broadcast" )
 
--- Large strings still use the chunked usermessage path.
+-- Large strings use the chunked net path (start + segments), not usermsg.
 PCMod.Beam.MaxString = 1
-umsg.log = {}
+net.log = {}
+net.broadcast = false
 PCMod.Beam.BeamString( nil, "tag", "ab" )
-assertEq( #umsg.log, 2, "a 2-chunk payload emits start + one segment" )
-assertEq( umsg.log[ 1 ].name, "pcmod_stringstart", "chunked start channel" )
-assertEq( umsg.log[ 2 ].name, "pcmod_stringseg", "chunked segment channel" )
-assertEq( umsg.log[ 1 ].ply, nil, "chunked broadcast has no recipient" )
+assertEq( #net.log, 2, "a 2-chunk payload emits start + one segment" )
+assertEq( net.log[ 1 ].name, "pcmod_stringstart", "chunked start channel" )
+assertEq( net.log[ 2 ].name, "pcmod_stringseg", "chunked segment channel" )
+assertEq( net.log[ 1 ].ply, nil, "chunked broadcast has no recipient" )
+assertTrue( net.broadcast, "chunked payload broadcasts" )
 
 print( "mock_beam PASSED" )

@@ -187,10 +187,18 @@ function OS:LaunchProgram( progname )
 end
 
 function OS:ShutDown()
-	// Instead of.. shutting down.. this actually just closes all programs. - thomasfn
-	for k, v in pairs( self.Progs ) do
-		self.Progs[ k ]:Exit()
+	// Closing programs is only part of a shutdown. Net ports and in-flight
+	// traceroute handles are runtime state too; leaving them behind made a
+	// powered-off machine keep answering on an open port until it rebooted.
+	for k, v in pairs( self.Progs or {} ) do
+		if (v && v.Exit) then v:Exit() end
 	end
+	self.Progs = {}
+	self.NetPorts = {}
+	self.TraceRouteData = {}
+	self.State = 0
+	self.NUpdate = 0
+	self.Mode = nil
 end
 
 function OS:GetAllProgs()
@@ -548,7 +556,7 @@ end
 function OS:SendTraceProbe( thdl )
 	local st = self.TraceRouteData[ thdl ]
 	if (!st) then return end
-	local max = tonumber( PCMod.Cfg && PCMod.Cfg.TraceMaxHops ) or 30
+	local max = tonumber( PCMod.Cfg && PCMod.Cfg.TraceMaxHops ) or 255
 	if (st.TTL > max) then
 		self.TraceRouteData[ thdl ] = nil
 		return false

@@ -38,6 +38,13 @@ PCMod.Msg( "Beam Library Loaded (V" .. PCMod.Beam.Version .. ")", true )
 if (SERVER) then
 	util.AddNetworkString("pcmod_stringhook");
 	util.AddNetworkString("EntityBilgi")
+	util.AddNetworkString("pcmod_stringstart")
+	util.AddNetworkString("pcmod_stringseg")
+	util.AddNetworkString("pcmod_lockcam")
+	util.AddNetworkString("pcmod_unlockcam")
+	util.AddNetworkString("pcmod_lockkeyboard")
+	util.AddNetworkString("pcmod_unlockkeyboard")
+	util.AddNetworkString("pcmod_askport")
 
 	// ---------------------------------------------------------------------------------------------------------
 	// SendScreenSpace - Sends a screen space to the client
@@ -134,14 +141,6 @@ if (SERVER) then
 	// ---------------------------------------------------------------------------------------------------------
 	// BeamString - Sends a string to one player, or to everyone when ply is nil
 	// ---------------------------------------------------------------------------------------------------------
-	local function BeamStartUMsg( name, ply )
-		if (ply) then
-			umsg.Start( name, ply )
-		else
-			umsg.Start( name )
-		end
-	end
-
 	function PCMod.Beam.BeamString( ply, tag, str )
 		str = tostring( str or "" )
 		tag = tostring( tag or "" )
@@ -149,8 +148,7 @@ if (SERVER) then
 		// bigger payload raised an unhandled Lua error ("net.WriteString:
 		// string too long"), the message never left the server and the
 		// screenspace of that PC stayed frozen for everybody. Big payloads go
-		// through the chunked usermessage channel instead - the same one the
-		// broadcast already used, it just works for a single player as well.
+		// through the chunked net channel instead.
 		if (string.len( str ) <= PCMod.Beam.MaxString) then
 			net.Start( "pcmod_stringhook" )
 				net.WriteString( str )
@@ -162,27 +160,27 @@ if (SERVER) then
 		local rs = 230 - string.len( tag )
 		if (rs < 1) then rs = 1 end
 		local chunks = PCMod.SplitString( str, rs )
-		// the segment counter is a short - a payload that would need more
-		// than 32000 segments is cut off (that is far beyond every real
+		// the segment counter is a 16-bit field - a payload that would need
+		// more than 65535 segments is cut off (that is far beyond every real
 		// screenspace) instead of raising an error
-		if (#chunks > 32000) then
-			str = string.sub( str, 1, (32000 * rs) )
+		if (#chunks > 65535) then
+			str = string.sub( str, 1, (65535 * rs) )
 			chunks = PCMod.SplitString( str, rs )
 		end
 		if (!chunks[1]) then return end
 
-		BeamStartUMsg( "pcmod_stringstart", ply )
-			umsg.String( tag )
-			umsg.Short( #chunks )
-			umsg.String( chunks[1] )
-		umsg.End()
+		net.Start( "pcmod_stringstart" )
+			net.WriteString( tag )
+			net.WriteUInt( #chunks, 16 )
+			net.WriteString( chunks[1] )
+		if (ply) then net.Send( ply ) else net.Broadcast() end
 		if (#chunks < 2) then return end
 		for i = 2, #chunks do
-			BeamStartUMsg( "pcmod_stringseg", ply )
-				umsg.String( tag )
-				umsg.Short( i )
-				umsg.String( chunks[ i ] )
-			umsg.End()
+			net.Start( "pcmod_stringseg" )
+				net.WriteString( tag )
+				net.WriteUInt( i, 16 )
+				net.WriteString( chunks[ i ] )
+			if (ply) then net.Send( ply ) else net.Broadcast() end
 		end
 	end
 	
@@ -331,11 +329,8 @@ if (CLIENT) then
 	// ---------------------------------------------------------------------------------------------------------
 	// StringStart - The server has started to send us a long string
 	// ---------------------------------------------------------------------------------------------------------
-	function PCMod.StringStart( um )
-		local tag = um:ReadString()
-		local chunks = um:ReadShort()
-		local ca = um:ReadString()
-		if ((!tag) || (chunks < 1) || (chunks > 32000)) then return end
+	function PCMod.StringStart( tag, chunks, ca )
+		if ((!tag) || (chunks < 1) || (chunks > 65535)) then return end
 		if (chunks == 1) then
 			PCMod.Msg( "Small string recieved! (" .. tag .. ")", true )
 			PCMod.Beam.CallHook( tag, ca )
@@ -351,15 +346,14 @@ if (CLIENT) then
 		PCMod.Msg( "String beam started! (" .. tag .. ")", true )
 		
 	end
-	usermessage.Hook( "pcmod_stringstart", PCMod.StringStart )
+	net.Receive( "pcmod_stringstart", function()
+		PCMod.StringStart( net.ReadString(), net.ReadUInt( 16 ), net.ReadString() )
+	end )
 	
 	// ---------------------------------------------------------------------------------------------------------
 	// StringSegment - The server has sent us a segment of a long string
 	// ---------------------------------------------------------------------------------------------------------
-	function PCMod.StringSegment( um )
-		local tag = um:ReadString()
-		local cid = um:ReadShort()
-		local seg = um:ReadString()
+	function PCMod.StringSegment( tag, cid, seg )
 		local stream = PCMod.Beam.StrSegs[ tag ]
 		if ((!stream) || (!cid) || (cid < 1) || (cid > stream.SegCnt)) then return end
 		// Count each index once. A duplicated segment used to inflate SegsR,
@@ -378,7 +372,9 @@ if (CLIENT) then
 		end
 		
 	end
-	usermessage.Hook( "pcmod_stringseg", PCMod.StringSegment )
+	net.Receive( "pcmod_stringseg", function()
+		PCMod.StringSegment( net.ReadString(), net.ReadUInt( 16 ), net.ReadString() )
+	end )
 	
 	net.Receive("pcmod_stringhook", function(len, client)
 		local str = net.ReadString();
@@ -507,7 +503,9 @@ end
 function PCMod.Beam.LockCam( entid, ply )
 	if (SERVER) then
 		if ((!ply) || (!ply:IsValid()) || (!ply:IsPlayer())) then return end
-		umsg.Start( "pcmod_lockcam", ply ); umsg.Long( entid ); umsg.End()
+		net.Start( "pcmod_lockcam" )
+			net.WriteUInt( math.max( 0, math.floor( tonumber( entid ) or 0 ) ), 32 )
+		net.Send( ply )
 		return
 	end
 	if (CLIENT) then
@@ -532,8 +530,8 @@ function PCMod.Beam.LockCam( entid, ply )
 	end
 end
 if (CLIENT) then
-	usermessage.Hook( "pcmod_lockcam", function( um )
-		PCMod.Beam.LockCam( um:ReadLong(), LocalPlayer() )
+	net.Receive( "pcmod_lockcam", function()
+		PCMod.Beam.LockCam( net.ReadUInt( 32 ), LocalPlayer() )
 	end )
 end
 
@@ -543,7 +541,8 @@ end
 function PCMod.Beam.UnlockCam( ply )
 	if (SERVER) then
 		if ((!ply) || (!ply:IsValid()) || (!ply:IsPlayer())) then return end
-		umsg.Start( "pcmod_unlockcam", ply ); umsg.End()
+		net.Start( "pcmod_unlockcam" )
+		net.Send( ply )
 		return
 	end
 	if (CLIENT) then
@@ -569,7 +568,7 @@ function PCMod.Beam.UnlockCam( ply )
 	end
 end
 if (CLIENT) then
-	usermessage.Hook( "pcmod_unlockcam", function( um )
+	net.Receive( "pcmod_unlockcam", function()
 		PCMod.Beam.UnlockCam( LocalPlayer() )
 	end )
 end
@@ -581,7 +580,9 @@ function PCMod.Beam.LockKeyboard( ply, entid )
 	if (!entid) then entid = 0 end
 	if (SERVER) then
 		if ((!ply) || (!ply:IsValid()) || (!ply:IsPlayer())) then return end
-		umsg.Start( "pcmod_lockkeyboard", ply ); umsg.Long( entid ); umsg.End()
+		net.Start( "pcmod_lockkeyboard" )
+			net.WriteUInt( math.max( 0, math.floor( tonumber( entid ) or 0 ) ), 32 )
+		net.Send( ply )
 		return
 	end
 	if (CLIENT) then
@@ -598,8 +599,8 @@ function PCMod.Beam.LockKeyboard( ply, entid )
 	end
 end
 if (CLIENT) then
-	usermessage.Hook( "pcmod_lockkeyboard", function( um )
-		PCMod.Beam.LockKeyboard( nil, um:ReadLong() )
+	net.Receive( "pcmod_lockkeyboard", function()
+		PCMod.Beam.LockKeyboard( nil, net.ReadUInt( 32 ) )
 	end )
 end
 
@@ -609,7 +610,8 @@ end
 function PCMod.Beam.UnlockKeyboard( ply )
 	if (SERVER) then
 		if ((!ply) || (!ply:IsValid()) || (!ply:IsPlayer())) then return end
-		umsg.Start( "pcmod_unlockkeyboard", ply ); umsg.End()
+		net.Start( "pcmod_unlockkeyboard" )
+		net.Send( ply )
 		return
 	end
 	if (CLIENT) then
@@ -626,7 +628,7 @@ function PCMod.Beam.UnlockKeyboard( ply )
 	end
 end
 if (CLIENT) then
-	usermessage.Hook( "pcmod_unlockkeyboard", function()
+	net.Receive( "pcmod_unlockkeyboard", function()
 		PCMod.Beam.UnlockKeyboard()
 	end )
 end
@@ -706,11 +708,11 @@ if (SERVER) then
 		if (ply && (!ply:IsValid() || !ply:IsPlayer())) then return end -- nil still broadcasts
 		if (!porttype) then porttype = "" end
 		if (!unwire) then unwire = false end
-		umsg.Start( "pcmod_askport", ply )
-			umsg.Long( entid )
-			umsg.String( porttype )
-			umsg.Bool( unwire )
-		umsg.End()
+		net.Start( "pcmod_askport" )
+			net.WriteUInt( math.max( 0, math.floor( tonumber( entid ) or 0 ) ), 32 )
+			net.WriteString( porttype )
+			net.WriteBool( unwire )
+		if (ply) then net.Send( ply ) else net.Broadcast() end
 	end
 	
 end
@@ -742,13 +744,12 @@ if (CLIENT) then
 	// ---------------------------------------------------------------------------------------------------------
 	// PortAskedFor - Forwards the request to the Gui library
 	// ---------------------------------------------------------------------------------------------------------
-	function PC_PortAskedFor( um )
-		local entid = um:ReadLong()
-		local porttype = um:ReadString()
-		local unwire = um:ReadBool()
+	function PC_PortAskedFor( entid, porttype, unwire )
 		if ((porttype == "NA") || (porttype == "")) then porttype = nil end
 		PCMod.Gui.AskForPort( entid, porttype, (!!unwire) ) -- !!unwire means convert to evaluated state
 	end
-	usermessage.Hook( "pcmod_askport", PC_PortAskedFor )
+	net.Receive( "pcmod_askport", function()
+		PC_PortAskedFor( net.ReadUInt( 32 ), net.ReadString(), net.ReadBool() )
+	end )
 
 end

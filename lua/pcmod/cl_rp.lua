@@ -80,7 +80,9 @@ function PCMod.RP.OpenBuyMenu()
 		PCMod.RP.ToolsSheet:AddItem( pn )
 	end
 end
-usermessage.Hook( "pcmod_rpmenu", PCMod.RP.OpenBuyMenu )
+net.Receive( "pcmod_rpmenu", function()
+	PCMod.RP.OpenBuyMenu()
+end )
 
 // ---------------------------------------------------------------------------------------------------------
 // HideBuyMenu - Hides the RP buy menu

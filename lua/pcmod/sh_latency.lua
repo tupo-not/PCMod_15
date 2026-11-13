@@ -47,20 +47,64 @@ end
 // Wired and fibre delays are below the server's timer resolution. Applying
 // them through timer.Simple would add a whole server tick per link, which is
 // how a short cable run turned into tens of milliseconds. Instead those links
-// advance a simulated clock and deliver the frame in the same tick; ping and
-// traceroute read Latency.Now() so the RTT still reflects the configured link
-// delay without adding input lag to the network.
-Latency.VirtualMs = Latency.VirtualMs or 0
+// advance the delay of the current synchronous delivery dispatch and deliver
+// the frame in the same tick; ping and traceroute read Latency.Now() inside
+// that dispatch so the RTT reflects the link delays of this frame, not the
+// accumulated delay of every frame ever sent.
+Latency.ChainMs = 0
+Latency.MaxQueueSteps = 250000
 
 function Latency.Advance( ms )
-	Latency.VirtualMs = (Latency.VirtualMs or 0) + (tonumber( ms ) or 0)
+	Latency.ChainMs = (Latency.ChainMs or 0) + (tonumber( ms ) or 0)
 end
 
 function Latency.Now()
 	local base = 0
 	if (CurTime) then base = CurTime()
 	elseif (RealTime) then base = RealTime() end
-	return base + ((Latency.VirtualMs or 0) / 1000)
+	return base + ((Latency.ChainMs or 0) / 1000)
+end
+
+// Wired/fibre frames are queued and flushed iteratively in the same tick.
+// Calling the next hop directly made a large topology recurse once per device
+// and exhausted the Lua stack; deferring to timer.Simple left packet ids in
+// flight across ticks, which broke DHCP, NDP and traceroute on big networks.
+// A FIFO keeps ordering and keeps the whole dispatch inside one tick.
+local pending = {}
+local pendingHead = 1
+local pendingTail = 0
+local flushing = false
+
+local function Flush()
+	if (flushing) then return end
+	flushing = true
+	Latency.ChainMs = 0
+	local steps = 0
+	while (pendingHead <= pendingTail) do
+		local item = pending[ pendingHead ]
+		pending[ pendingHead ] = nil
+		pendingHead = pendingHead + 1
+		if (item) then
+			Latency.Advance( item.ms )
+			steps = steps + 1
+			item.fn()
+			if (steps > (Latency.MaxQueueSteps or 250000)) then
+				PCMod.Msg( "Latency: dispatch queue budget exceeded; dropping the rest", true )
+				break
+			end
+		end
+	end
+	pending = {}
+	pendingHead = 1
+	pendingTail = 0
+	Latency.ChainMs = 0
+	flushing = false
+end
+
+local function Enqueue( fn, ms )
+	pendingTail = pendingTail + 1
+	pending[ pendingTail ] = { fn = fn, ms = ms or 0 }
+	if (!flushing) then Flush() end
 end
 
 // 0 at the AP, 1 at the edge of its range. Unlimited range (or an unknown
@@ -128,14 +172,15 @@ function Latency.Deliver( fn, kind, distance, range )
 	if (type( fn ) != "function") then return false end
 	if (Latency.Dropped( kind, distance, range )) then return false end
 	local ms = Latency.Delay( kind, distance, range )
-	// Cable and fibre are sub-tick. Deliver immediately and account for the
-	// delay in the simulated clock; only Wi-Fi needs a real timer.
+	// Cable and fibre are sub-tick. Deliver in the same tick through the
+	// iterative queue; only Wi-Fi needs a real timer.
 	if ((kind == "wired") || (kind == "optic") ||
 		(ms <= 0) || (!timer) || (!timer.Simple)) then
-		Latency.Advance( ms )
-		fn()
+		Enqueue( fn, ms )
 		return true
 	end
-	timer.Simple( ms / 1000, fn )
+	timer.Simple( ms / 1000, function()
+		Enqueue( fn, 0 )
+	end )
 	return true
 end

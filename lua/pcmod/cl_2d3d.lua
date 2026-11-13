@@ -231,30 +231,32 @@ PCMod.SDraw.Configs[ sc.ScreenModel ] = sc
 // ---------------------------------------------------------------------------------------------------------
 // SetDevParam - Sets a device parameter
 // ---------------------------------------------------------------------------------------------------------
-function PCMod.SetDevParam( um )
-	local entid = um:ReadShort()
-	local device = um:ReadString()
-	local index = um:ReadShort()
-	local type = um:ReadString()
-	local value = nil
-	if (type == "bool") then
-		value = um:ReadBool()
-	elseif (type == "string") then
-		value = um:ReadString()
-	elseif (type == "int") then
-		value = um:ReadShort()
-	elseif (type == "float") then
-		value = um:ReadFloat()
-	elseif (type == "entity") then
-		value = um:ReadEntity()
-	end
+function PCMod.SetDevParam( entid, device, index, type, value )
 	// Round 34 (M-10): the whole table of the entity was wiped by every
 	// message - the parameters of the other devices were lost.
 	if (!PCMod.SDraw.DevParams[ entid ]) then PCMod.SDraw.DevParams[ entid ] = {} end
 	if (!PCMod.SDraw.DevParams[ entid ][ device ]) then PCMod.SDraw.DevParams[ entid ][ device ] = {} end
 	PCMod.SDraw.DevParams[ entid ][ device ][ index ] = value
 end
-usermessage.Hook( "pcmod_setdevparam", PCMod.SetDevParam )
+net.Receive( "pcmod_setdevparam", function()
+	local entid = net.ReadUInt( 16 )
+	local device = net.ReadString()
+	local index = net.ReadUInt( 16 )
+	local typ = net.ReadString()
+	local value = nil
+	if (typ == "bool") then
+		value = net.ReadBool()
+	elseif (typ == "string") then
+		value = net.ReadString()
+	elseif (typ == "int") then
+		value = net.ReadUInt( 16 )
+	elseif (typ == "float") then
+		value = net.ReadFloat()
+	elseif (typ == "entity") then
+		value = net.ReadEntity()
+	end
+	PCMod.SetDevParam( entid, device, index, typ, value )
+end )
 
 // ---------------------------------------------------------------------------------------------------------
 // Add some dev adjustment commands

@@ -20,10 +20,7 @@ if (CLIENT) then
 	// ---------------------------------------------------------------------------------------------------------
 	// Open - Opens the settings window
 	// ---------------------------------------------------------------------------------------------------------
-	function PCMod.Settings.Open( um )
-		local admin = um:ReadBool() -- Determine if we are admin or not
-		local sadmin = um:ReadBool() -- Determine if we are super admin or not
-		
+	function PCMod.Settings.Open( admin, sadmin )
 		// Create the window
 		local win = vgui.CreateWindow( 0.5, 0.75, "PCMod - Settings" )
 		PCMod.Settings.MainWindow = win
@@ -127,7 +124,9 @@ if (CLIENT) then
 		vgui.AddSlider( tb_server, "Max Modems:", 0, 50, "sbox_maxpcmod_modems", cl, "modems" )
 		vgui.AddSlider( tb_server, "Max BRouters:", 0, 50, "sbox_maxpcmod_brouters", cl, "brouters" )
 	end
-	usermessage.Hook( "pcmod_opensettings", PCMod.Settings.Open )
+	net.Receive( "pcmod_opensettings", function()
+		PCMod.Settings.Open( net.ReadBool(), net.ReadBool() )
+	end )
 	
 	// ---------------------------------------------------------------------------------------------------------
 	// ChangeLimit - Alters a entity limit
@@ -149,15 +148,17 @@ hook.Add("PlayerSay", "menuCommand", menuCommand);
 
 if (SERVER) then
 
+	util.AddNetworkString( "pcmod_opensettings" )
+
 	// ---------------------------------------------------------------------------------------------------------
 	// OpenClientWindow - Opens the settings window on a client
 	// ---------------------------------------------------------------------------------------------------------
 	function PCMod.Settings.OpenClientWindow( pl, com, args )
 		if (!pl || !pl:IsValid() || !pl:IsPlayer()) then return end
-		umsg.Start( "pcmod_opensettings", pl )
-			umsg.Bool( pl:IsAdmin() )
-			umsg.Bool( pl:IsSuperAdmin() )
-		umsg.End()
+		net.Start( "pcmod_opensettings" )
+			net.WriteBool( pl:IsAdmin() )
+			net.WriteBool( pl:IsSuperAdmin() )
+		net.Send( pl )
 	end
 	concommand.Add( "pc_settings", PCMod.Settings.OpenClientWindow )
 	

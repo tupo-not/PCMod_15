@@ -39,7 +39,7 @@ keyboard = {
 	EnableCapture = function() end
 }
 hook = { Add = function() end }
-usermessage = { Hook = function() end }
+net = { Receive = function() end }
 vgui = { Register = function() end }
 include = function() end
 

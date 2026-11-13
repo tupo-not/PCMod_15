@@ -2,144 +2,36 @@
 // ---------------------------------------------------------------------------------------------------------
 // sh_config.lua - Revision 1
 // Shared
-// Loads all PCMod settings
+// Server overrides applied after the defaults in sh_baseconfig.lua.
+//
+// sh_baseconfig.lua owns every default and the compatibility-sensitive tables
+// (WireTypes, RPCost, RPDisks, ...). This file only changes what a server
+// actually wants to change, so a default can never silently diverge in two
+// places again.
 // ---------------------------------------------------------------------------------------------------------
 
+// Advertise PCMod with a timed chat message and enable RP purchases.
+cfg.TimedMessage = false
+cfg.RPMode = true
 
-cfg.UsePCModTags 		=	false -- Change sv_tags?
-cfg.PCModTags 			=	"pcmod2" -- Change to what?
+// Boot pacing and UI scale.
+cfg.BootSpeed = 0.25
+cfg.GuiScale = 0.5
 
-cfg.TimedMessage 		= 	false -- Show a timed message advertising PCMod?
-cfg.TimedMessageDelay 	= 	300 -- Message delay (seconds)
-cfg.Message 			= 	"This server uses PCMod " .. PCMod.Version .. "!" -- What message to show
+// Keep the remover tool from deleting PCMod devices (Shift bypasses).
+cfg.RemoverProtection = true
 
-cfg.DebugMode 			= 	false -- Is the addon in debug mode?
-cfg.LogMessages			= 	false -- Should we log messages to file?
-cfg.LogInterval			= 	15 -- Minutes in-between logging saves if above is true
-cfg.SVLogMessage			= 	"PCMod is saving serverside logs. This may cause some lag" -- Message to show when saving logs (SV)
-cfg.CLLogMessage			= 	"PCMod is saving clientside logs. This may cause some lag" -- Message to show when saving logs (CL)
-cfg.RPMode 				= 	true -- Should the addon enable RP mode?
+// Packet slot capacity and IP TTL defaults. Packet ids are recycled inside
+// [1, MaxNetworkPid] by sv_network.lua.
+// TTL is the IPv4 maximum, so a large backbone (hundreds of routers) stays
+// reachable; loops are still bounded by it and by MaxNetworkPass.
+cfg.MaxNetworkPid = 500
+cfg.DefaultTTL = 255
+cfg.TraceMaxHops = 255
 
--- SECURITY (stage 1, fix 1.3): DbgPass removed. pc_getsvsmessages now requires admin
--- rights server-side; no password literal is shipped to clients any more.
+// UI command rate limit: one window per this many seconds, with a small
+// same-tick burst allowance for multi-step UI actions.
+cfg.CommandFlood = 0.05
 
---[[ BROKEN BROKEN BROKEN BROKEN BROKEN
-NO SERIOUSLY, THIS IS BROOOOKKKEEEEENNNN ]]--
-cfg.RPCost = { -- Costs can be overridden in sh_settings.lua or server config
-	pcmod_tower 	=	250, -- Cost for a tower
-	pcmod_monitor 	= 	100, -- Cost for a monitor
-	pcmod_keyboard 	= 	25, -- Cost for a keyboard
-	pcmod_router 	=	80, -- Cost for a LAN modem
-	pcmod_erouter 	=	80, -- Cost for a router with an Ethernet WAN
-	pcmod_modem 	=	40, -- Cost for a fibre-to-Ethernet modem
-	pcmod_brouter 	= 	120, -- Cost for a backbone router
-	pcmod_speaker 	= 	50, -- Cost for a speaker
-	pcmod_printer	=	100, -- Cost for a printer
-	pcmod_hdcopier	=	150, -- Cost for a hard drive copier
-	pcmod_pwcrack	=	600, -- Cost for a password cracker
-	pcmod_splitter	=	25, -- Cost for an audio amplifier
-	pcmod_switch	=	60, -- Cost for a network switch
-	["#WLSS_R"]		=	100, -- Cost for a wireless router
-	pcmod_laptop	=	350, -- Cost for a laptop
-} -- Costs can be overridden in sh_settings.lua or server config
-
--- Snapshot of the stock prices, used by the "Reset RPCost to Defaults"
--- button in the settings menu (pc_reset_rpcost).
-cfg.RPCostDefaults = table.Copy( cfg.RPCost )
-
-// Note that the above costs only apply to buying items through the RP interface.
-// Spawning items using the toolgun costs nothing.
-// In order for the above to work, you will need to make changes to sv_rp.lua.
-// See the forums for more information.
-
-// Below, you can add your own songs to PersonalPlayer. They will come up on the custom tab.
-cfg.CustomSongs = { -- Do not edit
-	// { "music/SONG_NAME.mp3", "Song Name Here" }, -- EXAMPLE
-	// { "music/SONG_NAME2.mp3, "Second Song Name Here" }, -- EXAMPLE
-} -- Do not edit
-
-cfg.FullProgramList = "chathost,printshare,chatserv,pplayer,firewall,p2pchat,iocontroller,alarmz" -- A list of all programs that can be installed (configurable via sh_settings or server config)
-
-// Below, you can edit or make new Install Disk packs. The last paremeter is a list of programs (for example: "mycomputer,notepad")
-// The first parameter is the name of the pack, and the second parameter is the cost of the pack
-// The third parameter is the internal (short) name of the pack - leave it in lower-case and with no spaces
-cfg.RPDisks = { -- Do not edit
-	{ "Ultimate Pack", 		250, 	"ulti", 	cfg.FullProgramList }, -- Ultimate pack
-	{ "Chat Pack", 			100,	"chat",		"chathost,chatserv,p2pchat" },
-	{ "Security Pack",		100,	"secur",	"firewall,alarmz" },
-	{ "Misc Pack",			100,	"misc",		"pplayer,iocontroller" }
-} -- Do not edit
-
-cfg.ReachDistance = 256 -- How far away can a person reach? (For keyboards)
-cfg.SightRange = 1024 -- How far away can a person see? (For monitor screens)
-cfg.WirelessRange = 2048 -- How far away can a wireless router reach? (0 = Unlimited Range)
-cfg.WirelessInfo = true -- Should we draw wireless links when looking at a wireless router?
-cfg.WirelessInfoDrawCol = Color( 255, 0, 0, 255 )
-
-// LAN DHCP: private, isolated address pool handed out by routers. These are
-// the defaults for new routers; each router's web page can override its
-// netmask (16-32) and network/host pool. See sh_baseconfig.lua.
-//
-// Address plan (server-configurable in sh_baseconfig / this file):
-//   BackboneFirstOctet - first octet of backbone addresses (default 100).
-//   LanBlocks          - RFC1918 prefixes a LAN may use.
-cfg.BackboneFirstOctet = 100
-cfg.LanBlocks = {
-	"10.0.0.0/8",
-	"172.16.0.0/12",
-	"192.168.0.0/16",
-}
-cfg.LanNetmask = 24
-cfg.DHCPStart = 2
-cfg.DHCPEnd = 254
-
-cfg.QuickType = 3 -- 0 = Completely disabled, 1 = debug mode only, 2 = keyboard only OR debug mode, 3 = always on
-
-cfg.BootSpeed = 0.25 -- PC boot pacing multiplier (1 = original speed, 0.25 = fast). Applies to BIOS/OS boot stages and shutdown.
-
-cfg.GuiScale = 0.5 -- PC UI scale (0.25 = smallest, 0.5 = default, 1/1.5/2 = larger). Fullscreen monitor UI keeps a consistent size on any resolution.
-
-cfg.PrintTime = 5 -- How long does it take to print a document? (Seconds)
-
-cfg.CamLockSmoothTime = 1 -- How long does it take for the camera to center on a monitor? (Seconds) (0 = instant)
-
-cfg.IO_Inputs = { "A", "B", "C", "D", "E", "F" } -- A list of all the inputs of a wired I/O device (you wire buttons and stuff to these)
-cfg.IO_Outputs = { "1", "2", "3", "4", "5", "6" } -- A list of all the outputs of a wired I/O device (you wire screens and lights to these)
-
-cfg.AdvancedMode = false -- Enable/disable advanced mode (Using a PC without camlock)
-
-cfg.RemoverProtection = true -- Should PCMod devices reject the remover tool? (hold Shift to bypass)
-
-cfg.MaxNetworkPass = 50 -- What's the maximum amount of routers a packet can pass through in one go?
-cfg.MaxNetworkPid = 500 -- Single source for this setting (AUDIT2 A-05, Round 19): slot capacity of PCMod.Network.Packets - packet ids are recycled within [1, this] (sv_network.lua)
-cfg.DefaultTTL = 64 -- Default IP TTL for new packets (routers decrement it once per hop)
-cfg.TraceMaxHops = 30 -- Maximum probe TTL a traceroute will send
-
-// Emulated link latency (milliseconds, one-way per link) and Wi-Fi loss.
-// Set NetLatency = false to disable the simulation entirely.
-cfg.NetLatency = true
-cfg.WiredLatency = 3 -- Ethernet cable latency per link (sub-tick, reported in RTT)
-cfg.OpticLatency = 2 -- Fibre link latency per link (sub-tick, reported in RTT)
-cfg.WirelessLatency = 12 -- Wi-Fi latency per link at the AP
-cfg.WirelessDistanceLatency = 25 -- extra Wi-Fi latency at the edge of range
-cfg.LatencyJitter = 1 -- +/- jitter for wired/fibre links
-cfg.WirelessJitter = 6 -- +/- jitter for Wi-Fi links near the AP
-cfg.WirelessDistanceJitter = 5 -- extra Wi-Fi jitter at the edge of range
-cfg.WirelessLoss = 0.02 -- Fraction of Wi-Fi frames dropped near the AP
-cfg.WirelessDistanceLoss = 0.10 -- extra Wi-Fi loss at the edge of range
-
-cfg.HighQuality = true -- Should the client use theme hooks? (3D form elements)
-
-cfg.WireTypes = {} -- Do not edit
-
-// It is recommended you do not edit any of the things below unless you are an experienced Lua coder and want to make changes to the addon.
-
-cfg.WireTypes[ 1 ] = { Name="vga", 		ExtName="VGA Display", 		SameType=false } -- VGA Display Cable (Tower -> Monitor)
-cfg.WireTypes[ 2 ] = { Name="usb", 		ExtName="USB Port", 		SameType=false } -- USB Cable (Misc devices)
-cfg.WireTypes[ 3 ] = { Name="network", 	ExtName="Network", 			SameType=false } -- Network Cable (Tower -> Router)
-cfg.WireTypes[ 4 ] = { Name="optic", 	ExtName="Fibre Optic", 		SameType=true } -- Fibre optic cable (Router -> Router)
-cfg.WireTypes[ 5 ] = { Name="ps2", 		ExtName="PS2 Connection", 	SameType=false } -- PS2 cable (Keyboard -> Tower)
-cfg.WireTypes[ 6 ] = { Name="minijack", ExtName="Mini-Jack Port", 	SameType=false } -- MiniJack port (Audio Amplifier -> Tower)
-cfg.WireTypes[ 7 ] = { Name="phono",	ExtName="Phono Connection",	SameType=false } -- Phono cable (Speaker -> Audio Amplifier)
-
-cfg.Loaded = true -- Do not edit
+// Marks the configuration as fully loaded. sh_baseconfig validates this.
+cfg.Loaded = true

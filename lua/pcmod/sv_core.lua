@@ -17,6 +17,9 @@ AddCSLuaFile( "pcmod/sh_version.lua" )
 include( "pcmod/sh_version.lua" )
 
 util.AddNetworkString("pc_stream");
+util.AddNetworkString( "pcmod_quicktype" )
+util.AddNetworkString( "pcmod_ppnot" )
+util.AddNetworkString( "pcmod_setdevparam" )
 
 // ---------------------------------------------------------------------------------------------------------
 // Load configuration, and common functions
@@ -108,6 +111,7 @@ AddCSLuaFile( "pcmod/sh_window.lua" ) -- Shared window geometry
 // ---------------------------------------------------------------------------------------------------------
 
 AddCSLuaFile( "pcmod/ssdevices/base.lua" )
+AddCSLuaFile( "pcmod/ssdevices/base_windowdrag.lua" )
 for _, v in pairs( file.Find( "pcmod/ssdevices/dev_*", "LUA" ) ) do
 	local fn = "pcmod/ssdevices/" .. v
 	PCMod.Msg( "Adding SSDevice: " .. v, true )
@@ -251,25 +255,6 @@ concommand.Add( "pc_os_reload", PCMod.ReloadOS )
 
 
 // ---------------------------------------------------------------------------------------------------------
-// KeyPress - Registers a keypress from the on-screen keyboard and passes it to correct entity (_OBSOLETE_)
-// ---------------------------------------------------------------------------------------------------------
-function PCMod.KeyPress( ply, com, args )
-	if ((!ply) || (!ply:IsValid())) then return end
-	if ((!args) || (!args[1]) || (!args[2])) then return end
-	local key = tostring( args[1] )
-	local entid = tonumber( args[2] )
-	local ent = ents.GetByIndex( entid )
-	if ((!ent) || (!ent:IsValid())) then return end
-	if ((!ent.IsPCMod) || (ent.Class != "pcmod_keyboard")) then return end
-	if ((ent:GetPos()-ply:GetPos()):Length() > PCMod.Cfg.ReachDistance) then
-		ply:PrintMessage( HUD_PRINTTALK, "You are too far away to reach the keyboard!" )
-		return
-	end
-	ent:FireEvent( { "keypress", key } )
-end
-concommand.Add( "pc_keypress", PCMod.KeyPress )
-
-// ---------------------------------------------------------------------------------------------------------
 // PlayerSay - Chat commands controlled here
 // ---------------------------------------------------------------------------------------------------------
 function PCMod.PlayerSay( ply, text )
@@ -299,12 +284,24 @@ hook.Add( "PlayerSay", "PCMod.PlayerSay", PCMod.PlayerSay )
 // PC_Command - Runs a specific command based on an entity
 // ---------------------------------------------------------------------------------------------------------
 function PCMod.PC_Command( ply, com, args )
-	if (!ply.NextRun) then ply.NextRun = 0 end
-	if (CurTime() > ply.NextRun) then
-		ply.NextRun = CurTime() + PCMod.Cfg.PCC_FLOOD
-	else
-		PCMod.Msg( "PC_Command: Flood Protection! (" .. ply:Nick() .. ")" )
-		return
+	// A single UI action can emit several commands in the same tick (the start
+	// menu first closes itself, then launches the program). A plain
+	// one-command-per-window gate silently dropped the launch. Allow a small
+	// burst per window instead; sustained spam still hits the limit.
+	local flood = tonumber( PCMod.Cfg && PCMod.Cfg.CommandFlood ) or 0
+	if (flood > 0) then
+		local now = CurTime()
+		if (now < (ply.NextRun or 0)) then
+			if ((ply.CommandBurst or 0) > 0) then
+				ply.CommandBurst = ply.CommandBurst - 1
+			else
+				PCMod.Msg( "PC_Command: Flood Protection! (" .. ply:Nick() .. ")" )
+				return
+			end
+		else
+			ply.NextRun = now + flood
+			ply.CommandBurst = 16
+		end
 	end
 	if (!args[1]) then
 		PCMod.Msg( "PC_Command failed! (No entID)", true )
@@ -411,7 +408,7 @@ concommand.Add( "pc_locked", PCMod.Locked )
 // PC_QuickType - Shows the QuickType menu on the client
 // ---------------------------------------------------------------------------------------------------------
 function PCMod.PC_QuickType( ply, com, args )
-	if (!ply || !ply:IsValid() || !ply:IsPlayer()) then return end -- NULL target errors in umsg.Start and leaves the message open
+	if (!ply || !ply:IsValid() || !ply:IsPlayer()) then return end -- a NULL target would leave a net message half-written
 	if (!args) then args = {} end
 	local kb = false
 	if (args[1]) then
@@ -422,8 +419,8 @@ function PCMod.PC_QuickType( ply, com, args )
 		ply:PrintMessage( HUD_PRINTTALK, "You may not use QuickType!" )
 		return
 	end
-	umsg.Start( "pcmod_quicktype", ply )
-	umsg.End()
+	net.Start( "pcmod_quicktype" )
+	net.Send( ply )
 end
 concommand.Add( "pc_quicktype", PCMod.PC_QuickType )
 
@@ -432,10 +429,10 @@ concommand.Add( "pc_quicktype", PCMod.PC_QuickType )
 // ---------------------------------------------------------------------------------------------------------
 function PCMod.SendPopupNotice( ply, title, text )
 	if (ply && (!ply:IsValid() || !ply:IsPlayer())) then return end -- nil still broadcasts
-	umsg.Start( "pcmod_ppnot", ply )
-		umsg.String( title )
-		umsg.String( text )
-	umsg.End()
+	net.Start( "pcmod_ppnot" )
+		net.WriteString( tostring( title or "" ) )
+		net.WriteString( tostring( text or "" ) )
+	if (ply) then net.Send( ply ) else net.Broadcast() end
 end
 
 // ---------------------------------------------------------------------------------------------------------
@@ -443,23 +440,23 @@ end
 // ---------------------------------------------------------------------------------------------------------
 function PCMod.SetDevParam( entid, device, index, value )
 	for _,v in pairs( player.GetAll() ) do
-		umsg.Start( "pcmod_setdevparam", v )
-		umsg.Short( entid )
-		umsg.String( device )
-		umsg.Short( index )
-		umsg.String( value[ 1 ] )
-		if (value[ 1 ] == "bool") then
-			umsg.Bool( value [ 2 ] )
-		elseif (value[ 1 ] == "string") then
-			umsg.String( value [ 2 ] )
-		elseif (value[ 1 ] == "int") then
-			umsg.Short( value [ 2 ] )
-		elseif (value[ 1 ] == "float") then
-			umsg.Float( value [ 2 ] )
-		elseif (value[ 1 ] == "entity") then
-			umsg.Entity( value [ 2 ] )
-		end
-		umsg.End()
+		net.Start( "pcmod_setdevparam" )
+			net.WriteUInt( entid, 16 )
+			net.WriteString( device )
+			net.WriteUInt( index, 16 )
+			net.WriteString( value[ 1 ] )
+			if (value[ 1 ] == "bool") then
+				net.WriteBool( value [ 2 ] )
+			elseif (value[ 1 ] == "string") then
+				net.WriteString( value[ 2 ] )
+			elseif (value[ 1 ] == "int") then
+				net.WriteUInt( value[ 2 ], 16 )
+			elseif (value[ 1 ] == "float") then
+				net.WriteFloat( value [ 2 ] )
+			elseif (value[ 1 ] == "entity") then
+				net.WriteEntity( value [ 2 ] )
+			end
+		net.Send( v )
 	end
 end
 

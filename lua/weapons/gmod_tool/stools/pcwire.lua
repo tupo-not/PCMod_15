@@ -55,9 +55,72 @@ if (SERVER) then
 	end
 
 	util.AddNetworkString( "pcmod_reqports" )
+
+	// Every wiring request is a client-supplied entity reference. A malicious
+	// client can call the net messages directly, so each handler validates the
+	// active tool, the player's reach and a small per-player cooldown before
+	// touching the entity. These guards mirror what the client-side tool
+	// already enforces for honest players.
+	local function WiringReach()
+		if (PCMod.Wiring && PCMod.Wiring.WireRange) then
+			return PCMod.Wiring.WireRange()
+		end
+		return (tonumber( PCMod.Cfg && PCMod.Cfg.ReachDistance ) or 256) + 64
+	end
+
+	local function IsWiringTool( ply )
+		if ((!IsValid( ply )) || (!ply:IsPlayer())) then return false end
+		local wep = ply:GetActiveWeapon()
+		if ((!IsValid( wep )) || (wep:GetClass() != "gmod_tool")) then return false end
+		if (wep.GetMode && (wep:GetMode() != "pcwire")) then return false end
+		return true
+	end
+
+	local function WithinReach( ply, ent )
+		local reach = WiringReach()
+		if ((!reach) || (reach <= 0)) then return true end
+		if (!IsValid( ent )) then return false end
+		local from = (ply.GetShootPos && ply:GetShootPos()) or (ply.GetPos && ply:GetPos())
+		local to = ent.GetPos && ent:GetPos()
+		if ((!from) || (!to)) then return true end
+		return (from - to):Length() <= reach
+	end
+
+	local function WiringAllowed( ply, ent, cooldownKey, seconds )
+		if (!IsWiringTool( ply )) then return false end
+		if (!WithinReach( ply, ent )) then return false end
+		local now = CurTime()
+		if ((ply[ cooldownKey ] or 0) > now) then return false end
+		ply[ cooldownKey ] = now + seconds
+		return true
+	end
+
+	// Uploads arrive once per completed cable. Building a large backbone means
+	// many in a row, so a hard gate silently dropped legitimate links. Allow a
+	// small burst, then refill at a sustained rate (the same idea as the UI
+	// command burst).
+	local UploadBurst = 24
+	local UploadRefill = 0.1
+	local function UploadAllowed( ply )
+		local now = CurTime()
+		local b = ply.PCWireUpload
+		if (!b) then
+			b = { tokens = UploadBurst, time = now }
+			ply.PCWireUpload = b
+		end
+		local refill = math.floor( (now - (b.time or now)) / UploadRefill )
+		if (refill > 0) then
+			b.tokens = math.min( UploadBurst, (b.tokens or 0) + refill )
+			b.time = (b.time or now) + (refill * UploadRefill)
+		end
+		if ((b.tokens or 0) <= 0) then return false end
+		b.tokens = b.tokens - 1
+		return true
+	end
+
 	net.Receive( "pcmod_reqports", function( len, ply )
 		local ent = net.ReadEntity()
-		if ((IsValid( ent )) && (ent.IsPCMod)) then
+		if ((IsValid( ent )) && (ent.IsPCMod) && (WiringAllowed( ply, ent, "PCWireReqNext", 0.1 ))) then
 			PC_BeamPorts( ent, ply )
 		end
 	end )
@@ -68,6 +131,7 @@ if (SERVER) then
 		local ent = net.ReadEntity()
 		local port = net.ReadUInt( 8 )
 		if ((!IsValid( ent )) || (!ent.IsPCMod)) then return end
+		if (!WiringAllowed( ply, ent, "PCWireUnlinkNext", 0.2 )) then return end
 		local prt = ent:Ports()[ port ]
 		if ((!prt) || (!prt.Connected)) then return end
 		local other = prt.ConEnt
@@ -90,10 +154,30 @@ if (SERVER) then
 		local lpos1 = net.ReadVector()
 		local lpos2 = net.ReadVector()
 		local material = net.ReadString()
-		local width = net.ReadFloat()
+		local width = math.Clamp( net.ReadFloat(), 0, 5 )
 		local r = net.ReadUInt( 8 )
 		local g = net.ReadUInt( 8 )
 		local b = net.ReadUInt( 8 )
+
+		if (!IsWiringTool( ply )) then return end
+		// Only one end needs to be near the player: the first port was selected
+		// from wherever the player was standing before walking to the second
+		// device. Requiring both ends rejected valid long cables silently.
+		local reachable
+		if (PCMod.Wiring && PCMod.Wiring.WithinReach) then
+			reachable = PCMod.Wiring.WithinReach( ply, ent1, ent2 )
+		else
+			// Only the end being clicked now has to be in range.
+			reachable = WithinReach( ply, ent2 or ent1 )
+		end
+		if (!reachable) then
+			PCMod.Notice( "Cannot wire: move closer to a device", ply )
+			return
+		end
+		// Cable endpoints are local-space points; reject absurd values before
+		// they reach constraint.Rope.
+		if ((lpos1:Length() > 512) || (lpos2:Length() > 512)) then return end
+		if (string.len( material ) > 64) then return end
 
 		// Snap both ends onto the models' hardcoded connector points (when the
 		// clicked spot is close enough) so the rope leaves from the socket.
@@ -109,13 +193,37 @@ if (SERVER) then
 		local p1 = ent1:Ports()[ port1 ]
 		local p2 = ent2:Ports()[ port2 ]
 		if ((!p1) || (!p2)) then PCMod.Notice( "Cannot wire: bad port", ply ) return end
-		if (p1.Connected || p2.Connected) then return end
+		if (p1.Connected || p2.Connected) then
+			// The client predicts its own LeftClick and a listen server runs it
+			// again, so the same upload can arrive twice. When the exact link
+			// already exists, treat it as success instead of spending a rate
+			// token on a duplicate (which used to starve later cables).
+			if ((p1.Connected && p1.ConEnt == ent2 && (p1.RemotePort == port2)) &&
+				(p2.Connected && p2.ConEnt == ent1 && (p2.RemotePort == port1))) then
+				return
+			end
+			// The client's cached port list disagreed with the server. Make the
+			// rejection visible and refresh both HUDs so the next attempt uses
+			// the real state instead of silently "dead-ending".
+			PCMod.Notice( "Cannot wire: that port is already connected", ply )
+			PC_BeamPorts( ent1, ply )
+			PC_BeamPorts( ent2, ply )
+			return
+		end
 		if (p1.Type != p2.Type) then PCMod.Notice( "Cannot wire: port types differ", ply ) return end
 		local sameKind = (ent1:GetClass() == ent2:GetClass())
 		// Network ports are pure L2: computers, switches and modems may all
 		// link to their own kind (PC-to-PC, switch-to-switch, etc.).
 		local netLink = (p1.Type == "network")
 		if (sameKind && (!p1.CanWireSameType) && (!netLink)) then PCMod.Notice( "Cannot wire: same-class ports cannot connect", ply ) return end
+
+		// Every check passed, so only now spend a rate-limit token. Consuming
+		// it earlier let rejected/duplicate uploads exhaust the burst and made
+		// rapid chain wiring silently drop the later cables.
+		if (!UploadAllowed( ply )) then
+			PCMod.Notice( "Cannot wire: too many cables at once, try again", ply )
+			return
+		end
 
 		// Physical cable (constraint rope) between the two hit points.
 		local addlength = 100
@@ -124,7 +232,13 @@ if (SERVER) then
 		local rps = {}
 		if (const || rope) then rps = { { const, rope } } end
 
-		PCMod.Wiring.LinkPorts( ent1, port1, ent2, port2, rps, nil )
+		if (!PCMod.Wiring.LinkPorts( ent1, port1, ent2, port2, rps, nil )) then
+			if (PCMod.Wiring.UnlinkRopeTable) then PCMod.Wiring.UnlinkRopeTable( rps ) end
+			PCMod.Notice( "Cannot wire: the link was rejected", ply )
+			PC_BeamPorts( ent1, ply )
+			PC_BeamPorts( ent2, ply )
+			return
+		end
 		// Both devices changed state; push the new link flags back to the
 		// player so the HUD is correct on the next step without waiting for an
 		// aim change.
@@ -147,6 +261,25 @@ if (CLIENT) then
 			return PCMod.PortAnchors.Resolve( ent, index, lpos )
 		end
 		return lpos
+	end
+
+	// The stock util.GetPlayerTrace stops at 32768 units; PCMod's trace can reach
+	// the engine limit, but pcmod_wire_maxdist clamps it (0 = unlimited). This is
+	// what stops a player wiring a router from the opposite map corner.
+	local WireTraceMax = 56756
+	local function WireLimit()
+		local cv = GetConVar && GetConVar( "pcmod_wire_maxdist" )
+		if (cv != nil) then return cv:GetFloat() end
+		return tonumber( PCMod.Cfg && PCMod.Cfg.WireRange ) or 0
+	end
+	local function WireTrace( ply )
+		if (!ply) then return nil end
+		local dist = WireTraceMax
+		local limit = WireLimit()
+		if ((limit) && (limit > 0) && (limit < dist)) then dist = limit end
+		local tr = util.GetPlayerTrace( ply )
+		tr.endpos = tr.start + (ply:GetAimVector() * dist)
+		return util.TraceLine( tr )
 	end
 
 	TOOL.Stage = 0          -- 0 = picking first port, 1 = picking second port
@@ -219,7 +352,8 @@ if (CLIENT) then
 	function TOOL:RightClick( trace )
 		// Right-click a connected port to unwire it; otherwise reset the tool.
 		if (self.Stage == 0) then
-			local ent = trace.Entity
+			trace = WireTrace( self:GetOwner() ) or trace
+			local ent = trace && trace.Entity
 			local ports = (IsValid( ent )) && ent.IsPCMod && self:GetPorts( ent )
 			local prt = ports && ports[ self.SelIndex ]
 			if ((prt) && (prt.Connected)) then
@@ -238,7 +372,10 @@ if (CLIENT) then
 
 	function TOOL:LeftClick( trace )
 		if ((!game.SinglePlayer()) && (!IsFirstTimePredicted())) then return end
-		local ent = trace.Entity
+		// Always use PCMod's own trace: it honours pcmod_wire_maxdist even when
+		// the toolgun's longer trace would have hit a distant device.
+		trace = WireTrace( self:GetOwner() ) or trace
+		local ent = trace && trace.Entity
 		if ((!IsValid( ent )) || (!ent.IsPCMod)) then self:Reset() return false end
 		local ports = self:GetPorts( ent )
 		if ((!ports) || (#ports == 0)) then return false end
@@ -324,7 +461,8 @@ if (CLIENT) then
 	function TOOL:ScrollDown( trace ) return self:Scroll( trace, 1 ) end
 
 	function TOOL:Think()
-		local ent = self:GetOwner():GetEyeTrace().Entity
+		local tr = WireTrace( self:GetOwner() )
+		local ent = tr && tr.Entity
 		if (ent != self.AimedEnt) then
 			self.AimedEnt = ent
 			self.SelIndex = 1
@@ -361,9 +499,8 @@ if (CLIENT) then
 			local col = Color( self:GetClientNumber( "r" ), self:GetClientNumber( "g" ), self:GetClientNumber( "b" ) )
 			local width = self:GetClientNumber( "width" )
 			local start = self.Ent1:LocalToWorld( self.LPos1 )
-			local tr = util.GetPlayerTrace( self:GetOwner() )
-			tr.filter = { self:GetOwner() }
-			local hit = util.TraceLine( tr )
+			local hit = WireTrace( self:GetOwner() )
+			if (!hit) then return end
 			local aim = hit.HitPos
 			if ((IsValid( hit.Entity )) && (hit.Entity.IsPCMod)) then
 				aim = hit.Entity:LocalToWorld( Attach( hit.Entity, self.SelIndex, hit.Entity:WorldToLocal( hit.HitPos ) ) )
@@ -426,8 +563,8 @@ if (CLIENT) then
 	// The entity we're currently selecting ports on: in stage 1 we still aim at
 	// the second entity, but stay showing the first entity in case aim is empty.
 	function TOOL:AimedTarget()
-		local tr = self:GetOwner():GetEyeTrace()
-		if ((IsValid( tr.Entity )) && (tr.Entity.IsPCMod)) then return tr.Entity end
+		local tr = WireTrace( self:GetOwner() )
+		if (tr && IsValid( tr.Entity ) && tr.Entity.IsPCMod) then return tr.Entity end
 		return (self.Stage == 1) and self.Ent1 or nil
 	end
 

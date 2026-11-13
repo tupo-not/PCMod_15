@@ -13,12 +13,49 @@ PCMod.Network = {}
 PCMod.Network.Version = "1.0"
 PCMod.Network.Packets = {}
 PCMod.Network.NextID = 1
+// Backbones keyed by their allocated /32 id. Routers holds every registered
+// router (backbone and LAN) by entity index so packet-memory cleanup does not
+// have to guess where a router lives. BackboneIDs maps an entity to its /32.
 PCMod.Network.Backbones = {}
-PCMod.Network.Availible = {}
-PCMod.Network.Availible.Back = {}
+PCMod.Network.Routers = {}
+PCMod.Network.BackboneIDs = {}
+PCMod.Network.FreeBSubs = {}
+PCMod.Network.NextBSub = 1
 
-for i = 1, 65535 do
-	PCMod.Network.Availible.Back[ i ] = true
+// ---------------------------------------------------------------------------------------------------------
+// Packet tracing. `pcmod_debug_packets 1` logs every packet creation and every
+// network/fibre hop to the server console. Off by default; the per-packet check
+// is a single convar lookup so leaving it installed is cheap.
+// ---------------------------------------------------------------------------------------------------------
+local PacketDebugCvar
+if (CreateConVar) then
+	PacketDebugCvar = CreateConVar( "pcmod_debug_packets", "0",
+		(FCVAR_ARCHIVE or 0) + (FCVAR_NOTIFY or 0),
+		"Log every PCMod packet: source/destination IP, port, TTL and the first 5 body fields." )
+end
+
+// First `n` fields of a packet body (or the first `n` bytes of a raw string).
+local function BodyPreview( body, n )
+	if (body == nil) then return "<nil>" end
+	if (type( body ) != "table") then return string.sub( tostring( body ), 1, n ) end
+	local out = {}
+	for i = 1, math.min( n, #body ) do out[ #out + 1 ] = tostring( body[ i ] ) end
+	return table.concat( out, " " )
+end
+
+function PCMod.Network.DebugPackets()
+	return (PacketDebugCvar != nil) && PacketDebugCvar:GetBool()
+end
+
+// tag: "new" (created), "send" (new frame pushed), "hop" (existing packet
+// forwarded), "drop" (could not allocate a slot).
+function PCMod.Network.LogPacket( tag, source, dest, port, body, extra )
+	if (!PCMod.Network.DebugPackets()) then return end
+	PCMod.Msg( "[pcmod_pkt] " .. tostring( tag ) ..
+		" " .. tostring( source ) .. " -> " .. tostring( dest ) ..
+		" port=" .. tostring( port ) ..
+		" body5=[" .. BodyPreview( body, 5 ) .. "]" ..
+		(extra && (" " .. extra) or "") )
 end
 
 PCMod.Msg( "Network Library Loaded (V" .. PCMod.Network.Version .. ")", true )
@@ -85,7 +122,10 @@ function PCMod.Network.CreatePacket( source, dest, port, body, sourcePort, sourc
 		// Never alias a new packet onto an in-flight id. Routers keep
 		// asynchronous references to these ids, so reuse is only safe after
 		// delivery (or when the slot was already empty).
-		if (!pid) then return nil end
+		if (!pid) then
+			PCMod.Network.LogPacket( "drop", source, dest, port, body, "no free packet slot (max " .. tostring( maxpid ) .. ")" )
+			return nil
+		end
 		// The slot held a delivered packet - routers remember every pid they
 		// processed (router subsystem mem.P), so forget it everywhere or the new
 		// packet would be dropped as "Already processed".
@@ -96,6 +136,8 @@ function PCMod.Network.CreatePacket( source, dest, port, body, sourcePort, sourc
 	PCMod.Network.Packets[ pid ] = pk
 	PCMod.Network.NextID = pid + 1
 	if (PCMod.Network.NextID > maxpid) then PCMod.Network.NextID = 1 end
+	PCMod.Network.LogPacket( "new", pk.Source, pk.Dest, pk.Port, pk.Body,
+		"pid=" .. tostring( pid ) .. " ttl=" .. tostring( pk.TTL ) )
 	return pid
 end
 
@@ -133,19 +175,20 @@ end
 // ---------------------------------------------------------------------------------------------------------
 function PCMod.Network.ClearPacketMemory( pid )
 	if (!pid) then return end
-	local function clear( list )
-		for _, rtr in pairs( list ) do
-			local ent = rtr.Ent
-			if (IsValid( ent )) then
-				local mem = ent:Memory()
-				if (mem && mem.P && mem.P[ pid ]) then
-					mem.P[ pid ] = nil
-					ent:UpdateMemory( mem )
-				end
+	// LAN routers keep the same processed-pid memory as backbones. Iterating
+	// the registered router map covers both; the old code only walked the
+	// backbone list, so a recycled pid could still look "already processed" to
+	// a LAN router and its packets were silently dropped.
+	for _, rtr in pairs( PCMod.Network.Routers or {} ) do
+		local ent = rtr.Ent
+		if (IsValid( ent )) then
+			local mem = ent:Memory()
+			if (mem && mem.P && mem.P[ pid ]) then
+				mem.P[ pid ] = nil
+				ent:UpdateMemory( mem )
 			end
 		end
 	end
-	clear( PCMod.Network.Backbones )
 end
 
 // ---------------------------------------------------------------------------------------------------------
@@ -158,20 +201,22 @@ function PCMod.Network.RegisterRouter( ent )
 	rtr.Ent = ent
 	rtr.EntID = ent:EntIndex()
 	rtr.IsBackbone = false
+	if (PCMod.Network.Routers[ rtr.EntID ]) then
+		// Setup may be reached twice (for example when an entity is restored);
+		// registration is idempotent so the second call does not mark the
+		// router as failed.
+		PCMod.Msg( "Router " .. rtr.EntID .. " is already registered", true )
+		return true
+	end
 	if (ent:GetClass() == "pcmod_brouter") then
-		for _, v in pairs(PCMod.Network.Backbones) do
-			if (v.EntID == rtr.EntID) then
-				PCMod.Msg( "Router "..ent:EntIndex().."(Backbone) is already registered", true )
-				return
-			end
-		end
-		id = PCMod.Network.GetSub( true )
+		id = PCMod.Network.GetSub()
 		rtr.IsBackbone = true
 		if (!id) then
 			rtr.Ent:ForceRemove( "No subnets availible" )
 			return
 		end
 		PCMod.Network.Backbones[ id ] = rtr
+		PCMod.Network.BackboneIDs[ rtr.EntID ] = id
 		back = "(Backbone)"
 		rtr.Ent:SetBSubnet( id )
 		rtr.Ent:SetBIP( 0 )
@@ -183,6 +228,7 @@ function PCMod.Network.RegisterRouter( ent )
 		rtr.Ent:SetSubnet( 0 )
 		rtr.Ent:SetIP( 1 )
 	end
+	PCMod.Network.Routers[ rtr.EntID ] = rtr
 
 	PCMod.Msg( "Registered router "..ent:EntIndex()..back.." (subnet "..tostring( id )..")", true )
 	
@@ -193,41 +239,56 @@ end
 // UnRegisterRouter - Unregisters a router with the network system
 // ---------------------------------------------------------------------------------------------------------
 function PCMod.Network.UnRegisterRouter( ent )
-	local res = PCMod.Network.FindSubByEnt( ent )
+	if (!ent) then return end
+	local entid = ent:EntIndex()
+	local rtr = PCMod.Network.Routers[ entid ]
+	if (!rtr) then return end
+	PCMod.Network.Routers[ entid ] = nil
+	if (!rtr.IsBackbone) then
+		PCMod.Msg( "Unregistered LAN router " .. entid, true )
+		return
+	end
+	local res = PCMod.Network.BackboneIDs[ entid ] or PCMod.Network.FindSubByEnt( ent )
+	PCMod.Network.BackboneIDs[ entid ] = nil
 	if (!res) then return end
-
 	PCMod.Network.Backbones[ res ] = nil
-	PCMod.Network.Availible.Back[ res ] = true
+	// Reuse released /32s before advancing the cursor.
+	table.insert( PCMod.Network.FreeBSubs, res )
 
 	PCMod.Msg( "Unregistered backbone "..ent:EntIndex().." and released /32 "..res, true )
 end
 
 // ---------------------------------------------------------------------------------------------------------
-// GetSub - Allocate a free backbone /32 id
+// GetSub - Allocate a free backbone /32 id (free-list first, then cursor)
 // ---------------------------------------------------------------------------------------------------------
 function PCMod.Network.GetSub()
 	local list = PCMod.Network.Backbones
-	local avail = PCMod.Network.Availible.Back
-	for i = 1, 65535 do
-		if (!list[ i ]) then avail[ i ] = true else avail[ i ] = false end
+	local free = PCMod.Network.FreeBSubs or {}
+	while (#free > 0) do
+		local id = table.remove( free )
+		if (!list[ id ]) then return id end
 	end
-	local found = 0
-	for k, v in pairs( avail ) do
-		if ((v == true) && (found == 0)) then found = k end
+	local cursor = PCMod.Network.NextBSub or 1
+	for i = cursor, 65535 do
+		if (!list[ i ]) then
+			PCMod.Network.NextBSub = i + 1
+			return i
+		end
 	end
-	if (found == 0) then return false end
-	avail[ found ] = false
-	return found
+	// Cursor reached the end; there may still be holes below it.
+	for i = 1, cursor - 1 do
+		if (!list[ i ]) then return i end
+	end
+	return false
 end
 
 // ---------------------------------------------------------------------------------------------------------
 // FindSubByEnt - Gets the backbone /32 id of a backbone router
 // ---------------------------------------------------------------------------------------------------------
 function PCMod.Network.FindSubByEnt( ent )
-	local EntID = ent:EntIndex()
-	for i = 1, 65535 do
-		if (PCMod.Network.Backbones[ i ] && PCMod.Network.Backbones[ i ].EntID == EntID) then return i end
-	end
+	if (!ent) then return false end
+	local id = PCMod.Network.BackboneIDs[ ent:EntIndex() ]
+	if (id && PCMod.Network.Backbones[ id ]) then return id end
 	return false
 end
 

@@ -48,6 +48,11 @@ cfg.RPCost = { -- Do not edit
 	pcmod_laptop	=	350, -- Cost for a laptop
 } -- Do not edit
 
+// Snapshot of the stock prices, used by the "Reset RPCost to Defaults" button
+// in the settings menu (pc_reset_rpcost). Kept next to the defaults so the
+// reset target cannot drift when sh_config overrides a price.
+cfg.RPCostDefaults = table.Copy( cfg.RPCost )
+
 // Note that the above costs only apply to buying items through the RP interface.
 // Spawning items using the toolgun costs nothing.
 // In order for the above to work, you will need to make changes to sv_rp.lua.
@@ -72,6 +77,7 @@ cfg.RPDisks = { -- Do not edit
 } -- Do not edit
 
 cfg.ReachDistance = 256 -- How far away can a person reach? (For keyboards)
+cfg.WireRange = 140 -- Max distance to the cable end the player is clicking (0 = unlimited; pcmod_wire_maxdist overrides)
 cfg.SightRange = 1024 -- How far away can a person see? (For monitor screens)
 cfg.WirelessRange = 2048 -- How far away can a wireless router reach? (0 = Unlimited Range)
 cfg.WirelessInfo = true -- Should we draw wireless links when looking at a wireless router?
@@ -109,7 +115,11 @@ cfg.IO_Outputs = { "1", "2", "3", "4", "5", "6" } -- A list of all the outputs o
 
 cfg.AdvancedMode = false -- Enable/disable advanced mode (Using a PC without camlock)
 
-cfg.MaxNetworkPass = 50 -- What's the maximum amount of routers a packet can pass through in one go?
+// What's the maximum amount of routers a packet can pass through in one go?
+// This is only a safety net for L2 loops that do not consume a TTL; the IP TTL
+// (below) is the real bound. Keep it comfortably above the largest supported
+// path so a long backbone does not drop packets at hop 51.
+cfg.MaxNetworkPass = 512
 
 // Emulated link latency (milliseconds, one-way per link) and Wi-Fi loss.
 // Set NetLatency = false to disable the simulation entirely.
@@ -185,8 +195,6 @@ cfg.Models = {
 
 list.Set( "pc_oslist", "personal", {} )
 list.Set( "pc_oslist", "server", {} )
-
-cfg.PCC_FLOOD = -1 -- _OBSOLETE_ as of now, may have use later on
 
 cfg.RPItems = {
 	{ "pcmod_tower", 	"Tower", 	"models/props/cs_office/computer_caseb.mdl" },

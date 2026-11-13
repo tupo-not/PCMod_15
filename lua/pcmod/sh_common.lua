@@ -22,6 +22,10 @@
 
 PCMod.GM = GM or GAMEMODE
 
+if (SERVER && util && util.AddNetworkString) then
+	util.AddNetworkString( "pcmod_notice" )
+end
+
 // ---------------------------------------------------------------------------------------------------------
 // Router class helpers. There are two LAN routers (fibre WAN and Ethernet WAN)
 // and one backbone router; shared code asks these instead of hard-coding the
@@ -120,13 +124,17 @@ function PCMod.Notice( msgtext, ply )
 	end
 	if (SERVER) then
 		if (ply && ply:IsValid()) then
-			umsg.Start( "pcmod_notice", ply )
-				umsg.String( msgtext )
-			umsg.End()
+			net.Start( "pcmod_notice" )
+				net.WriteString( msgtext )
+			net.Send( ply )
 		end
 	end
 end
-if (CLIENT) then usermessage.Hook( "pcmod_notice", function( um ) PCMod.Notice( um:ReadString() ) end ) end
+if (CLIENT) then
+	net.Receive( "pcmod_notice", function()
+		PCMod.Notice( net.ReadString() )
+	end )
+end
 
 // ---------------------------------------------------------------------------------------------------------
 // GMsg - Prints a message to all players
@@ -1111,7 +1119,7 @@ function PCMod.SplitString( str, chunksize, firstchunk )
 	// t[1] = nil, so the result was correct BY ACCIDENT) and the first chunk
 	// really has the size `firstchunk` now - before it was only used for the
 	// length check. A chunksize below 1 produced an EMPTY result and crashed
-	// the caller (umsg.String(nil)).
+	// the caller (a nil string passed to net.WriteString).
 	if (!str) then return {} end
 	if (!chunksize || (chunksize < 1)) then chunksize = 1 end
 	if (!firstchunk || (firstchunk < 1)) then firstchunk = chunksize end

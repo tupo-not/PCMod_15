@@ -87,4 +87,25 @@ assertEq( #sent, 3, "no probe is sent after the destination answers" )
 os:ProcessPacket( 0, { "netTraceHop", "os", 1, "10.0.9.9", "RTR", 9 }, { "10.0.9.9", 0 } )
 assertEq( #sent, 3, "late hop report ignored" )
 
+-- A large backbone must not stop at the old 30-hop probe ceiling.
+PCMod.Cfg.TraceMaxHops = 255
+local beforeLarge = #sent
+local largeDone
+function os:TraceSuccess( ip, trace )
+	largeDone = { ip = ip, trace = trace }
+end
+os:NetTrace( "10.0.200.4", "os" )
+assertEq( #sent, beforeLarge + 1, "large trace starts" )
+for hop = 1, 200 do
+	now = now + 0.003
+	os:ProcessPacket( 0, { "netTraceHop", "os", 1, "10.0." .. hop .. ".1", "RTR", hop }, { "10.0." .. hop .. ".1", 0 } )
+end
+assertEq( sent[ #sent ].body[ 4 ], 201, "trace keeps probing past 200 hops" )
+assertEq( sent[ #sent ].ttl, 201, "large trace raises the probe TTL" )
+now = now + 0.003
+os:ProcessPacket( 0, { "netTraceResponse", "os", 1, "HOST" }, { "10.0.200.4", 0 } )
+assertTrue( largeDone ~= nil, "large trace reaches the destination" )
+assertEq( largeDone.ip, "10.0.200.4", "large trace reports the destination address" )
+assertEq( #largeDone.trace, 201, "large trace records every hop" )
+
 print( "ALL TRACE CHECKS TESTS PASSED" )

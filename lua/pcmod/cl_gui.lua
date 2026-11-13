@@ -155,12 +155,30 @@ end
 hook.Add( "Initialize", "PCMod.Gui.InitFonts", PCMod.Gui.InitFonts )
 
 // ---------------------------------------------------------------------------------------------------------
+// WireToolActive - Is the local player holding the PCMod wire tool?
+// ---------------------------------------------------------------------------------------------------------
+function PCMod.Gui.WireToolActive()
+	if (!LocalPlayer) then return false end
+	local ply = LocalPlayer()
+	if (!ply) then return false end
+	local wep = ply.GetActiveWeapon && ply:GetActiveWeapon()
+	if ((!IsValid( wep )) || (wep.GetClass == nil) || (wep:GetClass() != "gmod_tool")) then return false end
+	return ((wep.GetMode != nil) && (wep:GetMode() == "pcwire"))
+end
+
+// ---------------------------------------------------------------------------------------------------------
 // DrawSelEnt - Draws information for the selected entity to the screen
 // ---------------------------------------------------------------------------------------------------------
 function PCMod.Gui.DrawSelEnt()
 	if (PCMod.SelEntity == 0) then return end -- No entity = no draw
 	local ent = ents.GetByIndex( PCMod.SelEntity ) -- Get the entity
 	if ((!ent) || (!ent:IsValid())) then return end -- Check it's validness
+	// The wire tool lists the ports of the device it is aimed at. Keep the
+	// IP/interface label out of the way while that overlay is up.
+	if (PCMod.Gui.WireToolActive()) then
+		PCMod.SelEntity = 0
+		return
+	end
 	
 	// Get the draw coords
 	local origin = ent:GetPos():ToScreen()
@@ -276,8 +294,8 @@ function PCMod.Gui.PopupNotice( title, text )
 	pn:MakePopup()
 	PCMod.Gui.Popup = pn
 end
-usermessage.Hook( "pcmod_ppnot", function( um )
-	PCMod.Gui.PopupNotice( um:ReadString(), um:ReadString() )
+net.Receive( "pcmod_ppnot", function()
+	PCMod.Gui.PopupNotice( net.ReadString(), net.ReadString() )
 end )
 
 // ---------------------------------------------------------------------------------------------------------

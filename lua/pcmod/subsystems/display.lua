@@ -121,8 +121,7 @@ end
 // people's screens and spam the server console with print().
 // The request is now only honoured when it comes from a valid player who can
 // actually see that machine, and at most once every EKRAN_REFRESH_INTERVAL
-// seconds per player. The rate limit is local to this channel on purpose -
-// PCC_FLOOD is not touched (excluded topic).
+// seconds per player. The rate limit is local to this channel on purpose.
 local EKRAN_REFRESH_INTERVAL = 2
 local ekranRefresh = {}
 

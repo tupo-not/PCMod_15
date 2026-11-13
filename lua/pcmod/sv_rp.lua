@@ -13,6 +13,7 @@
 PCMod.RP = {}
 PCMod.RP.Version = "1.0.0"
 util.AddNetworkString( "Nope" )
+util.AddNetworkString( "pcmod_rpmenu" )
 PCMod.Msg( "RolePlay Library Loaded! (V" .. PCMod.RP.Version .. ")", true )
 
 
@@ -224,8 +225,8 @@ concommand.Add( "pc_buytool", PCMod.RP.BuyTool )
 // ---------------------------------------------------------------------------------------------------------
 function PCMod.RP.OpenRPMenu( ply, com, args )
 	if (!PCMod.Cfg.RPMode) then return end
-	umsg.Start( "pcmod_rpmenu", ply )
-	umsg.End()
+	net.Start( "pcmod_rpmenu" )
+	net.Send( ply )
 end
 concommand.Add( "pc_rp", PCMod.RP.OpenRPMenu )
 

@@ -58,21 +58,42 @@ assertTrue( scheduled[ 1 ].seconds > 0.01, "wireless delay is applied in seconds
 scheduled[ 1 ].fn()
 assertTrue( called, "scheduled callback delivers the frame" )
 
--- Wired/fibre delays are sub-tick: they advance the simulated clock and
--- deliver in the same tick instead of waiting for timer.Simple.
+-- Wired/fibre delays are sub-tick: they advance the delay chain of the current
+-- dispatch and deliver in the same tick instead of waiting for timer.Simple.
 PCMod.Cfg.WiredLatency = 3
 PCMod.Cfg.OpticLatency = 2
 PCMod.Cfg.LatencyJitter = 0
 scheduled = {}
 local wiredCalled = false
+local wiredNow
 local before = L.Now()
-assertTrue( L.Deliver( function() wiredCalled = true end, "wired" ), "wired frame reports success" )
+assertTrue( L.Deliver( function() wiredCalled = true; wiredNow = L.Now() end, "wired" ), "wired frame reports success" )
 assertTrue( wiredCalled, "wired frame is delivered immediately" )
 assertEq( #scheduled, 0, "wired frame does not use a timer" )
-assertTrue( L.Now() > before, "wired frame advances the simulated clock" )
-local opticBefore = L.Now()
-assertTrue( L.Deliver( function() end, "optic" ), "fibre frame reports success" )
-assertTrue( L.Now() > opticBefore, "fibre frame advances the simulated clock" )
+assertTrue( wiredNow > before, "wired frame advances the delay chain during dispatch" )
+assertTrue( math.abs( L.Now() - before ) < 1e-9, "delay chain resets after the dispatch" )
+
+-- Nested deliveries accumulate inside one dispatch, then reset together.
+local nestedNow
+local outer = L.Now()
+assertTrue( L.Deliver( function()
+	assertTrue( L.Deliver( function() nestedNow = L.Now() end, "optic" ), "nested fibre frame reports success" )
+end, "wired" ), "outer wired frame reports success" )
+assertTrue( nestedNow > outer + 0.004, "nested frame includes both link delays" )
+assertTrue( math.abs( L.Now() - outer ) < 1e-9, "outer dispatch resets the chain" )
+
+-- A large topology must not recurse once per hop. The iterative queue keeps
+-- the whole dispatch in the same tick and does not defer to timers.
+scheduled = {}
+local deepDone = false
+local function deep( n )
+	if (n <= 0) then deepDone = true return end
+	assertTrue( L.Deliver( function() deep( n - 1 ) end, "wired" ), "deep frame reports success" )
+end
+deep( 5000 )
+assertTrue( deepDone, "5000-hop chain completes in one dispatch" )
+assertEq( #scheduled, 0, "deep chain does not use timers" )
+assertTrue( math.abs( L.Now() - outer ) < 1e-9, "deep dispatch resets the chain" )
 
 -- A dropped frame is neither scheduled nor delivered.
 scheduled = {}

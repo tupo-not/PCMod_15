@@ -7,6 +7,7 @@ translated form of a real addon source file, so the mocks always exercise the
 current code instead of a stale copy.
 """
 import os
+import re
 import shutil
 import sys
 
@@ -16,12 +17,9 @@ ADDON = os.path.dirname(TESTS)
 LUA = os.path.join(ADDON, "lua")
 BUILD = os.path.join(TESTS, ".build")
 
-# Lua 5.1 cannot parse GLua, so every source is translated first. These
-# directories are deliberately excluded from the syntax gate:
-#   - oldstools: retired tools that are not loaded by the addon
-SOURCE_IGNORE = (
-    os.path.join("weapons", "gmod_tool", "oldstools"),
-)
+# Lua 5.1 cannot parse GLua, so every source is translated first. No source
+# path is excluded any more: the retired oldstools directory is gone.
+SOURCE_IGNORE = ()
 
 sys.path.insert(0, HERE)
 from glua_translate import translate, compile_check  # noqa: E402
@@ -62,6 +60,7 @@ FIXTURES = {
     "pcmod_subsystem_bios.lua": "pcmod/subsystems/bios.lua",
     "pcmod_network.lua": "pcmod/sv_network.lua",
     "pcmod_wiring.lua": "pcmod/sv_wiring.lua",
+    "pcwire.lua": "weapons/gmod_tool/stools/pcwire.lua",
     "pcmod_shared.lua": "entities/pcmod_base/shared.lua",
     "pcmod_switch.lua": "entities/pcmod_switch/shared.lua",
     "pcmod_router.lua": "entities/pcmod_router/shared.lua",
@@ -77,6 +76,48 @@ FIXTURES = {
     "pcmod_os_base.lua": "pcmod/osystems/base.lua",
     "pcmod_installdisk.lua": "weapons/pcmod_installdisk/shared.lua",
 }
+
+# Sources that use GLua include() to compose themselves. Mocks run the fixture
+# directly, so the included parts are translated and appended (and the include
+# call is removed) to keep the suite self-contained.
+INLINE_INCLUDES = {
+    "pcmod/subsystems/router.lua": [
+        "pcmod/subsystems/router/dhcp.lua",
+        "pcmod/subsystems/router/routing.lua",
+        "pcmod/subsystems/router/config.lua",
+        "pcmod/subsystems/router/forwarding.lua",
+        "pcmod/subsystems/router/web.lua",
+    ],
+    "entities/pcmod_base/shared.lua": [
+        "entities/pcmod_base/netidentity.lua",
+        "entities/pcmod_base/filesystem.lua",
+    ],
+    "pcmod/ssdevices/base.lua": [
+        "pcmod/ssdevices/base_windowdrag.lua",
+    ],
+}
+
+
+def include_marker(rel):
+    return re.compile(
+        r"^[ \t]*include\s*\(\s*['\"]" + re.escape(rel) + r"['\"]\s*\)[^\n]*\n",
+        re.M,
+    )
+
+
+def fixture_source(rel):
+    """Read a source, inline its composed parts, and return translated Lua."""
+    with open(os.path.join(LUA, rel), "r", encoding="utf-8", errors="surrogateescape") as fh:
+        src = fh.read()
+    parts = INLINE_INCLUDES.get(rel, [])
+    for part in parts:
+        src = include_marker(part).sub("", src)
+    out = translate(src)
+    for part in parts:
+        with open(os.path.join(LUA, part), "r", encoding="utf-8", errors="surrogateescape") as fh:
+            out += "\n" + translate(fh.read())
+    return out
+
 
 def source_paths():
     """Every addon Lua file that the syntax gate should compile."""
@@ -100,11 +141,8 @@ def main():
         shutil.rmtree(BUILD)
     os.makedirs(BUILD, exist_ok=True)
     for name, rel in FIXTURES.items():
-        src_path = os.path.join(LUA, rel)
-        with open(src_path, "r", encoding="utf-8", errors="surrogateescape") as fh:
-            src = fh.read()
         with open(os.path.join(BUILD, name), "w", encoding="utf-8", errors="surrogateescape") as fh:
-            fh.write(translate(src))
+            fh.write(fixture_source(rel))
 
     # The mock suites themselves are written in GLua too.
     for name in sorted(os.listdir(TESTS)):

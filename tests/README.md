@@ -28,10 +28,11 @@ Exit codes: `0` all passed, `1` build/syntax error, `2` a test failed,
 1. `lib/build_fixtures.py` translates the GLua-specific syntax this addon uses
    (`//` comments, `!`, `!=`, `&&`, `||`) into standard Lua 5.1 and writes the
    result into `.build/`. It also compile-checks every addon Lua file with
-   `luac5.1 -p`, automatically, except the retired `oldstools/` directory.
+   `luac5.1 -p`, automatically.
 2. `lib/check_sources.py` checks project contracts that Lua cannot see: network
    channels are registered, `RunString`/`loadstring` stay out of the addon,
-   new `umsg` usage is rejected, and `addon.json` matches `sh_version.lua`.
+   `umsg`/`usermessage` usage is rejected, and `addon.json` matches
+   `sh_version.lua`.
 3. `run_tests.sh` discovers and runs every `mock_*.lua` suite.
 
 The `.build/` directory is fully generated and git-ignored — never edit it.

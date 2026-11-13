@@ -155,7 +155,9 @@ function PCMod.Gui.ShowQuickType()
 	window:SetVisible( true )
 	window:MakePopup()
 end
-usermessage.Hook( "pcmod_quicktype", PCMod.Gui.ShowQuickType )
+net.Receive( "pcmod_quicktype", function()
+	PCMod.Gui.ShowQuickType()
+end )
 
 // ---------------------------------------------------------------------------------------------------------
 // HideQuickType - Hides the Quick Type menu
@@ -209,7 +211,8 @@ function PCMod.Gui.KBRegisterKeyPress( key, txt )
 	end
 	PCMod.SDraw.DevMap[ dev_name ]:Int_KeyPress( key, txt )
 	// PCMod.SDraw.DevMap[ dev_name ]:KeyPress( key, txt )
-	// RunConsoleCommand( "pc_keypress", key, PCMod.SDraw.KeyboardEntID, PCMod.SDraw.KB_Ctrl )
+	// Keyboard capture is handled by the client input layer; the old
+	// pc_keypress concommand is gone.
 	if ((PCMod.SDraw.KB_Shift && !PCMod.SDraw.KB_Caps) || (PCMod.SDraw.KB_Shift && PCMod.SDraw.KB_UnShift)) then
 		PCMod.Gui.KBToggleShift() -- We have pressed a key in shift mode, toggle it off
 	end

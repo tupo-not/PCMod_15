@@ -14,9 +14,7 @@ TESTS = os.path.dirname(HERE)
 ADDON = os.path.dirname(TESTS)
 LUA = os.path.join(ADDON, "lua")
 
-SOURCE_IGNORE = (
-    os.path.join("weapons", "gmod_tool", "oldstools"),
-)
+SOURCE_IGNORE = ()
 
 # CompileString is the admin-only syntax check command in sv_programs.lua.
 COMPILE_WHITELIST = {
@@ -24,17 +22,8 @@ COMPILE_WHITELIST = {
 }
 
 # Files that still use the existing usermessage transport. New code must use net.
-EXISTING_UMSG = {
-    os.path.join("pcmod", "cl_2d3d.lua"),
-    os.path.join("pcmod", "cl_gui.lua"),
-    os.path.join("pcmod", "cl_keyboard.lua"),
-    os.path.join("pcmod", "cl_rp.lua"),
-    os.path.join("pcmod", "sh_beam.lua"),
-    os.path.join("pcmod", "sh_common.lua"),
-    os.path.join("pcmod", "sh_settings.lua"),
-    os.path.join("pcmod", "sv_core.lua"),
-    os.path.join("pcmod", "sv_rp.lua"),
-}
+# The migration is complete: any usermessage/umsg usage is now an error.
+EXISTING_UMSG = set()
 
 # The subsystem refactor retired the driver vocabulary. Production code must
 # use canonical subsystem names so saved data and the runtime cannot diverge.
@@ -100,6 +89,47 @@ def main():
         for match in RETIRED_SUBSYSTEM.finditer(code):
             errors.append(
                 f"{rel}:{line_of(code, match.start())}: retired subsystem name {match.group(0)!r}"
+            )
+
+        # The available-/32 table was replaced by a cursor + free-list. Keep
+        # the typo from coming back with a full 65k scan attached.
+        for match in re.finditer(r"\bAvailible\b", code):
+            errors.append(
+                f"{rel}:{line_of(code, match.start())}: retired Availible allocation table"
+            )
+
+    # Large backbones must stay reachable. TTL is consumed once per router, so
+    # the TTL default and the traceroute probe ceiling both have to exceed the
+    # largest supported path, and the L2 pass guard must not fire first. Keep
+    # the old 50/64/30 caps from silently coming back.
+    MIN_SUPPORTED_HOPS = 200
+
+    def config_int(name):
+        value = None
+        for rel in ("pcmod/sh_baseconfig.lua", "pcmod/sh_config.lua"):
+            path = os.path.join(LUA, rel)
+            with open(path, "r", encoding="utf-8", errors="ignore") as fh:
+                match = re.search(
+                    rf"^\s*cfg\.{name}\s*=\s*(\d+)", fh.read(), re.MULTILINE
+                )
+            if match:
+                value = int(match.group(1))
+        return value
+
+    for name in ("MaxNetworkPass", "DefaultTTL", "TraceMaxHops"):
+        value = config_int(name)
+        if value is None:
+            errors.append(f"pcmod/sh_config.lua: cfg.{name} is missing")
+        elif name in ("DefaultTTL", "TraceMaxHops"):
+            if not (MIN_SUPPORTED_HOPS <= value <= 255):
+                errors.append(
+                    f"cfg.{name}={value} must be within "
+                    f"[{MIN_SUPPORTED_HOPS}, 255] for large topologies"
+                )
+        elif value < MIN_SUPPORTED_HOPS:
+            errors.append(
+                f"cfg.{name}={value} must be >= {MIN_SUPPORTED_HOPS} "
+                "so it does not pre-empt the IP TTL"
             )
 
     for channel, places in sorted(receive.items()):
