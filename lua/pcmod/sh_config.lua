@@ -118,8 +118,8 @@ cfg.TraceMaxHops = 30 -- Maximum probe TTL a traceroute will send
 // Emulated link latency (milliseconds, one-way per link) and Wi-Fi loss.
 // Set NetLatency = false to disable the simulation entirely.
 cfg.NetLatency = true
-cfg.WiredLatency = 1 -- Ethernet cable latency per link
-cfg.OpticLatency = 1 -- Fibre link latency per link
+cfg.WiredLatency = 3 -- Ethernet cable latency per link (sub-tick, reported in RTT)
+cfg.OpticLatency = 2 -- Fibre link latency per link (sub-tick, reported in RTT)
 cfg.WirelessLatency = 12 -- Wi-Fi latency per link at the AP
 cfg.WirelessDistanceLatency = 25 -- extra Wi-Fi latency at the edge of range
 cfg.LatencyJitter = 1 -- +/- jitter for wired/fibre links

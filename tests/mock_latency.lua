@@ -16,9 +16,9 @@ local randValue = 0.5
 function math.Rand( lo, hi ) return lo + ((hi - lo) * randValue) end
 
 local L = PCMod.Latency
-assertEq( L.Profile( "wired" ), 1, "wired base delay" )
-assertEq( L.Delay( "wired" ), 1, "wired delay has no jitter at midpoint" )
-assertEq( L.Delay( "optic" ), 1, "fibre delay" )
+assertEq( L.Profile( "wired" ), 3, "wired base delay" )
+assertEq( L.Delay( "wired" ), 3, "wired delay has no jitter at midpoint" )
+assertEq( L.Delay( "optic" ), 2, "fibre delay" )
 assertEq( L.Delay( "wireless" ), 12, "wireless delay at the AP" )
 assertEq( L.WirelessRatio( 50, 100 ), 0.5, "distance ratio at half range" )
 assertEq( L.Delay( "wireless", 50, 100 ), 24.5, "wireless delay grows with distance" )
@@ -57,6 +57,22 @@ assertTrue( not called, "frame is not delivered immediately" )
 assertTrue( scheduled[ 1 ].seconds > 0.01, "wireless delay is applied in seconds" )
 scheduled[ 1 ].fn()
 assertTrue( called, "scheduled callback delivers the frame" )
+
+-- Wired/fibre delays are sub-tick: they advance the simulated clock and
+-- deliver in the same tick instead of waiting for timer.Simple.
+PCMod.Cfg.WiredLatency = 3
+PCMod.Cfg.OpticLatency = 2
+PCMod.Cfg.LatencyJitter = 0
+scheduled = {}
+local wiredCalled = false
+local before = L.Now()
+assertTrue( L.Deliver( function() wiredCalled = true end, "wired" ), "wired frame reports success" )
+assertTrue( wiredCalled, "wired frame is delivered immediately" )
+assertEq( #scheduled, 0, "wired frame does not use a timer" )
+assertTrue( L.Now() > before, "wired frame advances the simulated clock" )
+local opticBefore = L.Now()
+assertTrue( L.Deliver( function() end, "optic" ), "fibre frame reports success" )
+assertTrue( L.Now() > opticBefore, "fibre frame advances the simulated clock" )
 
 -- A dropped frame is neither scheduled nor delivered.
 scheduled = {}

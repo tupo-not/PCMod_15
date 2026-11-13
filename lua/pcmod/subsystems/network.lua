@@ -308,7 +308,18 @@ function SUBSYSTEM:GetOSSubsystem( name )
 	return PCMod.GetSubsystem( self.Entity:Data(), name )
 end
 
+// A powered-off host is silent on the wire: it does not answer pings, ARP,
+// DHCP or any other frame. Always-on network gear and mock entities without a
+// data slot behave as powered.
+function SUBSYSTEM:IsPoweredOn()
+	if (!self.Entity) then return true end
+	local data = self.Entity.Data && self.Entity:Data()
+	if (!data) then return true end
+	return data.IsOn != false
+end
+
 function SUBSYSTEM:PacketRecieved( packet )
+	if (!self:IsPoweredOn()) then return end
 	if (self:GetOSSubsystem( "bios" ).OS) then
 		self:GetOSSubsystem( "bios" ).OS:NetDataRecieved( packet )
 	end
@@ -318,6 +329,7 @@ end
 // "sendpacket". There is no router on the link to route it, so create the packet
 // and deliver it locally when it is addressed to us.
 function SUBSYSTEM:DataRecieved( port, data )
+	if (!self:IsPoweredOn()) then return end
 	if (istable( data ) && (data[1] == "sendpacket") && istable( data[2] )) then
 		local app = data[2][4]
 		if (istable( app ) && (app[1] == "dhcp")) then
@@ -367,6 +379,7 @@ function SUBSYSTEM:DeliverWireless( data )
 end
 
 function SUBSYSTEM:SendPacket( dest, port, body, ttl, src, viaWireless, forcePort )
+	if (!self:IsPoweredOn()) then return end
 	// Loopback is accepted in IPv4 (127.0.0.1), IPv6 (::1) and hostname form.
 	// Anything addressed to one of our own addresses is local traffic too: the
 	// kernel short-circuits it instead of putting it on the wire. Without this

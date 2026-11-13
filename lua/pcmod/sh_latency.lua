@@ -37,11 +37,30 @@ function Latency.Profile( kind )
 		return tonumber( cfgValue( "WirelessLatency", 12 ) ) or 12,
 			tonumber( cfgValue( "WirelessJitter", 6 ) ) or 6
 	elseif (kind == "optic") then
-		return tonumber( cfgValue( "OpticLatency", 1 ) ) or 1,
+		return tonumber( cfgValue( "OpticLatency", 2 ) ) or 2,
 			tonumber( cfgValue( "LatencyJitter", 1 ) ) or 1
 	end
-	return tonumber( cfgValue( "WiredLatency", 1 ) ) or 1,
+	return tonumber( cfgValue( "WiredLatency", 3 ) ) or 3,
 		tonumber( cfgValue( "LatencyJitter", 1 ) ) or 1
+end
+
+// Wired and fibre delays are below the server's timer resolution. Applying
+// them through timer.Simple would add a whole server tick per link, which is
+// how a short cable run turned into tens of milliseconds. Instead those links
+// advance a simulated clock and deliver the frame in the same tick; ping and
+// traceroute read Latency.Now() so the RTT still reflects the configured link
+// delay without adding input lag to the network.
+Latency.VirtualMs = Latency.VirtualMs or 0
+
+function Latency.Advance( ms )
+	Latency.VirtualMs = (Latency.VirtualMs or 0) + (tonumber( ms ) or 0)
+end
+
+function Latency.Now()
+	local base = 0
+	if (CurTime) then base = CurTime()
+	elseif (RealTime) then base = RealTime() end
+	return base + ((Latency.VirtualMs or 0) / 1000)
 end
 
 // 0 at the AP, 1 at the edge of its range. Unlimited range (or an unknown
@@ -109,7 +128,11 @@ function Latency.Deliver( fn, kind, distance, range )
 	if (type( fn ) != "function") then return false end
 	if (Latency.Dropped( kind, distance, range )) then return false end
 	local ms = Latency.Delay( kind, distance, range )
-	if ((ms <= 0) || (!timer) || (!timer.Simple)) then
+	// Cable and fibre are sub-tick. Deliver immediately and account for the
+	// delay in the simulated clock; only Wi-Fi needs a real timer.
+	if ((kind == "wired") || (kind == "optic") ||
+		(ms <= 0) || (!timer) || (!timer.Simple)) then
+		Latency.Advance( ms )
 		fn()
 		return true
 	end

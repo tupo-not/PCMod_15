@@ -20,8 +20,11 @@ PROG.P_TimeOut = 0
 PROG.Tracing = false
 PROG.T_TimeOut = 0
 
-// Wall-clock seconds for RTT display; the mock suites do not provide CurTime.
+// Simulated wall-clock seconds for RTT display; the mock suites do not provide
+// CurTime. Latency.Now() adds the sub-tick wired/fibre delay that is reported
+// in ping RTT without holding the frame back for a server tick.
 local function NowSeconds()
+	if (PCMod.Latency && PCMod.Latency.Now) then return PCMod.Latency.Now() end
 	if (CurTime) then return CurTime() end
 	if (RealTime) then return RealTime() end
 	return 0

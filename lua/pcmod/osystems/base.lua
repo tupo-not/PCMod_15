@@ -8,9 +8,12 @@ OS.USBDevices = {}
 OS.NetPorts = {}
 OS.TraceRouteData = {}
 
-// Wall-clock seconds for RTT measurement. The mock suites do not provide
-// CurTime, so fall back to a monotonic zero rather than erroring.
+// Simulated wall-clock seconds for RTT measurement. The mock suites do not
+// provide CurTime, so fall back to a monotonic zero rather than erroring.
+// Latency.Now() adds sub-tick cable/fibre delays, which are delivered in the
+// same tick but still count toward the reported hop RTT.
 local function NowSeconds()
+	if (PCMod.Latency && PCMod.Latency.Now) then return PCMod.Latency.Now() end
 	if (CurTime) then return CurTime() end
 	if (RealTime) then return RealTime() end
 	return 0
