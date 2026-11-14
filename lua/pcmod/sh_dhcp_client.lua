@@ -109,6 +109,9 @@ function PCMod.DHCPClient.ApplyHost( ent, cfg, keep, port )
 		end
 		if (ent.SetBSubnet) then ent:SetBSubnet( cfg.bb ) end
 		if (ent.SetBIP) then ent:SetBIP( math.max( 0, (tonumber( cfg.host ) or 1) - 1 ) ) end
+		// Store the native IPv6 identity carried by the lease (the same value
+		// the entity would derive, but authoritative and family-explicit).
+		if (ent.SetBIPv6 && cfg.ipv6) then ent:SetBIPv6( cfg.ipv6, cfg.ipv6prefix, cfg.ipv6gateway ) end
 		return true
 	end
 	local p = PCMod.IPv4.ParseLan( cfg.ip )
@@ -134,14 +137,14 @@ function PCMod.DHCPClient.ApplyHost( ent, cfg, keep, port )
 		local ownerPort = ipdata.PrimaryPort
 		if ((ownerPort != nil) && (port != nil) && (ownerPort != port)) then
 			if ((cfg.ip != ipdata.LAN) && ent.AddExtraIP) then
-				ent:AddExtraIP( cfg.ip, cfg.upbb or 0, cfg.lanid or 0, cfg.server )
+				ent:AddExtraIP( cfg.ip, cfg.upbb or 0, cfg.lanid or 0, cfg.server, cfg.ipv6 )
 			end
 			return true
 		end
 	end
 	if (primary && owner && (owner != cfg.server) && (keep || (!sameLan)) && (!ownerGone)) then
 		if (ent.AddExtraIP) then
-			ent:AddExtraIP( cfg.ip, cfg.upbb or 0, cfg.lanid or 0, cfg.server )
+			ent:AddExtraIP( cfg.ip, cfg.upbb or 0, cfg.lanid or 0, cfg.server, cfg.ipv6 )
 		end
 		return true
 	end
@@ -159,6 +162,9 @@ function PCMod.DHCPClient.ApplyHost( ent, cfg, keep, port )
 		ent:SetSubnet( p.sub )
 		ent:SetIP( p.add )
 	end
+	// Apply the lease's native IPv6 address immediately; it is the primary
+	// routed identity, not a value derived later from IPv4.
+	if (ent.SetIPv6 && cfg.ipv6) then ent:SetIPv6( cfg.ipv6, cfg.ipv6prefix, cfg.ipv6gateway ) end
 	// A private lease is the primary identity now; drop a backbone address the
 	// machine carried from an earlier segment so overlays don't show both.
 	// Multi-interface hosts keep the WAN identity of their other adapter.
@@ -225,6 +231,7 @@ function PCMod.DHCPClient.ApplyRouter( ent, router, cfg, port )
 	// address, a backbone id and the /64 id its LAN should advertise.
 	if (ent.SetBSubnet) then ent:SetBSubnet( cfg.bb ) end
 	if (ent.SetBIP) then ent:SetBIP( math.max( 0, (tonumber( cfg.host ) or 1) - 1 ) ) end
+	if (ent.SetBIPv6 && cfg.ipv6) then ent:SetBIPv6( cfg.ipv6, cfg.ipv6prefix, cfg.ipv6gateway ) end
 	if (cfg.upbb && ent.SetUpBB) then ent:SetUpBB( cfg.upbb ) end
 	if (ent.SetLanID) then ent:SetLanID( cfg.lanid or cfg.host or 0 ) end
 	ipdata.Router = cfg.server

@@ -168,9 +168,11 @@ if (SERVER) then
 			tmp.IP.WanHost = false
 			tmp.IP.V6 = false
 			tmp.IP.V6Prefix = false
+			tmp.IP.V6Gateway = false
 			tmp.IP.V6Link = false
 			tmp.IP.WanV6 = false
 			tmp.IP.WanV6Prefix = false
+			tmp.IP.WanV6Gateway = false
 			tmp.IP.WanV6Link = false
 			// EntIndex of the router that handed out the primary DHCP lease.
 			tmp.IP.Router = false

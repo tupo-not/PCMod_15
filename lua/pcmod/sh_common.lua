@@ -264,11 +264,12 @@ end
 // A standalone LAN (not connected to a backbone) uses fd00:0:0:<subnet>::/64,
 // so a LAN never needs to know about the wider network to get an address.
 //
-// The normal IPv4 addresses keep working, and the standard IPv4-mapped form
-// (::ffff:192.168.5.2 and ::ffff:c0a8:0502) plus ::1/localhost/link-local
-// addresses are understood everywhere an address is accepted. Routers match
-// IPv6 destinations against their /64 LAN and /32 backbone prefixes and
-// translate the result back to IPv4 for delivery.
+// The normal IPv4 addresses keep working as the compatibility family, and the
+// standard IPv4-mapped form (::ffff:192.168.5.2 and ::ffff:c0a8:0502) plus
+// ::1/localhost/link-local addresses are understood everywhere an address is
+// accepted. IPv6 is the native routed identity: routers match it against their
+// /64 LAN and /32 backbone prefixes and deliver it as-is (NDP for the last
+// hop); no IPv4 translation happens in the forwarding path.
 //
 // This block also provides the prefix helpers (BackbonePrefix, LANPrefix,
 // GetPrefix, InSubnet, Gateway, LinkLocal, AddressType) used by routers,
@@ -390,6 +391,14 @@ function PCMod.IPv6.Normalize( addr )
 	return string.lower( addr )
 end
 
+// Canonical compressed form of a valid IPv6 address (nil for junk). Native
+// address storage uses this so compressed and expanded input compare equal.
+function PCMod.IPv6.Canonical( addr )
+	local g = PCMod.IPv6.Expand( addr )
+	if (!g) then return nil end
+	return PCMod.IPv6.Format( g )
+end
+
 // Hierarchical allocation helpers. The whole PCMod internet is one ULA /16:
 //   * one /32 per backbone router:  fd00:<bb>::/32
 //   * one /64 per LAN router:       fd00:<bb>:0:<subnet>::/64
@@ -403,6 +412,25 @@ function PCMod.IPv6.LANPrefix( bb, subnet )
 	return PCMod.IPv6.Format( { 0xfd00, bb, 0, subnet, 0, 0, 0, 0 } ) .. "/64"
 end
 
+// Native host addresses. Every lease carries one of these, so the routing core
+// never has to reconstruct IPv6 from IPv4 at delivery time. The interface id is
+// the host id (the same value DHCP allocates).
+function PCMod.IPv6.BackboneAddress( bb, host )
+	return PCMod.IPv6.Format( { 0xfd00, bb or 0, 0, 0, 0, 0, 0, host or 1 } )
+end
+
+function PCMod.IPv6.LANAddress( bb, subnet, host )
+	return PCMod.IPv6.Format( { 0xfd00, bb or 0, 0, subnet or 0, 0, 0, 0, host or 1 } )
+end
+
+// Address family of a routed target. "ipv6" is the native family; "ipv4" is
+// the compatibility path kept for existing programs and saved setups.
+function PCMod.IPv6.Family( addr )
+	if (PCMod.IPv6.IsIPv6( addr )) then return "ipv6" end
+	if (PCMod.IPv6.IsIPv4( addr )) then return "ipv4" end
+	return nil
+end
+
 // Split a PCMod ULA into { bb, lan, iid } (backbone /32 id, LAN /64 id,
 // interface id). Returns nil for addresses outside the hierarchy.
 function PCMod.IPv6.Hierarchy( addr )
@@ -411,10 +439,10 @@ function PCMod.IPv6.Hierarchy( addr )
 	return { bb = g[2], lan = g[4], iid = g[8] }
 end
 
-// Build the emulated IPv6 address for an IPv4 address string. Only the backbone
+// Compatibility mapping for an IPv4 address string. Only the backbone
 // (100.<hi>.<lo>.<host>) and loopback have a stateless mapping; a LAN's /64
-// depends on its upstream backbone, so LAN addresses are stored rather than
-// derived here.
+// depends on its upstream backbone, so LAN addresses carry their own native
+// IPv6 value instead of being derived here.
 function PCMod.IPv6.FromIPv4( ip )
 	if (type( ip ) != "string") then return nil end
 	local a, b, c, d = string.match( ip, "^(%d+)%.(%d+)%.(%d+)%.(%d+)$" )

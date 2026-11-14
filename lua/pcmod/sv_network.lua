@@ -106,14 +106,28 @@ function PCMod.Network.CreatePacket( source, dest, port, body, sourcePort, sourc
 	// learn which port a MAC lives on. Unknown destinations use broadcast.
 	pk.SourceMAC = PCMod.MAC && PCMod.MAC.Normalize( sourceMAC )
 	pk.DestMAC = (PCMod.MAC && PCMod.MAC.Normalize( destMAC )) or (PCMod.MAC && PCMod.MAC.BROADCAST)
-	// Dual-stack metadata: keep the address the program used and expose the
-	// emulated IPv6 form of each endpoint. Routing still uses the IPv4 core.
-	pk.SourceIPv4 = PCMod.IPv6.ToIPv4( source ) or source
-	pk.DestIPv4 = PCMod.IPv6.ToIPv4( dest ) or dest
-	pk.SourceIPv6 = PCMod.IPv6.FromIPv4( pk.SourceIPv4 )
-	pk.DestIPv6 = PCMod.IPv6.FromIPv4( pk.DestIPv4 )
-	// The /64 each endpoint belongs to (mapped IPv4 addresses get their
-	// standard mapped /64, which is informational only).
+	// Dual-stack metadata. `Source`/`Dest` are the canonical routed
+	// addresses and keep the family the sender used; the IPv6 forms are
+	// authoritative, while IPv4 is only populated for IPv4 traffic (never
+	// fabricated from a native IPv6 address).
+	local srcV6 = PCMod.IPv6.IsIPv6( source )
+	local dstV6 = PCMod.IPv6.IsIPv6( dest )
+	pk.SourceFamily = srcV6 and "ipv6" or "ipv4"
+	pk.DestFamily = dstV6 and "ipv6" or "ipv4"
+	if (srcV6) then
+		pk.SourceIPv6 = PCMod.IPv6.Canonical( source )
+		pk.SourceIPv4 = nil
+	else
+		pk.SourceIPv4 = source
+		pk.SourceIPv6 = PCMod.IPv6.FromIPv4( source )
+	end
+	if (dstV6) then
+		pk.DestIPv6 = PCMod.IPv6.Canonical( dest )
+		pk.DestIPv4 = nil
+	else
+		pk.DestIPv4 = dest
+		pk.DestIPv6 = PCMod.IPv6.FromIPv4( dest )
+	end
 	pk.SourceIPv6Prefix = pk.SourceIPv6 && PCMod.IPv6.GetPrefix( pk.SourceIPv6, 64 )
 	pk.DestIPv6Prefix = pk.DestIPv6 && PCMod.IPv6.GetPrefix( pk.DestIPv6, 64 )
 	local pid = PCMod.Network.NextID

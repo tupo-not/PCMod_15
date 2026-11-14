@@ -484,10 +484,15 @@ function OS:GetIPv6()
 	return self:Network():GetIPv6()
 end
 
-// Preferred address for new programs: IPv6 when available, IPv4 otherwise.
-// Existing programs that expect IPv4 can keep calling OS:GetIP().
+// Preferred address for new programs: native IPv6 when available, otherwise
+// the full IPv4 address. GetIP() keeps its historical host-octet behaviour.
 function OS:GetAddress()
-	return self:GetIPv6() or self:GetIP()
+	return self:GetIPv6() or self:GetFullIP()
+end
+
+// Full dotted-quad IPv4 for callers that explicitly want the legacy family.
+function OS:GetIPv4()
+	return self:GetFullIP()
 end
 
 // IPv6 subnet information for programs (for example an "ipconfig" screen).

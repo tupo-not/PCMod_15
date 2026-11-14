@@ -20,10 +20,21 @@ PCMod = {
 		LANPrefix = function( bb, sub )
 			return "fd00:" .. tostring( bb ) .. ":0:" .. tostring( sub ) .. "::/64"
 		end,
+		LANAddress = function( bb, sub, host )
+			return "fd00:" .. tostring( bb ) .. ":0:" .. tostring( sub ) .. "::" .. tostring( host )
+		end,
+		BackboneAddress = function( bb, host )
+			return "fd00:" .. tostring( bb ) .. "::" .. tostring( host )
+		end,
 		BackbonePrefix = function( bb )
 			return "fd00:" .. tostring( bb ) .. "::/32"
 		end,
 		Gateway = function( prefix ) return "gw:" .. tostring( prefix ) end,
+		InSubnet = function( addr, prefix )
+			return (type( addr ) == "string") && (type( prefix ) == "string") &&
+				(string.sub( addr, 1, #prefix - 4 ) == string.sub( prefix, 1, #prefix - 4 ))
+		end,
+		Canonical = function( addr ) return addr end,
 		LinkLocal = function( v6 ) return "ll:" .. tostring( v6 ) end,
 	},
 	IPv4 = {

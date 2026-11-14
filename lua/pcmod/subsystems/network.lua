@@ -122,27 +122,29 @@ function SUBSYSTEM:InterfaceInfo( port, cfg )
 		Mask = cfg.netmask,
 		MaskBits = cfg.maskbits,
 		Gateway4 = cfg.gateway,
+		IPv6 = cfg.ipv6,
+		IPv6Prefix = cfg.ipv6prefix,
+		IPv6Gateway = cfg.ipv6gateway,
+		IPv6LinkLocal = cfg.ipv6linklocal,
 	}
 	if (self.Entity.EnsureInterfaceMAC) then
 		info.MAC = self.Entity:EnsureInterfaceMAC( port )
 	end
-	if ((cfg.scope == "wan") || (cfg.scope == "mgmt")) then
-		local bb = cfg.bb or 0
-		info.IPv6 = PCMod.IPv6.Format( { 0xfd00, bb, 0, 0, 0, 0, 0, cfg.host or 0 } )
-		if (PCMod.IPv6.BackbonePrefix) then
+	if (!info.IPv6) then
+		if ((cfg.scope == "wan") || (cfg.scope == "mgmt")) then
+			local bb = cfg.bb or 0
+			info.IPv6 = PCMod.IPv6.BackboneAddress( bb, cfg.host or 1 )
 			info.IPv6Prefix = PCMod.IPv6.BackbonePrefix( bb )
 			info.IPv6Gateway = PCMod.IPv6.Gateway( info.IPv6Prefix )
-		end
-	else
-		local p = PCMod.IPv4.ParseLan( cfg.ip )
-		local host = (p && (((p.sub or 0) * 256) + (p.add or 0))) or (cfg.host or 0)
-		info.IPv6 = PCMod.IPv6.Format( { 0xfd00, cfg.upbb or 0, 0, cfg.lanid or 0, 0, 0, 0, host } )
-		if (PCMod.IPv6.LANPrefix) then
+		else
+			local p = PCMod.IPv4.ParseLan( cfg.ip )
+			local host = (p && (((p.sub or 0) * 256) + (p.add or 0))) or (cfg.host or 0)
+			info.IPv6 = PCMod.IPv6.LANAddress( cfg.upbb or 0, cfg.lanid or 0, host )
 			info.IPv6Prefix = PCMod.IPv6.LANPrefix( cfg.upbb or 0, cfg.lanid or 0 )
 			info.IPv6Gateway = PCMod.IPv6.Gateway( info.IPv6Prefix )
 		end
 	end
-	if (PCMod.IPv6.LinkLocal && info.IPv6) then
+	if ((!info.IPv6LinkLocal) && info.IPv6) then
 		info.IPv6LinkLocal = PCMod.IPv6.LinkLocal( info.IPv6 )
 	end
 	return info
@@ -164,12 +166,13 @@ function SUBSYSTEM:SourceFor( ctx, dest )
 	local l = ctx && ctx.Lease
 	if ((!l) || (!l.ip)) then return nil end
 	if (PCMod.IPv6.IsIPv6( dest )) then
+		if (l.ipv6) then return l.ipv6 end
 		if ((l.scope == "wan") || (l.scope == "mgmt")) then
-			return PCMod.IPv6.Format( { 0xfd00, l.bb or 0, 0, 0, 0, 0, 0, l.host or 0 } )
+			return PCMod.IPv6.BackboneAddress( l.bb or 0, l.host or 1 )
 		end
 		local p = PCMod.IPv4.ParseLan( l.ip )
 		local host = (p && (((p.sub or 0) * 256) + (p.add or 0))) or (l.host or 0)
-		return PCMod.IPv6.Format( { 0xfd00, l.upbb or 0, 0, l.lanid or 0, 0, 0, 0, host } )
+		return PCMod.IPv6.LANAddress( l.upbb or 0, l.lanid or 0, host )
 	end
 	return l.ip
 end
@@ -475,17 +478,28 @@ function SUBSYSTEM:PickPort( dest, src, allowWireless )
 	end
 	if (dest) then
 		local h = PCMod.IPv6.IsIPv6( dest ) and PCMod.IPv6.Hierarchy( dest ) or nil
+		// A dual-stack host can hold both a LAN /64 and a WAN /32 lease. Prefer
+		// the more specific LAN adapter; a WAN /32 also contains the LAN, so a
+		// naive prefix test would send LAN traffic out the uplink.
+		local prefixMatch
 		for _, idx in ipairs( ports ) do
 			local c = ctxs[ idx ]
 			local l = c && c.Lease
 			if (l && l.ip) then
 				if (h) then
-					if ((h.bb == l.upbb) && (h.lan == l.lanid)) then return idx end
+					if (l.ipv6prefix && PCMod.IPv6.InSubnet( dest, l.ipv6prefix )) then
+						if (l.scope == "lan") then return idx end
+						prefixMatch = prefixMatch or idx
+					elseif ((h.bb == l.upbb) && (h.lan == l.lanid)) then
+						if (l.scope == "lan") then return idx end
+						prefixMatch = prefixMatch or idx
+					end
 				elseif (PCMod.IPv4.SameLan( l.ip, dest, l.maskbits or 24 )) then
 					return idx
 				end
 			end
 		end
+		if (prefixMatch) then return prefixMatch end
 		// Not on a directly connected subnet: use the family that matches the
 		// destination. Backbone traffic leaves the WAN adapter, everything else
 		// the LAN adapter, instead of whichever port happens to be first.
@@ -538,9 +552,10 @@ function SUBSYSTEM:GetWirelessSource( dest )
 		if (ex.Router == want) then
 			local full = ex.IPv4
 			if (v6) then
+				if (ex.IPv6) then return ex.IPv6 end
 				local p = PCMod.IPv4.ParseLan( full )
 				local host = (p and ((p.sub or 0) * 256 + p.add)) or 0
-				return PCMod.IPv6.Format( { 0xfd00, ex.UpBB or 0, 0, ex.LanID or 0, 0, 0, 0, host } ) or full
+				return PCMod.IPv6.LANAddress( ex.UpBB or 0, ex.LanID or 0, host ) or full
 			end
 			return full
 		end

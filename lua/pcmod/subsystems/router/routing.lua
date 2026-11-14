@@ -39,7 +39,17 @@ function SUBSYSTEM:BackboneWebAllowed( source )
 	if (self:GetCfg().WebGuard == false) then return true end
 	local ip = source
 	if (PCMod.IPv6.IsLoopback( ip )) then return true end
-	if (PCMod.IPv6.IsIPv6( ip )) then ip = PCMod.IPv6.ToIPv4( ip ) end
+	if (PCMod.IPv6.IsIPv6( ip )) then
+		// Match native ULA sources by hierarchy, never by translating them to
+		// IPv4. Only backbone hosts 1..11 are management addresses.
+		local h = PCMod.IPv6.Hierarchy( ip )
+		if (h) then
+			if (h.bb != self.Entity:GetBSubnet()) then return false end
+			return ((h.lan == 0) && (h.iid >= 1) && (h.iid <= 11))
+		end
+		// IPv4-mapped IPv6 is a compatibility form; fall through to IPv4.
+		ip = PCMod.IPv6.ToIPv4( ip )
+	end
 	local p = ip && PCMod.IPv4.Parse( ip )
 	if (!p) then return false end
 	if (p.bb != self.Entity:GetBSubnet()) then return false end

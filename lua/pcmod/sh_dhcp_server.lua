@@ -338,13 +338,22 @@ function PCMod.DHCPServer.Config( router, rec )
 		cfg.gateway = router.Entity.GetFullBIP && router.Entity:GetFullBIP() or nil
 		cfg.netmask = "255.255.255.0"
 		cfg.maskbits = 24
+		// Native IPv6 view of the same lease, carried explicitly so clients
+		// never have to reconstruct it from the IPv4 address.
+		cfg.ipv6 = PCMod.IPv6.BackboneAddress( cfg.bb, cfg.host )
+		cfg.ipv6prefix = PCMod.IPv6.BackbonePrefix( cfg.bb )
+		cfg.ipv6gateway = PCMod.IPv6.Gateway( cfg.ipv6prefix )
 	else
 		cfg.upbb = ipdata.UpBB or 0
 		cfg.lanid = ipdata.LanID or 0
 		cfg.gateway = router.Entity.GetFullIP && router.Entity:GetFullIP() or nil
 		cfg.maskbits = router.GetLanNetmask && router:GetLanNetmask() or 24
 		cfg.netmask = (PCMod.IPv4.BitsToMask && PCMod.IPv4.BitsToMask( cfg.maskbits )) or "255.255.255.0"
+		cfg.ipv6 = PCMod.IPv6.LANAddress( cfg.upbb, cfg.lanid, rec.host )
+		cfg.ipv6prefix = PCMod.IPv6.LANPrefix( cfg.upbb, cfg.lanid )
+		cfg.ipv6gateway = PCMod.IPv6.Gateway( cfg.ipv6prefix )
 	end
+	if (cfg.ipv6) then cfg.ipv6linklocal = PCMod.IPv6.LinkLocal( cfg.ipv6 ) end
 	return cfg
 end
 

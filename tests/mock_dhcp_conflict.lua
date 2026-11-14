@@ -4,6 +4,8 @@
 function string.Trim( s )
 	return (string.gsub( s, "^%s*(.-)%s*$", "%1" ))
 end
+function string.Left( s, n ) return string.sub( s, 1, n ) end
+function string.Right( s, n ) return string.sub( s, math.max( 1, #s - n + 1 ) ) end
 function istable( v ) return type( v ) == "table" end
 math.Clamp = function( v, a, b ) if (v < a) then return a end if (v > b) then return b end return v end
 PCMod = {

@@ -265,10 +265,6 @@ function SUBSYSTEM:DeliverOnInterface( pid, packet, pass, ports, side )
 	if (PCMod.IPv6.IsIPv6( packet.Dest )) then
 		if (PCMod.NDP && PCMod.NDP.Resolve) then
 			rec = PCMod.NDP.Resolve( self, packet.Dest, ports, self:InterfaceIPv6( side ) )
-		else
-			// Compatibility fallback when the NDP module is not loaded (old
-			// saves/tests): resolve the derived IPv4 identity with ARP.
-			rec = PCMod.ARP.Resolve( self, PCMod.IPv6.ToIPv4( packet.Dest ) or packet.Dest, ports, self:InterfaceIP( side ) )
 		end
 	else
 		rec = PCMod.ARP.Resolve( self, packet.Dest, ports, self:InterfaceIP( side ) )
@@ -327,17 +323,15 @@ function SUBSYSTEM:Process( data, side )
 end
 
 // Classify a destination into the networks this router knows about.
-// Returns { IsIPv6, IPv4, LAN, Backbone, OnLinkLAN, OnLinkBackbone }.
+// Returns { IsIPv6, Family, IPv4, IPv6, LAN, Backbone, OnLinkLAN, OnLinkBackbone }.
 //   LAN/Backbone      - destination looks like a LAN/backbone address
 //   OnLinkLAN         - destination is inside THIS router's LAN /64
-//   OnLinkBackbone    - destination is inside THIS router's backbone /64
-// IPv6 uses real prefix matching; IPv4 (and mapped IPv6) is classified by
-// address space: backbone 100.x vs any RFC1918 LAN. The OnLink flags matter
-// because an unknown on-link IPv6 host must be dropped, while a LAN address
-// that belongs to a different router still has to be forwarded.
+//   OnLinkBackbone    - destination is inside THIS router's backbone /32
+// IPv6 is matched natively by prefix; it is never converted to IPv4. IPv4
+// remains a compatibility path classified by address space: backbone 100.x vs
+// any RFC1918 LAN.
 function SUBSYSTEM:ClassifyDestination( dest )
 	local dest6 = PCMod.IPv6.IsIPv6( dest )
-	local dest4 = PCMod.IPv6.ToIPv4( dest ) or dest
 	local toBackbone = false
 	local toLAN = false
 	local onLinkLAN = false
@@ -354,17 +348,14 @@ function SUBSYSTEM:ClassifyDestination( dest )
 			onLinkBackbone = true
 		end
 	else
-		// IPv4 (and mapped IPv6) are classified by their historic address
-		// space; an unknown IPv6 /32 is NOT retrofitted onto the IPv4 core, it
-		// is forwarded upstream instead.
-		if ((type( dest4 ) == "string")) then
-			if (PCMod.IPv4.Parse( dest4 )) then toBackbone = true end
-			if (PCMod.IPv4.ParseLan( dest4 )) then toLAN = true end
-		end
+		if (PCMod.IPv4.Parse( dest )) then toBackbone = true end
+		if (PCMod.IPv4.ParseLan( dest )) then toLAN = true end
 	end
 	return {
 		IsIPv6 = dest6,
-		IPv4 = dest4,
+		Family = dest6 and "ipv6" or "ipv4",
+		IPv4 = (not dest6) and dest or nil,
+		IPv6 = dest6 and PCMod.IPv6.Normalize( dest ) or nil,
 		LAN = toLAN,
 		Backbone = toBackbone,
 		OnLinkLAN = onLinkLAN,
@@ -504,7 +495,9 @@ function SUBSYSTEM:ProcessPacket( pid, pass, side )
 	// so the host can tell clients apart); replies are translated back at both
 	// edges.
 	local isSelf = (self.Entity.IsAddressedTo && self.Entity:IsAddressedTo( packet.Dest ))
-	if (isSelf) then
+	// NAT/PAT is an IPv4 compatibility mechanism. Native IPv6 traffic is routed
+	// by address and must never pass through the IPv4 translation tables.
+	if (isSelf && (!PCMod.IPv6.IsIPv6( packet.Dest ))) then
 		// Forwarded reply (SNAT): the internal host replied on an ephemeral port.
 		local flow = self:GetForwardFlow( packet.Port )
 		if (flow) then
@@ -576,105 +569,108 @@ function SUBSYSTEM:ProcessPacket( pid, pass, side )
 	// (explicit /64 and /32 routing table, no flooding, no IPv4 retrofitting).
 	local dest6 = PCMod.IPv6.IsIPv6( packet.Dest )
 
-	if (!dest6) then
-		// Private LAN IPv4 is only meaningful on a LAN interface.
-		if (PCMod.IPv4.ParseLan( packet.Dest )) then
+	if (dest6) then
+		packet.Family = "ipv6"
+		// On-link LAN first.
+		local lp = self:GetIPv6Prefix()
+		if (lp && PCMod.IPv6.InSubnet( packet.Dest, lp )) then
 			if (self:DeliverToWirelessClient( packet )) then return end
 			self:DeliverOnInterface( pid, packet, pass, self.NPorts, "lan" )
 			return
 		end
-		// Backbone IPv4 routes across backbones; at the LAN edge a router
-		// masquerades its private hosts behind its own /32.
-		local bb4 = PCMod.IPv4.Parse( packet.Dest )
-		if (bb4) then
-			if (self:IsBackbone()) then
-				local mybb = self.Entity:GetBSubnet()
-				if (bb4.bb == mybb) then
-					if (self:DeliverToWirelessClient( packet )) then return end
-					// Hosts .2-.11 belong to the MGMNT port; the rest of the
-					// backbone /24 is on the fibre ports.
-					if ((bb4.host >= 2) && (bb4.host <= 11)) then
-						self:DeliverOnInterface( pid, packet, pass, self.NPorts, "lan" )
-					else
-						self:DeliverOnInterface( pid, packet, pass, self.OPorts, "wan" )
-					end
-					return
-				end
-				local nPort = self:RouteForBB( bb4.bb )
-				if (nPort) then
-					self:PushToRouted( pid, packet, pass, nPort, bb4.bb )
-					return
-				end
-			elseif (self.Uplink) then
-				// LAN router: masquerade only traffic that originated from my own
-				// hosts (LAN-side); forward the rest upstream without re-NAT.
-				if (side == "lan") then
-					self:MasqueradeAndForward( packet, pass )
-				else
-					self.Entity:PushData( self.Uplink, { "deliver", pid, pass } )
-				end
+
+		// Route by hierarchy.
+		local hier = PCMod.IPv6.Hierarchy( packet.Dest )
+		if (self.Entity:GetClass() == "pcmod_brouter") then
+			// A LAN router advertises its /64 in the routing hello; route to the
+			// advertised next hop instead of looking up connected devices.
+			local prefix = PCMod.IPv6.GetPrefix( packet.Dest, 64 )
+			local rec = prefix && PCMod.Routing.PrefixRoute( self, prefix )
+			if (rec) then
+				if (rec.mac) then packet.DestMAC = rec.mac end
+				self.Entity:PushData( rec.port, { "deliver", pid, pass } )
 				return
 			end
+			local mybb = self.Entity:GetBSubnet()
+			if (hier && (hier.bb == mybb)) then
+				// A backbone-attached host has no /64 of its own; deliver on the
+				// interface that owns the host slot. Backbone hosts 2..11 are the
+				// MGMNT segment, everything else is on the fibre ports.
+				if ((hier.lan == 0) && (hier.iid >= 2) && (hier.iid <= 11)) then
+					self:DeliverOnInterface( pid, packet, pass, self.NPorts, "lan" )
+				else
+					self:DeliverOnInterface( pid, packet, pass, self.OPorts, "wan" )
+				end
+				return
+			elseif (hier) then
+				local nPort = self:RouteForBB( hier.bb )
+				if (nPort) then
+					self:PushToRouted( pid, packet, pass, nPort, hier.bb )
+					return
+				end
+			end
+			PCMod.Msg( "[webgr]No IPv6 route for " .. tostring( packet.Dest ) .. "; dropping", true )
+			return
 		end
-		if (PCMod.Network && PCMod.Network.LogPacket) then
-			PCMod.Network.LogPacket( "noroute", packet.Source, packet.Dest, packet.Port, packet.Body,
-				"no route at " .. self.Entity:GetClass() .. ":" .. tostring( self.Entity:EntIndex() ) )
+
+		// LAN router: everything not on my LAN goes upstream.
+		if (self.Uplink) then
+			// Remember LAN-initiated traffic so the matching reply is allowed
+			// back through the IPv6 WAN -> LAN boundary above.
+			if (side == "lan") then self:RememberV6Flow( packet ) end
+			self.Entity:PushData( self.Uplink, { "deliver", pid, pass } )
+			return
 		end
-		PCMod.Msg( "[webgr]IPv4 target " .. tostring( packet.Dest ) .. " is not routable; dropping", true )
+		PCMod.Msg( "[webgr]No uplink for IPv6 target " .. tostring( packet.Dest ) .. "; dropping", true )
 		return
 	end
 
-	// IPv6: on-link LAN first.
-	local lp = self:GetIPv6Prefix()
-	if (lp && PCMod.IPv6.InSubnet( packet.Dest, lp )) then
+	// IPv4 compatibility path (dual stack). Native IPv6 never reaches here.
+	packet.Family = "ipv4"
+	// Private LAN IPv4 is only meaningful on a LAN interface.
+	if (PCMod.IPv4.ParseLan( packet.Dest )) then
 		if (self:DeliverToWirelessClient( packet )) then return end
 		self:DeliverOnInterface( pid, packet, pass, self.NPorts, "lan" )
 		return
 	end
-
-	// Route by hierarchy.
-	local hier = PCMod.IPv6.Hierarchy( packet.Dest )
-	if (self.Entity:GetClass() == "pcmod_brouter") then
-		// A LAN router advertises its /64 in the routing hello; route to the
-		// advertised next hop instead of looking up connected devices.
-		local prefix = PCMod.IPv6.GetPrefix( packet.Dest, 64 )
-		local rec = prefix && PCMod.Routing.PrefixRoute( self, prefix )
-		if (rec) then
-			if (rec.mac) then packet.DestMAC = rec.mac end
-			self.Entity:PushData( rec.port, { "deliver", pid, pass } )
-			return
-		end
-		local mybb = self.Entity:GetBSubnet()
-		if (hier && (hier.bb == mybb)) then
-			// A backbone-attached host has no /64 of its own; deliver on the
-			// interface that owns the host slot. Backbone hosts 2..11 are the
-			// MGMNT segment, everything else is on the fibre ports.
-			if ((hier.lan == 0) && (hier.iid >= 2) && (hier.iid <= 11)) then
-				self:DeliverOnInterface( pid, packet, pass, self.NPorts, "lan" )
-			else
-				self:DeliverOnInterface( pid, packet, pass, self.OPorts, "wan" )
-			end
-			return
-		elseif (hier) then
-			local nPort = self:RouteForBB( hier.bb )
-			if (nPort) then
-				self:PushToRouted( pid, packet, pass, nPort, hier.bb )
+	// Backbone IPv4 routes across backbones; at the LAN edge a router
+	// masquerades its private hosts behind its own /32.
+	local bb4 = PCMod.IPv4.Parse( packet.Dest )
+	if (bb4) then
+		if (self:IsBackbone()) then
+			local mybb = self.Entity:GetBSubnet()
+			if (bb4.bb == mybb) then
+				if (self:DeliverToWirelessClient( packet )) then return end
+				// Hosts .2-.11 belong to the MGMNT port; the rest of the
+				// backbone /24 is on the fibre ports.
+				if ((bb4.host >= 2) && (bb4.host <= 11)) then
+					self:DeliverOnInterface( pid, packet, pass, self.NPorts, "lan" )
+				else
+					self:DeliverOnInterface( pid, packet, pass, self.OPorts, "wan" )
+				end
 				return
 			end
+			local nPort = self:RouteForBB( bb4.bb )
+			if (nPort) then
+				self:PushToRouted( pid, packet, pass, nPort, bb4.bb )
+				return
+			end
+		elseif (self.Uplink) then
+			// LAN router: masquerade only traffic that originated from my own
+			// hosts (LAN-side); forward the rest upstream without re-NAT.
+			if (side == "lan") then
+				self:MasqueradeAndForward( packet, pass )
+			else
+				self.Entity:PushData( self.Uplink, { "deliver", pid, pass } )
+			end
+			return
 		end
-		PCMod.Msg( "[webgr]No IPv6 route for " .. tostring( packet.Dest ) .. "; dropping", true )
-		return
 	end
-
-	// LAN router: everything not on my LAN goes upstream.
-	if (self.Uplink) then
-		// Remember LAN-initiated traffic so the matching reply is allowed back
-		// through the IPv6 WAN -> LAN boundary above.
-		if (side == "lan") then self:RememberV6Flow( packet ) end
-		self.Entity:PushData( self.Uplink, { "deliver", pid, pass } )
-		return
+	if (PCMod.Network && PCMod.Network.LogPacket) then
+		PCMod.Network.LogPacket( "noroute", packet.Source, packet.Dest, packet.Port, packet.Body,
+			"no route at " .. self.Entity:GetClass() .. ":" .. tostring( self.Entity:EntIndex() ) )
 	end
-	PCMod.Msg( "[webgr]No uplink for IPv6 target " .. tostring( packet.Dest ) .. "; dropping", true )
+	PCMod.Msg( "[webgr]IPv4 target " .. tostring( packet.Dest ) .. " is not routable; dropping", true )
 end
 
 function SUBSYSTEM:CallEvent( data )

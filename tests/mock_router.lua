@@ -88,10 +88,12 @@ ent.LanPrefix = "fd00:3:0:5::/64"
 ent.BackPrefix = "fd00:3::/32"
 local r = SUBSYSTEM:ClassifyDestination( "fd00:3:0:5::3" )
 assertTrue( r.IsIPv6, "own LAN is IPv6" )
+assertEq( r.Family, "ipv6", "own LAN is native IPv6" )
 assertTrue( r.LAN, "own LAN classified as LAN" )
 assertTrue( r.OnLinkLAN, "own LAN is on-link" )
 assertTrue( not r.Backbone, "own LAN is not backbone" )
-assertEq( r.IPv4, "192.168.5.3", "own LAN translates to IPv4" )
+assertTrue( r.IPv4 == nil, "native IPv6 is not translated to IPv4" )
+assertEq( r.IPv6, "fd00:3:0:5::3", "own LAN keeps its native address" )
 
 r = SUBSYSTEM:ClassifyDestination( "fd00:3:0:5::99" )
 assertTrue( r.OnLinkLAN, "unknown host on own LAN is still on-link (drop)" )
@@ -99,7 +101,7 @@ assertTrue( r.OnLinkLAN, "unknown host on own LAN is still on-link (drop)" )
 r = SUBSYSTEM:ClassifyDestination( "fd00:3:0:6::3" )
 assertTrue( r.Backbone, "sibling LAN is in our backbone /32" )
 assertTrue( r.OnLinkBackbone, "sibling LAN is on-link backbone" )
-assertEq( r.IPv4, "192.168.6.3", "sibling LAN translates to IPv4" )
+assertTrue( r.IPv4 == nil, "sibling LAN stays native IPv6" )
 
 r = SUBSYSTEM:ClassifyDestination( "fd00:4:0:5::3" )
 assertTrue( not r.LAN, "other backbone /32 is not retrofitted as LAN" )
@@ -107,6 +109,7 @@ assertTrue( not r.Backbone, "other backbone /32 is not our backbone" )
 
 r = SUBSYSTEM:ClassifyDestination( "192.168.5.2" )
 assertTrue( not r.IsIPv6, "IPv4 target" )
+assertEq( r.Family, "ipv4", "IPv4 target keeps the compatibility family" )
 assertTrue( r.LAN, "IPv4 LAN target" )
 assertTrue( not r.OnLinkLAN, "IPv4 does not use on-link drop" )
 

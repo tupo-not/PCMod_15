@@ -3,6 +3,8 @@
 function string.Trim( s )
 	return (string.gsub( s, "^%s*(.-)%s*$", "%1" ))
 end
+function string.Left( s, n ) return string.sub( s, 1, n ) end
+function string.Right( s, n ) return string.sub( s, math.max( 1, #s - n + 1 ) ) end
 function istable( v ) return type( v ) == "table" end
 math.Clamp = function( v, a, b ) if (v < a) then return a end if (v > b) then return b end return v end
 PCMod = {
@@ -105,6 +107,16 @@ local cfg = PCMod.DHCPServer.Config( router, PCMod.DHCPServer.Find( router, "lan
 assertEq( cfg.mac, "AA:BB:CC:DD:EE:02", "config names the target MAC" )
 assertEq( cfg.gateway, "192.168.5.1", "config carries the gateway" )
 assertEq( cfg.maskbits, 24, "config carries the prefix length" )
+assertEq( cfg.ipv6, "fd00:3:0:5::3", "config carries the native LAN IPv6 address" )
+assertEq( cfg.ipv6prefix, "fd00:3:0:5::/64", "config carries the native /64" )
+assertEq( cfg.ipv6gateway, "fd00:3:0:5::1", "config carries the native gateway" )
+assertEq( cfg.ipv6linklocal, "fe80::3", "config carries the native link-local" )
+
+-- A backbone lease carries its native IPv6 address in the same config.
+local wcfg = PCMod.DHCPServer.Config( router, PCMod.DHCPServer.Find( router, "wan", "AA:BB:CC:DD:EE:21" ) )
+assertEq( wcfg.ipv6, "fd00:7::14", "WAN config carries native IPv6" )
+assertEq( wcfg.ipv6prefix, "fd00:7::/32", "WAN config carries the backbone /32" )
+assertEq( wcfg.ipv6gateway, "fd00:7::1", "WAN config carries the backbone gateway" )
 assertEq( cfg.netmask, "255.255.255.0", "config carries the netmask" )
 
 -- Entity release: a primary we own is cleared.

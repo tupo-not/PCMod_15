@@ -8,6 +8,35 @@ PCMod = {
 }
 math.Clamp = function( v, a, b ) if (v < a) then return a end if (v > b) then return b end return v end
 function istable( v ) return type( v ) == "table" end
+function string.Trim( s )
+    return (string.gsub( s, "^%s*(.-)%s*$", "%1" ))
+end
+function string.Left( s, n ) return string.sub( s, 1, n ) end
+function string.Right( s, n ) return string.sub( s, math.max( 1, #s - n + 1 ) ) end
+function string.Explode( sep, str )
+    local out = {}
+    if (str == nil) then return out end
+    if (sep == "") then
+        for i = 1, #str do table.insert( out, string.sub( str, i, i ) ) end
+        return out
+    end
+    local start = 1
+    while true do
+        local a, b = string.find( str, sep, start, true )
+        if (not a) then
+            table.insert( out, string.sub( str, start ) )
+            break
+        end
+        table.insert( out, string.sub( str, start, a - 1 ) )
+        start = b + 1
+    end
+    return out
+end
+function string.Count( str, char )
+    local r = 0
+    for i = 1, #str do if (string.sub( str, i, i ) == char) then r = r + 1 end end
+    return r
+end
 CurTime = CurTime or function() return 0 end
 
 dofile( "pcmod_sh_common.lua" )

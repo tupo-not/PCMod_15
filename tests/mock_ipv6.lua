@@ -86,7 +86,8 @@ assertEq( v6.Expand( "1:2:3:4:5:6:7:8:9" ), nil, "rejects long address" )
 assertEq( v6.Expand( "12345::1" ), nil, "rejects overlong group" )
 assertEq( v6.Expand( "1:::2" ), nil, "rejects triple colon" )
 
--- Translation back to the IPv4 routing core.
+-- Compatibility translation to the IPv4 family. The routing core does not
+-- use this for native IPv6 traffic; it exists for legacy callers.
 assertEq( v6.ToIPv4( "192.168.5.2" ), "192.168.5.2", "ToIPv4 passthrough" )
 assertEq( v6.ToIPv4( "fd00:3:0:5::2" ), "192.168.5.2", "ToIPv4 LAN host" )
 assertEq( v6.ToIPv4( "fd00:3:0:5::1" ), "192.168.5.1", "ToIPv4 LAN gateway" )

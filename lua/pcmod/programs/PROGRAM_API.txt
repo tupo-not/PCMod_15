@@ -182,10 +182,12 @@ ProcessNetworkPacket( sourceEnt, port, body )
     The target OS must have the port open (OpenNetPort) or the packet is
     rejected with netPortClosed / netPortLocked.
 
-IPv6 (emulated dual stack)
---------------------------
-The routing core is still IPv4, but every PC also has a deterministic IPv6
-address from a hierarchical address space:
+IPv6-first dual stack
+----------------------
+IPv6 is the native routed family. Every interface has a stored IPv6 address
+from a hierarchical ULA space, and the routing core matches it by prefix (NDP
+for the last hop). IPv4 remains fully supported as a parallel compatibility
+family; it is not used to reconstruct IPv6 during forwarding.
 
     global    fd00::/16
     backbone  fd00:<bb>::/32        one per backbone router
@@ -194,16 +196,21 @@ address from a hierarchical address space:
     standalone LAN (no backbone): fd00:0:0:<net>::/64
 
 A LAN only knows its own /64 - it knows nothing about the WAN/backbones, like
-the real internet. Send to either family. Routers match IPv6 destinations
-against their /64 LAN and /32 backbone prefixes and translate them back to IPv4
-for delivery, so no separate packet format is needed. IPv4, IPv4-mapped IPv6
-(::ffff:a.b.c.d and ::ffff:hhhh:hhhh), ::1/localhost and bracketed literals
-are all accepted.
+the real internet. Send to either family. A native IPv6 destination is routed
+through the LAN /64 and backbone /32 prefixes; IPv4 traffic keeps its own
+compatibility path. IPv4, IPv4-mapped IPv6 (::ffff:a.b.c.d and
+::ffff:hhhh:hhhh), ::1/localhost and bracketed literals are all accepted.
+
+DHCP leases carry both families. `PCMod.DHCPServer.Config` includes
+`ipv6`, `ipv6prefix`, `ipv6gateway` and `ipv6linklocal` alongside the IPv4
+fields, and the client stores them on the interface. The entity exposes
+`SetIPv6(addr, prefix, gateway)` / `SetBIPv6(...)` for native assignment.
 
 OS helpers:
 
-GetIPv6()                  own IPv6 address
-GetAddress()               IPv6 if available, otherwise IPv4
+GetIPv6()                  own native IPv6 address
+GetAddress()               IPv6 if available, otherwise the full IPv4 address
+GetIPv4()                  full dotted-quad IPv4 (compatibility)
 GetIPv6Prefix()            own LAN /64 in CIDR form
                            (GetIPv6Subnet/GetIPv6Network are aliases)
 GetIPv6Gateway()           LAN gateway (::1 of that /64)
@@ -215,8 +222,11 @@ Address helpers (PCMod.IPv6):
 
 BackbonePrefix( bb )       backbone /32 for a backbone id
 LANPrefix( bb, net )       LAN /64 under backbone bb (bb 0 = standalone)
-FromIPv4( ip )             IPv4 -> emulated IPv6 (backbone/loopback/mapped only)
-ToIPv4( addr )             any supported form -> IPv4 (nil if unroutable)
+BackboneAddress( bb, host )native host address in a backbone /32
+LANAddress( bb, net, host )native host address in a LAN /64
+Family( addr )             "ipv6", "ipv4" or nil
+FromIPv4( ip )             IPv4 -> compatibility IPv6 form
+ToIPv4( addr )             compatibility translation (never used for routing)
 IsIP( addr )               accepts both IPv4 and IPv6
 IsIPv4( addr ) / IsIPv6( addr )
 InSubnet( addr, prefix[, len] )

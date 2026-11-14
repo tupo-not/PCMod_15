@@ -239,7 +239,7 @@ end
 
 // Align a full 32-bit LAN base to the subnet size. Masks stay in 16-32, so a
 // LAN subnet always sits inside one RFC1918 block and its host space fits the
-// 16-bit IID used by the emulated IPv6 layer.
+// 16-bit IID used by the native IPv6 layer.
 function SUBSYSTEM:ComputeLanBase( mask, base )
 	mask = math.Clamp( math.floor( tonumber( mask ) or self:GetLanNetmask() ), 16, 32 )
 	base = math.floor( tonumber( base ) or tonumber( self:GetCfg().LanBase ) or 0 )

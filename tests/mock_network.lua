@@ -5,6 +5,9 @@ PCMod = {
     IPv6 = {
         ToIPv4 = function( addr ) return addr end,
         FromIPv4 = function() return nil end,
+        IsIPv6 = function( addr ) return (type( addr ) == "string") && (string.find( addr, ":", 1, true ) != nil) end,
+        Normalize = function( addr ) return addr end,
+        Canonical = function( addr ) return addr end,
         GetPrefix = function() return nil end,
     },
 }

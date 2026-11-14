@@ -357,7 +357,6 @@ function DEV:Paint( x, y, w, h )
 				elseif (wf.Class == "pcmod_brouter") then wname = "Backbone Router" end
 			end
 			wstat = "Connected to " .. tostring( wname )
-			if (wf.NoIPv4) then wstat = wstat .. " (IPv6 only)" end
 		elseif (wf && wf.BadPass) then
 			wstat = "Incorrect password."
 		elseif (wf && wf.Error) then

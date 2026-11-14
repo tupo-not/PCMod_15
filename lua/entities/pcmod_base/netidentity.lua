@@ -75,16 +75,20 @@
 
 		// Record a secondary lease. Returns the entry (existing one when the
 		// address is already present).
-		function ENT:AddExtraIP( addr, upbb, lanid, router )
+		function ENT:AddExtraIP( addr, upbb, lanid, router, ipv6 )
 			if (!addr) then return nil end
 			local full = PCMod.IPv4.ParseLan( tostring( addr ) )
 			if (!full) then return nil end
 			local list = self:ExtraIPs()
 			for _, ex in ipairs( list ) do
-				if (ex.IPv4 == full.full) then return ex end
+				if (ex.IPv4 == full.full) then
+					if (ipv6) then ex.IPv6 = ipv6 end
+					return ex
+				end
 			end
 			local ex = {
 				IPv4 = full.full,
+				IPv6 = ipv6,
 				UpBB = upbb or 0,
 				LanID = lanid or 0,
 				Router = router,
@@ -115,6 +119,13 @@
 				if (ex.Router == router) then
 					ex.UpBB = upbb or 0
 					ex.LanID = lanid or 0
+					// The native address moves with the /64; keep the same host
+					// id so the device keeps its identity.
+					if (ex.IPv6) then
+						local p = ParseLanAddress( ex.IPv4 )
+						local host = (p and (((p.sub or 0) * 256) + (p.add or 0))) or 1
+						ex.IPv6 = PCMod.IPv6.LANAddress( ex.UpBB, ex.LanID, host )
+					end
 					changed = true
 				end
 			end
@@ -127,9 +138,13 @@
 			local out = {}
 			for _, ex in ipairs( self:ExtraIPs() ) do
 				local p = ParseLanAddress( ex.IPv4 )
+				local v6 = ex.IPv6
+				if ((!v6) && p) then
+					v6 = PCMod.IPv6.LANAddress( ex.UpBB or 0, ex.LanID or 0, (p.sub or 0) * 256 + (p.add or 0) )
+				end
 				out[ #out + 1 ] = {
 					IPv4 = ex.IPv4,
-					IPv6 = (p and PCMod.IPv6.Format( { 0xfd00, ex.UpBB or 0, 0, ex.LanID or 0, 0, 0, 0, (p.sub or 0) * 256 + (p.add or 0) } )) or false,
+					IPv6 = v6 or false,
 					Router = ex.Router,
 				}
 			end
@@ -199,6 +214,7 @@
 			local ip = self:Data().IP
 			ip.V6 = nil
 			ip.V6Prefix = nil
+			ip.V6Gateway = nil
 			ip.V6Link = nil
 			if (!addr) then
 				ip.LAN = false
@@ -357,23 +373,27 @@
 			if (p) then
 				ip.LAN = p.full
 				self:SetNWString( "IP", ip.LAN )
-				// Emulated dual-stack address (see PCMod.IPv6 in sh_common.lua).
-				// Hierarchical LAN: fd00:<bb>:0:<subnet>::<host>.
+				// Native IPv6 identity for this LAN interface. The address is
+				// stored, not reconstructed from IPv4 during routing.
 				local host = (p.sub or 0) * 256 + p.add
-				ip.V6 = PCMod.IPv6.Format( { 0xfd00, ip.UpBB or 0, 0, ip.LanID or 0, 0, 0, 0, host } )
+				ip.V6 = PCMod.IPv6.LANAddress( ip.UpBB or 0, ip.LanID or 0, host )
 				ip.V6Prefix = PCMod.IPv6.LANPrefix( ip.UpBB or 0, ip.LanID or 0 )
+				ip.V6Gateway = PCMod.IPv6.Gateway( ip.V6Prefix ) or false
 				ip.V6Link = PCMod.IPv6.LinkLocal( ip.V6 )
 				self:SetNWString( "IPv6", ip.V6 or "" )
 				self:SetNWString( "IPv6.Prefix", ip.V6Prefix or "" )
+				self:SetNWString( "IPv6.Gateway", ip.V6Gateway or "" )
 				self:SetNWString( "IPv6.LinkLocal", ip.V6Link or "" )
 			else
 				ip.LAN = false
 				ip.V6 = false
 				ip.V6Prefix = false
+				ip.V6Gateway = false
 				ip.V6Link = false
 				self:SetNWString( "IP", ip.WAN or "" )
 				self:SetNWString( "IPv6", "" )
 				self:SetNWString( "IPv6.Prefix", "" )
+				self:SetNWString( "IPv6.Gateway", "" )
 				self:SetNWString( "IPv6.LinkLocal", "" )
 			end
 		end
@@ -385,36 +405,89 @@
 				ip.WAN = PCMod.IPv4.BackboneAddress( ip.WanBB, host )
 				self:SetNWString( "IP.WAN", ip.WAN )
 				if (!ip.LAN) then self:SetNWString( "IP", ip.WAN ) end
-				ip.WanV6 = PCMod.IPv6.Format( { 0xfd00, ip.WanBB, 0, 0, 0, 0, 0, host } )
+				ip.WanV6 = PCMod.IPv6.BackboneAddress( ip.WanBB, host )
 				ip.WanV6Prefix = PCMod.IPv6.BackbonePrefix( ip.WanBB )
+				ip.WanV6Gateway = PCMod.IPv6.Gateway( ip.WanV6Prefix ) or false
 				ip.WanV6Link = PCMod.IPv6.LinkLocal( ip.WanV6 )
 				self:SetNWString( "IPv6.WAN", ip.WanV6 or "" )
 				self:SetNWString( "IPv6.WAN.Prefix", ip.WanV6Prefix or "" )
+				self:SetNWString( "IPv6.WAN.Gateway", ip.WanV6Gateway or "" )
 				self:SetNWString( "IPv6.WAN.LinkLocal", ip.WanV6Link or "" )
 			else
 				ip.WAN = false
 				ip.WanV6 = false
 				ip.WanV6Prefix = false
+				ip.WanV6Gateway = false
 				ip.WanV6Link = false
 				self:SetNWString( "IP.WAN", "" )
 				if (!ip.LAN) then self:SetNWString( "IP", "" ) end
 				self:SetNWString( "IPv6.WAN", "" )
 				self:SetNWString( "IPv6.WAN.Prefix", "" )
+				self:SetNWString( "IPv6.WAN.Gateway", "" )
 				self:SetNWString( "IPv6.WAN.LinkLocal", "" )
 			end
 		end
 
-		// Emulated IPv6 accessors. The address is derived lazily so entities
-		// created before the IPv6 fields existed still report one.
-		// LAN addressing is hierarchical: fd00:<bb>:0:<subnet>::<host>.
+		// Native IPv6 accessors. A lease stores the address on the interface; the
+		// lazy path keeps entities created before these fields existed working.
+		function ENT:SetIPv6( addr, prefix, gateway )
+			local ip = self:Data().IP
+			if ((!addr) || (addr == false)) then
+				ip.V6 = false
+				ip.V6Prefix = false
+				ip.V6Gateway = false
+				ip.V6Link = false
+				self:SetNWString( "IPv6", "" )
+				self:SetNWString( "IPv6.Prefix", "" )
+				self:SetNWString( "IPv6.Gateway", "" )
+				self:SetNWString( "IPv6.LinkLocal", "" )
+				return true
+			end
+			local v6 = PCMod.IPv6.Canonical( addr )
+			if (!v6) then return false end
+			ip.V6 = v6
+			ip.V6Prefix = prefix or PCMod.IPv6.LANPrefix( ip.UpBB or 0, ip.LanID or 0 )
+			ip.V6Gateway = gateway or PCMod.IPv6.Gateway( ip.V6Prefix ) or false
+			ip.V6Link = PCMod.IPv6.LinkLocal( v6 )
+			self:SetNWString( "IPv6", ip.V6 or "" )
+			self:SetNWString( "IPv6.Prefix", ip.V6Prefix or "" )
+			self:SetNWString( "IPv6.Gateway", ip.V6Gateway or "" )
+			self:SetNWString( "IPv6.LinkLocal", ip.V6Link or "" )
+			return true
+		end
+
+		function ENT:SetBIPv6( addr, prefix, gateway )
+			local ip = self:Data().IP
+			if ((!addr) || (addr == false)) then
+				ip.WanV6 = false
+				ip.WanV6Prefix = false
+				ip.WanV6Gateway = false
+				ip.WanV6Link = false
+				self:SetNWString( "IPv6.WAN", "" )
+				self:SetNWString( "IPv6.WAN.Prefix", "" )
+				self:SetNWString( "IPv6.WAN.Gateway", "" )
+				self:SetNWString( "IPv6.WAN.LinkLocal", "" )
+				return true
+			end
+			local v6 = PCMod.IPv6.Canonical( addr )
+			if (!v6) then return false end
+			ip.WanV6 = v6
+			ip.WanV6Prefix = prefix or PCMod.IPv6.BackbonePrefix( ip.WanBB or 0 )
+			ip.WanV6Gateway = gateway or PCMod.IPv6.Gateway( ip.WanV6Prefix ) or false
+			ip.WanV6Link = PCMod.IPv6.LinkLocal( v6 )
+			self:SetNWString( "IPv6.WAN", ip.WanV6 or "" )
+			self:SetNWString( "IPv6.WAN.Prefix", ip.WanV6Prefix or "" )
+			self:SetNWString( "IPv6.WAN.Gateway", ip.WanV6Gateway or "" )
+			self:SetNWString( "IPv6.WAN.LinkLocal", ip.WanV6Link or "" )
+			return true
+		end
+
 		function ENT:GetIPv6()
 			local ip = self:Data().IP
+			if (ip.V6 != nil) then return ip.V6 end
 			local p = ParseLanAddress( ip.LAN )
 			if (!p) then return false end
-			if (ip.V6 == nil) then
-				local host = (p.sub or 0) * 256 + p.add
-				ip.V6 = PCMod.IPv6.Format( { 0xfd00, ip.UpBB or 0, 0, ip.LanID or 0, 0, 0, 0, host } )
-			end
+			ip.V6 = PCMod.IPv6.LANAddress( ip.UpBB or 0, ip.LanID or 0, (p.sub or 0) * 256 + p.add )
 			return ip.V6
 		end
 
@@ -425,10 +498,9 @@
 		// WAN interface IPv6: fd00:<bb>::<host+1> (host slot 0 -> ::1).
 		function ENT:GetBIPv6()
 			local ip = self:Data().IP
+			if (ip.WanV6 != nil) then return ip.WanV6 end
 			if ((ip.WanBB == false) || (ip.WanBB == nil) || (ip.WanHost == false) || (ip.WanHost == nil)) then return false end
-			if (ip.WanV6 == nil) then
-				ip.WanV6 = PCMod.IPv6.Format( { 0xfd00, ip.WanBB, 0, 0, 0, 0, 0, ip.WanHost + 1 } )
-			end
+			ip.WanV6 = PCMod.IPv6.BackboneAddress( ip.WanBB, ip.WanHost + 1 )
 			return ip.WanV6
 		end
 
@@ -439,8 +511,9 @@
 		// The /64 LAN prefix fd00:<bb>:0:<net>::/64.
 		function ENT:GetIPv6Prefix()
 			local ip = self:Data().IP
+			if (ip.V6Prefix != nil) then return ip.V6Prefix end
 			if (!ParseLanAddress( ip.LAN )) then return false end
-			if (!ip.V6Prefix) then ip.V6Prefix = PCMod.IPv6.LANPrefix( ip.UpBB or 0, ip.LanID or 0 ) end
+			ip.V6Prefix = PCMod.IPv6.LANPrefix( ip.UpBB or 0, ip.LanID or 0 )
 			return ip.V6Prefix
 		end
 
@@ -454,25 +527,30 @@
 
 		// The router/gateway address of this LAN (prefix + ::1).
 		function ENT:GetIPv6Gateway()
+			local ip = self:Data().IP
+			if (ip.V6Gateway != nil) then return ip.V6Gateway end
 			local p = self:GetIPv6Prefix()
 			if (!p) then return false end
-			return PCMod.IPv6.Gateway( p )
+			ip.V6Gateway = PCMod.IPv6.Gateway( p ) or false
+			return ip.V6Gateway
 		end
 
 		// Link-local address of this interface (fe80::/64).
 		function ENT:GetIPv6LinkLocal()
+			local ip = self:Data().IP
+			if (ip.V6Link != nil) then return ip.V6Link end
 			local v6 = self:GetIPv6()
 			if (!v6) then return false end
-			local ip = self:Data().IP
-			if (!ip.V6Link) then ip.V6Link = PCMod.IPv6.LinkLocal( v6 ) end
+			ip.V6Link = PCMod.IPv6.LinkLocal( v6 ) or false
 			return ip.V6Link
 		end
 
 		// The /32 backbone prefix fd00:<bb>::/32.
 		function ENT:GetBIPv6Prefix()
 			local ip = self:Data().IP
+			if (ip.WanV6Prefix != nil) then return ip.WanV6Prefix end
 			if ((ip.WanBB == false) || (ip.WanBB == nil)) then return false end
-			if (!ip.WanV6Prefix) then ip.WanV6Prefix = PCMod.IPv6.BackbonePrefix( ip.WanBB ) end
+			ip.WanV6Prefix = PCMod.IPv6.BackbonePrefix( ip.WanBB )
 			return ip.WanV6Prefix
 		end
 
@@ -485,16 +563,20 @@
 		end
 
 		function ENT:GetBIPv6Gateway()
+			local ip = self:Data().IP
+			if (ip.WanV6Gateway != nil) then return ip.WanV6Gateway end
 			local p = self:GetBIPv6Prefix()
 			if (!p) then return false end
-			return PCMod.IPv6.Gateway( p )
+			ip.WanV6Gateway = PCMod.IPv6.Gateway( p ) or false
+			return ip.WanV6Gateway
 		end
 
 		function ENT:GetBIPv6LinkLocal()
+			local ip = self:Data().IP
+			if (ip.WanV6Link != nil) then return ip.WanV6Link end
 			local v6 = self:GetBIPv6()
 			if (!v6) then return false end
-			local ip = self:Data().IP
-			if (!ip.WanV6Link) then ip.WanV6Link = PCMod.IPv6.LinkLocal( v6 ) end
+			ip.WanV6Link = PCMod.IPv6.LinkLocal( v6 ) or false
 			return ip.WanV6Link
 		end
 
@@ -505,6 +587,7 @@
 			ip.UpBB = bb
 			ip.V6 = nil
 			ip.V6Prefix = nil
+			ip.V6Gateway = nil
 			ip.V6Link = nil
 			self:SetIPText()
 		end
@@ -515,6 +598,7 @@
 			ip.LanID = net
 			ip.V6 = nil
 			ip.V6Prefix = nil
+			ip.V6Gateway = nil
 			ip.V6Link = nil
 			self:SetIPText()
 		end
@@ -534,8 +618,11 @@
 			if (PCMod.IPv6.Matches( addr, self:GetFullBIP(), self:GetBIPv6() )) then return true end
 			// Secondary addresses (leases from other routers).
 			for _, ex in ipairs( self:ExtraIPs() ) do
-				local p = PCMod.IPv4.ParseLan( ex.IPv4 )
-				local v6 = p and PCMod.IPv6.Format( { 0xfd00, ex.UpBB or 0, 0, ex.LanID or 0, 0, 0, 0, (p.sub or 0) * 256 + (p.add or 0) } ) or false
+				local short = ParseLanAddress( ex.IPv4 )
+				local v6 = ex.IPv6
+				if ((!v6) && short) then
+					v6 = PCMod.IPv6.LANAddress( ex.UpBB or 0, ex.LanID or 0, (short.sub or 0) * 256 + (short.add or 0) )
+				end
 				if (PCMod.IPv6.Matches( addr, ex.IPv4, v6 )) then return true end
 			end
 			// Per-interface addresses (two NICs on the same router, cable +

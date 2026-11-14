@@ -167,6 +167,35 @@ PCMod.Data[ 1 ].IP.WanV6Link = nil
 assertEq( ent:GetBIPv6(), "fd00:3::2", "lazy backbone IPv6 derivation" )
 assertEq( ent:GetBIPv6Prefix(), "fd00:3::/32", "lazy backbone prefix" )
 
+-- Native assignment: a DHCP lease can set the IPv6 identity explicitly, and
+-- the accessors return exactly what was stored.
+PCMod.Data[1].IP.WanV6 = nil
+PCMod.Data[1].IP.WanV6Prefix = nil
+assertTrue( ent:SetIPv6( "fd00:9:0:4::77", "fd00:9:0:4::/64", "fd00:9:0:4::1" ), "native LAN IPv6 accepted" )
+assertEq( ent:GetIPv6(), "fd00:9:0:4::77", "native LAN IPv6 stored" )
+assertEq( ent:GetIPv6Prefix(), "fd00:9:0:4::/64", "native LAN prefix stored" )
+assertEq( ent:GetIPv6Gateway(), "fd00:9:0:4::1", "native LAN gateway stored" )
+assertEq( ent:GetIPv6LinkLocal(), "fe80::77", "native LAN link-local derived" )
+assertEq( nw[ "IPv6.Gateway" ], "fd00:9:0:4::1", "native gateway NW string" )
+assertTrue( ent:SetBIPv6( "fd00:9::5", "fd00:9::/32", "fd00:9::1" ), "native WAN IPv6 accepted" )
+assertEq( ent:GetBIPv6(), "fd00:9::5", "native WAN IPv6 stored" )
+assertEq( ent:GetBIPv6Prefix(), "fd00:9::/32", "native WAN prefix stored" )
+assertEq( ent:GetBIPv6Gateway(), "fd00:9::1", "native WAN gateway stored" )
+assertTrue( ent:SetIPv6( nil ), "native LAN IPv6 cleared" )
+assertEq( ent:GetIPv6(), false, "cleared native LAN IPv6" )
+assertEq( nw[ "IPv6" ], "", "cleared native LAN NW string" )
+assertTrue( ent:SetBIPv6( nil ), "native WAN IPv6 cleared" )
+assertEq( ent:GetBIPv6(), false, "cleared native WAN IPv6" )
+-- Restore the derived identity for the remaining checks.
+PCMod.Data[1].IP.V6 = nil
+PCMod.Data[1].IP.V6Prefix = nil
+PCMod.Data[1].IP.V6Gateway = nil
+PCMod.Data[1].IP.WanV6 = nil
+PCMod.Data[1].IP.WanV6Prefix = nil
+PCMod.Data[1].IP.WanV6Gateway = nil
+assertEq( ent:GetIPv6(), "fd00:3:0:5::2", "identity returns to the derived LAN address" )
+assertEq( ent:GetBIPv6(), "fd00:3::2", "identity returns to the derived WAN address" )
+
 -- Router-style host .1 becomes the ::1 gateway.
 ent:SetIP( 1 )
 assertEq( ent:GetFullIP(), "192.168.0.1", "IPv4 gateway address" )

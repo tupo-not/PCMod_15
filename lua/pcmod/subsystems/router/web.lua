@@ -119,8 +119,12 @@ function SUBSYSTEM:PageHome()
 		local wan = (e.GetFullBIP && e:GetFullBIP())
 		if (wan) then table.insert( lines, "<p><b>IPv4 WAN /32 (NAT):</b> " .. tostring( wan ) .. " in " .. tostring( PCMod.IPv4.BackbonePrefix( bb ) ) .. "</p>" ) end
 	end
-	table.insert( lines, "<p><b>IPv6:</b> " .. tostring( e:GetIPv6() or "unassigned" ) .. "</p>" )
-	if (e.GetIPv6Prefix && e:GetIPv6Prefix()) then table.insert( lines, "<p><b>Prefix:</b> " .. tostring( e:GetIPv6Prefix() ) .. "</p>" ) end
+	local v6 = (e.GetIPv6 && e:GetIPv6()) or (e.GetBIPv6 && e:GetBIPv6())
+	local v6p = (e.GetIPv6Prefix && e:GetIPv6Prefix()) or (e.GetBIPv6Prefix && e:GetBIPv6Prefix())
+	local v6g = (e.GetIPv6Gateway && e:GetIPv6Gateway()) or (e.GetBIPv6Gateway && e:GetBIPv6Gateway())
+	table.insert( lines, "<p><b>IPv6 (native):</b> " .. tostring( v6 or "unassigned" ) .. "</p>" )
+	if (v6p) then table.insert( lines, "<p><b>IPv6 prefix:</b> " .. tostring( v6p ) .. "</p>" ) end
+	if (v6g) then table.insert( lines, "<p><b>IPv6 gateway:</b> " .. tostring( v6g ) .. "</p>" ) end
 	if (bb) then table.insert( lines, "<p><b>Backbone:</b> " .. tostring( PCMod.IPv6.BackbonePrefix( bb ) ) .. "</p>" ) else table.insert( lines, "<p><b>Backbone:</b> none (standalone)</p>" ) end
 	if (self:IsBackbone()) then
 		// A backbone only has the backbone pool and its management pool. It has
