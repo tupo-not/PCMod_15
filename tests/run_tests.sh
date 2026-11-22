@@ -87,6 +87,7 @@ TESTS=(
     mock_json
     mock_allprogs
     mock_networktester
+    mock_progmenu
 )
 
 # Allow narrowing to a single suite: ./run_tests.sh mock_fs

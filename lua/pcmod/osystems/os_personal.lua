@@ -189,7 +189,37 @@ function OS:RunCommand( com, args )
 	end
 	if (com == "progmenu_open") then
 		if (self.State != 10) then return end
-		self:OpenAllPrograms()
+		if ((!self.Entity) || (!self.Entity:IsValid())) then return end
+		local ss = self:Display():GetScreen()
+		local dev = ss:GetDevice( "menu_allprogs" )
+		if (dev) then
+			local ent = self.Entity
+			local tid = "pcmod_progmenuexit_" .. tostring( ent:EntIndex() )
+			if (dev.Closing) then
+				// Pressed again during the exit slide: keep the existing menu
+				// open and cancel its pending removal.
+				dev.Closing = false
+				ss:AddDevice( "menu_allprogs", dev )
+				self:Display():SetScreen( ss )
+				if (timer && timer.Remove) then timer.Remove( tid ) end
+			else
+				// Already open: slide down instead of recreating the device and
+				// replaying its entrance animation.
+				dev.Closing = true
+				ss:AddDevice( "menu_allprogs", dev )
+				self:Display():SetScreen( ss )
+				if (timer && timer.Create) then
+					timer.Create( tid, 0.3, 1, function()
+						if ((!ent) || (!ent:IsValid())) then return end
+						local os = ent:GetOS()
+						if ((!os) || (os.State != 10) || (!os.CloseAllPrograms)) then return end
+						os:CloseAllPrograms()
+					end )
+				end
+			end
+		else
+			self:OpenAllPrograms()
+		end
 	end
 	if (com == "progmenu_close") then
 		if (self.State != 10) then return end
@@ -326,6 +356,11 @@ function OS:OpenAllPrograms()
 end
 
 function OS:CloseAllPrograms()
+	// A direct close (or closing Start) must cancel a pending toggle removal;
+	// otherwise its timer could remove a newly reopened All Programs menu.
+	if (self.Entity && self.Entity:IsValid() && timer && timer.Remove) then
+		timer.Remove( "pcmod_progmenuexit_" .. self.Entity:EntIndex() )
+	end
 	local ss = self:Display():GetScreen()
 	ss:RemoveDevice( "menu_allprogs" )
 	self:Display():SetScreen( ss )
