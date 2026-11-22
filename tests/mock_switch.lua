@@ -192,6 +192,17 @@ sent = {}
 fwd:DataRecieved( 1, { "deliver", 99, 0 } )
 assertEq( count( sent ), 0, "unknown deliver frame is dropped" )
 
+-- A delayed frame from an older generation cannot poison SwitchSeen or MAC
+-- learning for the packet that later reuses its PID.
+PCMod.Network.Packets[ 2 ] = { Generation = 20, SourceMAC = "AA:BB:CC:DD:EE:20" }
+sent = {}
+fwd:DataRecieved( 1, { "deliver", 2, 0, 19 } )
+assertEq( count( sent ), 0, "stale generation is not forwarded" )
+assertTrue( fwd.SwitchSeen[ 2 ] == nil, "stale generation does not claim SwitchSeen" )
+fwd:DataRecieved( 1, { "deliver", 2, 0, 20 } )
+assertEq( count( sent ), fwd.PortCount - 1, "current generation forwards after a stale frame" )
+assertTrue( fwd.SwitchSeen[ 2 ] == PCMod.Network.Packets[ 2 ], "current generation owns SwitchSeen" )
+
 -- Pure L2: no router relay and no IP awareness. The switch only learns MACs.
 assertTrue( sw.CollectSegment == nil, "switch has no topology walk" )
 assertTrue( sw.GetBridgePeers == nil, "switch does not expose devices to routers" )

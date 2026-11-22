@@ -325,4 +325,49 @@ assertTrue( ent:SetStaticIP( "" ) == true, "clear accepted" )
 assertEq( ent:GetStaticIP(), false, "static cleared" )
 assertEq( ent:GetIP(), false, "host cleared for DHCP" )
 
+-- Generation is stamped on outgoing deliver frames and checked before the
+-- receiving entity dispatches them to its router/network driver.
+PCMod.Network = { Packets = { [ 900 ] = { Generation = 7, Delivered = false } } }
+local dispatchCount = 0
+ent.DataRecieved = function() dispatchCount = dispatchCount + 1 end
+local inputPort = { Type = "vga" }
+function ent:Ports() return { [ 1 ] = inputPort } end
+ent:GivenData( 1, { "deliver", 900, 0, 6 } )
+assertEq( dispatchCount, 0, "stale generation is rejected before entity dispatch" )
+assertEq( PCMod.Network.Packets[ 900 ].Delivered, false, "stale delivery cannot retire the new packet" )
+ent:GivenData( 1, { "deliver", 900, 0, 7 } )
+assertEq( dispatchCount, 1, "current generation reaches entity dispatch" )
+
+-- A synchronous reply can recycle the incoming PID during DataRecieved. The
+-- rest of the old GivenData call must not mark or dispatch that replacement.
+ent.DataRecieved = function()
+	PCMod.Network.Packets[ 900 ] = { Generation = 8, Delivered = false }
+end
+PCMod.Network.Packets[ 900 ] = { Generation = 7, Delivered = false }
+ent:GivenData( 1, { "deliver", 900, 0, 7 } )
+assertEq( PCMod.Network.Packets[ 900 ].Generation, 8, "synchronous replacement remains in its slot" )
+assertEq( PCMod.Network.Packets[ 900 ].Delivered, false, "old frame cannot retire a synchronous replacement" )
+PCMod.Network.Packets[ 900 ] = { Generation = 7, Delivered = false }
+
+local queued
+local receivedFrame
+local peer = {
+	IsValid = function() return true end,
+	GivenData = function( self, port, data ) receivedFrame = data end,
+}
+inputPort.Type = "network"
+inputPort.Connected = true
+inputPort.ConEnt = peer
+inputPort.RemotePort = 1
+PCMod.Latency = {
+	KindForPort = function() return "wired" end,
+	Deliver = function( fn ) queued = fn return true end,
+}
+local outgoing = { "deliver", 900, 0 }
+ent:PushData( inputPort, outgoing )
+assertEq( outgoing[ 4 ], 7, "PushData stamps the packet generation" )
+assertTrue( queued ~= nil, "delayed frame remains queued" )
+queued()
+assertTrue( receivedFrame == outgoing, "queued frame keeps its generation payload" )
+
 print( "ALL ENTITY IPV6 TESTS PASSED" )

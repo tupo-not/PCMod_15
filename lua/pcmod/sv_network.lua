@@ -13,6 +13,7 @@ PCMod.Network = {}
 PCMod.Network.Version = "1.0"
 PCMod.Network.Packets = {}
 PCMod.Network.NextID = 1
+PCMod.Network.NextGeneration = 0
 PCMod.Network.Backbones = {}
 PCMod.Network.Availible = {}
 PCMod.Network.Availible.Back = {}
@@ -61,6 +62,11 @@ function PCMod.Network.CreatePacket( source, dest, port, body, sourcePort, sourc
 	pk.SourcePort = sourcePort or port
 	pk.Body = body
 	pk.Delivered = false
+	PCMod.Network.NextGeneration = PCMod.Network.NextGeneration + 1
+	pk.Generation = PCMod.Network.NextGeneration
+	local now = (CurTime && CurTime()) || os.time()
+	local lifetime = tonumber( PCMod.Cfg.NetworkPacketLifetime ) || 30
+	pk.ReclaimAfter = now + math.max( 1, lifetime )
 	// IP time-to-live. Routers decrement it once per forwarding hop; when it
 	// reaches zero the packet is dropped (and traceroute probes get a hop
 	// report from that router).
@@ -82,9 +88,9 @@ function PCMod.Network.CreatePacket( source, dest, port, body, sourcePort, sourc
 	local pid = PCMod.Network.NextID
 	if ((pid < 1) || (pid > maxpid) || PCMod.Network.Packets[ pid ]) then
 		pid = PCMod.Network.FindFreePacketSlot( maxpid, pid )
-		// Never alias a new packet onto an in-flight id. Routers keep
-		// asynchronous references to these ids, so reuse is only safe after
-		// delivery (or when the slot was already empty).
+		// Never alias a new packet onto a live id. Slots become recyclable
+		// after delivery/expiry, and Generation distinguishes the replacement
+		// from any delayed frames that still carry the old numeric PID.
 		if (!pid) then return nil end
 		// The slot held a delivered packet - routers remember every pid they
 		// processed (drv_router mem.P), so forget it everywhere or the new
@@ -100,6 +106,16 @@ function PCMod.Network.CreatePacket( source, dest, port, body, sourcePort, sourc
 end
 
 // ---------------------------------------------------------------------------------------------------------
+// DropPacket - Marks a terminal drop so its slot can be reclaimed.
+// Deliver frames carry Generation, so an old queued frame cannot affect the
+// next packet that later occupies the same numeric PID.
+// ---------------------------------------------------------------------------------------------------------
+function PCMod.Network.DropPacket( pid )
+	local packet = PCMod.Network.Packets[ pid ]
+	if (packet) then packet.Delivered = true end
+end
+
+// ---------------------------------------------------------------------------------------------------------
 // FindFreePacketSlot - Picks a free/recyclable packet id <= maxpid.
 // Returns nil when every slot is still in flight; callers must backpressure.
 // ---------------------------------------------------------------------------------------------------------
@@ -112,18 +128,21 @@ function PCMod.Network.FindFreePacketSlot( maxpid, start )
 	for i = 1, start - 1 do
 		if (!PCMod.Network.Packets[ i ]) then return i end
 	end
-	// 2) table full: reclaim a delivered packet (its delivery is complete).
-	//    Prefer ids >= start so reclamation rotates instead of pinning one slot.
+	// 2) table full: reclaim a delivered packet or an abandoned one whose
+	//    retention deadline passed. Generation prevents delayed old frames
+	//    from being mistaken for the replacement packet.
+	local now = (CurTime && CurTime()) || os.time()
 	local ge, all
 	for k, v in pairs(PCMod.Network.Packets) do
-		if (v.Delivered) then
+		local recyclable = v.Delivered || (v.ReclaimAfter && (v.ReclaimAfter <= now))
+		if (recyclable) then
 			if (k >= start && (!ge || k < ge)) then ge = k end
 			if (!all || k < all) then all = k end
 		end
 	end
 	if (ge) then return ge end
 	if (all) then return all end
-	// 3) Every slot is still in flight. Reusing one would let stale router
+	// 3) Every slot is still live. Reusing one would let stale router
 	//    references deliver the new packet as if it were the old one.
 	return nil
 end

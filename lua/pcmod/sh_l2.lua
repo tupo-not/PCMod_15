@@ -76,6 +76,9 @@ function PCMod.L2.Receive( ent, port, data )
 		local pid = data[ 2 ]
 		local packet = PCMod.Network.Packets && PCMod.Network.Packets[ pid ]
 		if (!packet) then return end
+		// Reject a delayed old frame before it can poison MAC learning or the
+		// per-switch de-duplication entry for the replacement generation.
+		if ((data[ 4 ] != nil) && (packet.Generation != data[ 4 ])) then return end
 		PCMod.L2.Learn( ent, packet.SourceMAC, port )
 		target = PCMod.L2.PortForMAC( ent, packet.DestMAC )
 		ent.SwitchSeen = ent.SwitchSeen or {}

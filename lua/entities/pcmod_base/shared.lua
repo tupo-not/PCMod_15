@@ -249,6 +249,14 @@ if (SERVER) then
 			// Called from another entity, that is giving us data through one of our ports
 			local prt = self:Ports()[ portid ]
 			if (!prt) then return 1 end
+			local validatedPacket
+			if ((data[1] == "deliver") && (type( data[2] ) == "number")) then
+				validatedPacket = PCMod.Network && PCMod.Network.Packets && PCMod.Network.Packets[ data[2] ]
+				if (!validatedPacket) then return 0 end
+				// Reject a delayed old frame before either the router or the
+				// endpoint can mutate state for the replacement packet.
+				if ((data[4] != nil) && (validatedPacket.Generation != data[4])) then return 0 end
+			end
 			self:DataRecieved( portid, data )
 			// This is causing problems when entities are recieved data that aren't packets
 			if ((prt.Type == "network") || (prt.Type == "optic")) then
@@ -259,6 +267,9 @@ if (SERVER) then
 					pid = packet
 					packet = PCMod.Network.Packets[ pid ]
 					if (!PCMod.Network.Packets[ pid ]) then packet = nil end
+					// DataRecieved may synchronously answer and recycle this PID.
+					// Never continue with that replacement using the old frame.
+					if (validatedPacket && (packet != validatedPacket)) then return 0 end
 				end
 				if (!packet) then
 					PCMod.Msg( "Invalid packet! (" .. self.Entity:EntIndex() .. ")", true )
@@ -300,6 +311,10 @@ if (SERVER) then
 			if (type( port ) == "number") then port = self:Ports()[ port ] end
 			if (!port) then return 1 end
 			if (!port.Connected) then return 2 end
+			if ((type( data ) == "table") && (data[1] == "deliver") && (data[4] == nil)) then
+				local packet = PCMod.Network && PCMod.Network.Packets && PCMod.Network.Packets[ data[2] ]
+				if (packet) then data[4] = packet.Generation end
+			end
 			local ent = port.ConEnt
 			if ((ent) && (ent:IsValid())) then
 				local remote = port.RemotePort

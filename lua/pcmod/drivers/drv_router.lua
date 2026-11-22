@@ -322,7 +322,7 @@ function DRV:Process( data, side )
 		return self:ProcessPacket( pid, nil, side )
 	end
 	if ((tag == "deliver") && (type( body ) == "number")) then
-		return self:ProcessPacket( body, data[3], side )
+		return self:ProcessPacket( body, data[3], side, data[4] )
 	end
 end
 
@@ -438,7 +438,7 @@ function DRV:CheckTTL( packet, side )
 	return true
 end
 
-function DRV:ProcessPacket( pid, pass, side )
+function DRV:ProcessPacket( pid, pass, side, generation )
 	pass = (pass or 0) + 1
 	// Round 19 (AUDIT2 A-01): the nil guard must run BEFORE `pid > MaxNetworkPid` -
 	// comparing nil with a number raises a Lua error at language level. Order is
@@ -448,25 +448,30 @@ function DRV:ProcessPacket( pid, pass, side )
 		return
 	end
 	if (pid > PCMod.Cfg.MaxNetworkPid) then PCMod.Msg( "[webgr]WARNING: Connection ERROR!" ) return end
+	local packet = PCMod.Network.Packets[ pid ]
+	if (!packet) then
+		PCMod.Msg( "[webgr]Packet is nil", true )
+		return
+	end
+	// A numeric PID is reused, its generation is not. Check the frame before
+	// touching de-duplication memory or the replacement packet's state.
+	if ((generation != nil) && (packet.Generation != generation)) then return end
 	if (pass > PCMod.Cfg.MaxNetworkPass) then
 		PCMod.Msg( "[webgr]WARNING: Packet reached maximum pass! (id " .. tostring( pid ) .. ")" )
+		PCMod.Network.DropPacket( pid )
 		return
 	else
 		PCMod.Msg( "[webgr]Parsed packet with pass: " .. pass .. " (id " .. tostring( pid ) .. ")", true )
 	end
 	local mem = self.Entity:Memory()
 	if (!mem.P) then mem.P = {} end
-	if (mem.P[pid]) then
+	local token = packet.Generation || true
+	if (mem.P[pid] == token) then
 		PCMod.Msg( "[webgr]Already processed", true )
 		return
-	end -- Already processed, skip
-	mem.P[pid] = true -- Processed flag enabled
+	end -- Already processed this generation, skip
+	mem.P[pid] = token
 	self.Entity:UpdateMemory( mem )
-	local packet = PCMod.Network.Packets[ pid ] -- Get the packet
-	if (!packet) then
-		PCMod.Msg( "[webgr]Packet is nil", true )
-		return
-	end
 	if (packet.Delivered) then
 		PCMod.Msg( "[webgr]Already delivered", true )
 		return
@@ -474,6 +479,7 @@ function DRV:ProcessPacket( pid, pass, side )
 	// Rules-based firewall: drop matching traffic arriving on a real interface.
 	if (side && self:FirewallBlocks( packet, side )) then
 		PCMod.Msg( "[webgr]Firewall dropped packet on port " .. tostring( packet.Port ), true )
+		PCMod.Network.DropPacket( pid )
 		return
 	end
 	// WAN -> LAN boundary. Without NAT, an outside host could otherwise address
@@ -487,6 +493,7 @@ function DRV:ProcessPacket( pid, pass, side )
 		end
 		if (lanTarget && (!self:WanToLanAllowed( packet ))) then
 			PCMod.Msg( "[webgr]WAN -> LAN ingress blocked for " .. tostring( packet.Dest ), true )
+			PCMod.Network.DropPacket( pid )
 			return
 		end
 	end
@@ -617,6 +624,7 @@ function DRV:ProcessPacket( pid, pass, side )
 			end
 		end
 		PCMod.Msg( "[webgr]IPv4 target " .. tostring( packet.Dest ) .. " is not routable; dropping", true )
+		PCMod.Network.DropPacket( pid )
 		return
 	end
 
@@ -659,6 +667,7 @@ function DRV:ProcessPacket( pid, pass, side )
 			end
 		end
 		PCMod.Msg( "[webgr]No IPv6 route for " .. tostring( packet.Dest ) .. "; dropping", true )
+		PCMod.Network.DropPacket( pid )
 		return
 	end
 
@@ -671,6 +680,7 @@ function DRV:ProcessPacket( pid, pass, side )
 		return
 	end
 	PCMod.Msg( "[webgr]No uplink for IPv6 target " .. tostring( packet.Dest ) .. "; dropping", true )
+	PCMod.Network.DropPacket( pid )
 end
 
 function DRV:CallEvent( data )
@@ -1678,6 +1688,7 @@ function DRV:MasqueradeAndForward( packet, pass )
 	local wan = self.Entity.GetFullBIP && self.Entity:GetFullBIP()
 	if (!wan) then
 		PCMod.Msg( "[webgr]No WAN /32 to masquerade behind; dropping", true )
+		packet.Delivered = true
 		return
 	end
 	// One stable ephemeral source port per (host : dest : port) connection.
@@ -1694,7 +1705,8 @@ function DRV:MasqueradeAndForward( packet, pass )
 	if (!npid) then return end
 	local mem = self.Entity:Memory()
 	if (!mem.P) then mem.P = {} end
-	mem.P[ npid ] = true
+	local forwarded = PCMod.Network.Packets[ npid ]
+	mem.P[ npid ] = (forwarded && forwarded.Generation) || true
 	self.Entity:UpdateMemory( mem )
 	self.Entity:PushData( self.Uplink, { "deliver", npid, pass } )
 end

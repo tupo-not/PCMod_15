@@ -44,7 +44,13 @@ PCMod.Msg = function() end
 PCMod.Warning = function() end
 timer = { Simple = function() end }
 PCMod.Cfg = { MaxNetworkPid = 500, MaxNetworkPass = 10, WirelessRange = 0 }
-PCMod.Network = { Packets = {} }
+PCMod.Network = {
+	Packets = {},
+	DropPacket = function( pid )
+		local packet = PCMod.Network.Packets[ pid ]
+		if (packet) then packet.Delivered = true end
+	end,
+}
 PCMod.DeriveDriver = function() return {} end
 PCMod.MAC = {
 	BROADCAST = "FF:FF:FF:FF:FF:FF",
@@ -683,6 +689,7 @@ function ingressEnt:GetFullBIP() return "100.0.3.5" end
 function ingressEnt:GetSubnet() return 0 end
 function ingressEnt:GetBSubnet() return 3 end
 function ingressEnt:GetSourceAddress() return "10.20.0.1" end
+function ingressEnt:GetMAC() return "AA:BB:CC:DD:EE:01" end
 function ingressEnt:IsAddressedTo( a )
 	return (a == "fd00:3:0:5::1") || (a == "fd00:3::6") || (a == "10.20.0.1") || (a == "100.0.3.5")
 end
@@ -780,5 +787,55 @@ got = runPacket( 419, "fd00:3::1", "fd00:3:0:5::2", 0, "wan", { "netTraceHop", "
 assertEq( #got, 1, "path hop reply reaches the tracing LAN host" )
 got = runPacket( 420, "fd00:4::66", "fd00:3:0:5::2", 0, "wan", { "netTrace", "hk", 2, 1 } )
 assertEq( #got, 0, "WAN traceroute probes cannot enter the LAN" )
+
+-- PID generations make de-duplication work on unregistered LAN routers and
+-- prevent a delayed old frame from touching the replacement packet.
+local function setGenerationPacket( id, generation )
+	PCMod.Network.Packets[ id ] = {
+		Source = "10.20.0.2", Dest = "10.20.0.3", Port = 72,
+		Body = { "payload" }, TTL = 64, Delivered = false, Generation = generation,
+	}
+end
+ingressMem = {}
+pushed = {}
+setGenerationPacket( 430, 100 )
+ingress:ProcessPacket( 430, nil, "lan", 100 )
+assertEq( #pushed > 0, true, "new generation is processed by a LAN router" )
+assertEq( ingressMem.P[ 430 ], 100, "LAN memory stores the generation" )
+local forwarded = #pushed
+ingress:ProcessPacket( 430, nil, "lan", 100 )
+assertEq( #pushed, forwarded, "same generation is still de-duplicated" )
+setGenerationPacket( 430, 101 )
+ingress:ProcessPacket( 430, nil, "lan", 100 )
+assertEq( #pushed, forwarded, "stale generation cannot forward the replacement" )
+assertEq( ingressMem.P[ 430 ], 100, "stale generation does not rewrite de-dup memory" )
+assertEq( PCMod.Network.Packets[ 430 ].Delivered, false, "stale generation cannot retire the replacement" )
+ingress:ProcessPacket( 430, nil, "lan", 101 )
+assertTrue( #pushed > forwarded, "recycled PID with a new generation is accepted" )
+assertEq( ingressMem.P[ 430 ], 101, "new generation replaces old LAN memory" )
+
+-- Terminal firewall drops retire their slot immediately.
+ingressData.RouterCfg.Firewall = true
+ingressData.RouterCfg.FirewallRules = {}
+setGenerationPacket( 431, 102 )
+ingress:ProcessPacket( 431, nil, "wan", 102 )
+assertEq( PCMod.Network.Packets[ 431 ].Delivered, true, "firewall drop releases the packet slot" )
+ingressData.RouterCfg.Firewall = false
+
+-- NAT-created packets use the same generation token as normal de-duplication.
+ingressMem = {}
+ingress.NatByPeer = {}
+PCMod.Network.CreatePacket = function( src, dst, port, body, sourcePort )
+	PCMod.Network.Packets[ 432 ] = {
+		Source = src, Dest = dst, Port = port, SourcePort = sourcePort,
+		Body = body, TTL = 64, Delivered = false, Generation = 555,
+	}
+	return 432
+end
+ingress:MasqueradeAndForward( {
+	Source = "10.20.0.2", Dest = "100.0.4.9", Port = 72,
+	Body = { "payload" }, TTL = 64, Delivered = false,
+}, 0 )
+assertEq( ingressMem.P[ 432 ], 555, "masquerade records the forwarded generation" )
 
 print( "ALL ROUTER IPV6 TESTS PASSED" )
