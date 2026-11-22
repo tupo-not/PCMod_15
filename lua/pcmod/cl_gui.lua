@@ -473,7 +473,7 @@ function PCMod.Gui.RegisterClick( mx, my, ent, right )
 	
 	// Cycle through every device, and 'tag' it if the mouse is potentially ontop of it
 	for k, v in pairs( ss ) do
-		if (type( v ) == "table") then
+		if ((type( v ) == "table") && (!PCMod.SDraw.IsMinimized( v, ent:EntIndex() ))) then
 			ss[ k ].Tagged = false
 			// Use the same visual rect (GUI scale / menu anchoring) as drawing.
 			// noanim=true: tag by the settled rect, so a menu mid-slide does not

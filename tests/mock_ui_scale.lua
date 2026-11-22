@@ -129,6 +129,19 @@ assertEq(#order, 3, "desktop + menu + taskbar repaint")
 assertEq(order[1], "desk", "desktop painted first in the main pass")
 assertEq(order[2], "menu", "menu painted over the desktop")
 assertEq(order[3], "taskbar:true", "taskbar strip repainted on top while sliding")
+
+-- Minimized programs are absent from hit-testing and the actual draw pass.
+local hidden = { Type = "window_x", ProgName = "x", DevID = "hidden", X = 0, Y = 0, W = 1, H = 1, Priority = 1, OpenID = 1 }
+PCMod.SDraw.SetMinimized( hidden, 1, true )
+assertTrue(PCMod.SDraw.GetTopDeviceAt({ hidden }, 0.5, 0.5, 1, 1, 1) == nil, "minimized window cannot be grabbed")
+local minimizedDraws = 0
+PCMod.SDraw.DrawDevice = function() minimizedDraws = minimizedDraws + 1 end
+PCMod.SDraw.DrawSpace({ hidden }, 0, 0, 1600, 900, 1)
+assertEq(minimizedDraws, 0, "minimized window is not drawn")
+PCMod.SDraw.SetMinimized( hidden, 1, false )
+PCMod.SDraw.DrawSpace({ hidden }, 0, 0, 1600, 900, 1)
+assertEq(minimizedDraws, 1, "restored window is drawn again")
+
 -- Stale/oversized windows are clamped into the viewport for draw and clicks.
 local edx,edy,edw,edh,eds = PCMod.SDraw.GetDeviceVisualRect({ ProgName="x", Type="window_x", X=0.9, Y=0.9, W=1.5, H=1.5 }, 1, 1)
 assertEq(eds,0.5,"clamped window scale")

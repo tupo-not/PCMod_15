@@ -26,6 +26,32 @@ PCMod.SDraw.KB_Caps = false
 
 PCMod.SDraw.DevFocus = ""
 
+// Minimized windows are client-local and keyed by entity + device id. OpenID
+// prevents a newly restarted program from inheriting an old minimized state.
+PCMod.SDraw.Minimized = {}
+function PCMod.SDraw.IsMinimized( device, entid )
+	if ((!device) || (!device.ProgName) || (!device.DevID)) then return false end
+	local perEnt = PCMod.SDraw.Minimized && PCMod.SDraw.Minimized[ entid ]
+	local rec = perEnt && perEnt[ device.DevID ]
+	if (!rec) then return false end
+	if (device.OpenID && rec.OpenID && (device.OpenID != rec.OpenID)) then
+		perEnt[ device.DevID ] = nil
+		return false
+	end
+	return true
+end
+
+function PCMod.SDraw.SetMinimized( device, entid, minimized )
+	if ((!device) || (!device.ProgName) || (!device.DevID)) then return end
+	PCMod.SDraw.Minimized[ entid ] = PCMod.SDraw.Minimized[ entid ] or {}
+	if (minimized) then
+		PCMod.SDraw.Minimized[ entid ][ device.DevID ] = { OpenID = device.OpenID }
+		if (PCMod.SDraw.DevFocus == string.match( device.DevID, ":(.+)$" )) then PCMod.SDraw.DevFocus = "" end
+	else
+		PCMod.SDraw.Minimized[ entid ][ device.DevID ] = nil
+	end
+end
+
 PCMod.SDraw.CFrame = 0
 
 // Fullscreen UI transform (GUI scale). Geometry is drawn into a scaled,
@@ -437,14 +463,15 @@ end
 // point. Hit-testing must use this instead of merely walking the draggable
 // devices, otherwise a lower window's title bar hidden under another window
 // could still be grabbed.
-function PCMod.SDraw.GetTopDeviceAt( ss, mx, my, w, h )
+function PCMod.SDraw.GetTopDeviceAt( ss, mx, my, w, h, entid )
 	if ((!ss) || (!istable( ss ))) then return nil end
+	entid = entid || PCMod.Gui.CamLockID
 	w = w or ScrW()
 	h = h or ScrH()
 	local best = nil
 	local bestp = -1
 	for _, v in pairs( ss ) do
-		if ((type( v ) == "table") && v.DevID && v.W && v.H && (v.W > 0) && (v.H > 0)) then
+		if ((type( v ) == "table") && v.DevID && v.W && v.H && (v.W > 0) && (v.H > 0) && (!PCMod.SDraw.IsMinimized( v, entid ))) then
 			local dx, dy, dw, dh = PCMod.SDraw.GetDeviceVisualRect( v, w, h )
 			if ((mx >= dx) && (mx <= (dx + dw)) && (my >= dy) && (my <= (dy + dh))) then
 				local p = v.Priority or 0
@@ -472,7 +499,7 @@ function PCMod.SDraw.UpdateWindowGrab( ss, mx, my )
 	// Only the window actually on top may start a grab. If the topmost device
 	// at this point is not draggable (or is a system screen/menu), the press
 	// must not reach a window buried underneath it.
-	local top = PCMod.SDraw.GetTopDeviceAt( ss, mx, my, ScrW(), ScrH() )
+	local top = PCMod.SDraw.GetTopDeviceAt( ss, mx, my, ScrW(), ScrH(), entid )
 	if ((!top) || (!(top.WindowDrag || top.WindowResize))) then return end
 	local dev = PCMod.SDraw.DevMap[ top.DevID ]
 	if (dev && dev.TryStartWindowGrab && dev:TryStartWindowGrab( mx, my )) then return end
@@ -842,7 +869,7 @@ function PCMod.SDraw.DrawSpace( ss, x, y, w, h, entid )
 		local v = tmp[i]
 		if (v) then
 			for _, device in pairs( v ) do
-				if (cur && (cur.Ent == entid)) then
+				if (cur && (cur.Ent == entid) && (!PCMod.SDraw.IsMinimized( device, entid ))) then
 					local pdx, pdy, pdw, pdh = PCMod.SDraw.GetDeviceVisualRect( device, w, h )
 					if ((cur.X > (x + pdx)) && (cur.X < (x + pdx + pdw)) && (cur.Y > (y + pdy)) && (cur.Y < (y + pdy + pdh))) then
 						// Later (higher priority) devices overwrite earlier ones,
@@ -860,7 +887,8 @@ function PCMod.SDraw.DrawSpace( ss, x, y, w, h, entid )
 		local v = tmp[i]
 		if (v) then
 			for _, device in pairs( v ) do
-				if (PCMod.SDraw.DevMap[ device.DevID ]) then PCMod.SDraw.DevMap[ device.DevID ]:Tick() end
+				if (!PCMod.SDraw.IsMinimized( device, entid )) then
+					if (PCMod.SDraw.DevMap[ device.DevID ]) then PCMod.SDraw.DevMap[ device.DevID ]:Tick() end
 				// GUI scale applies to program windows/pickers and the Start
 				// menus; fullscreen system screens and the desktop stay native.
 				local dx, dy, dw, dh, ds = PCMod.SDraw.GetDeviceVisualRect( device, w, h )
@@ -868,6 +896,7 @@ function PCMod.SDraw.DrawSpace( ss, x, y, w, h, entid )
 				if (!device.Rev) then device.Rev = 1 end
 				device.Entity = ent
 				PCMod.SDraw.DrawDevice( device, x+dx, y+dy, dw, dh, entid )
+				end
 			end
 		end
 	end

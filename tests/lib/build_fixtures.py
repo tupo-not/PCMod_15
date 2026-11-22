@@ -76,6 +76,7 @@ FIXTURES = {
     "pcmod_cl_gui.lua": "pcmod/cl_gui.lua",
     "pcmod_sh_json.lua": "pcmod/sh_json.lua",
     "pcmod_allprogs.lua": "pcmod/ssdevices/dev_allprogs.lua",
+    "pcmod_desktop.lua": "pcmod/ssdevices/dev_desktop.lua",
     "pcmod_networktester.lua": "weapons/pcmod_networktester/shared.lua",
 }
 

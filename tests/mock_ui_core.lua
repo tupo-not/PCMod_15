@@ -80,6 +80,8 @@ local prog = {
 	DeviceLink = "window_demo",
 	DeviceName = "window_demo",
 	DeviceData = {},
+	Title = "Demo Program",
+	Icon = "harddrive",
 	GetMinWindowSize = function() return 0.55, 0.65 end,
 	GetDimensions = function() return { x = 0.1, y = 0.2, w = 0.55, h = 0.65 } end,
 	GetPriority = function() return 12 end
@@ -94,6 +96,8 @@ assertEq( payload.Type, "window_demo", "payload type" )
 assertEq( payload.Key, "window_demo", "payload key" )
 assertEq( payload.Data.Hello, "world", "payload prepare ran" )
 assertEq( payload.Data.ProgName, "demo", "payload prog name" )
+assertEq( payload.Data.AppTitle, "Demo Program", "payload taskbar title" )
+assertEq( payload.Data.AppIcon, "harddrive", "payload taskbar icon" )
 assertEq( payload.Data.WindowDrag, true, "payload drag" )
 assertEq( payload.Data.WindowResize, true, "payload resize" )
 assertNear( payload.Data.MinW, 0.55, "payload min width" )
