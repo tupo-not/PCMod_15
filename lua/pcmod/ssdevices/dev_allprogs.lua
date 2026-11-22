@@ -11,9 +11,6 @@ DEV.ShortcutHeight = 0.06
 DEV.Progs = {}
 
 DEV.Th = "basic"
-local entoku
-local tablooku
-local bunubelirle
 net.Receive( 'programyolla', function()
 // Round 19 (AUDIT2 A-06): validate before use - net.ReadEntity can return a
 // NULL entity and net.ReadTable an arbitrary value.
@@ -21,25 +18,19 @@ local ent = net.ReadEntity()
 local tbl = net.ReadTable()
 if (!IsValid( ent ) || !istable( tbl )) then return end
 ent.Programlar = tbl
-entoku = ent
-tablooku = tbl
 end)
  
 
 function DEV:Initialize( x, y, w, h )
-	// Round 19 (AUDIT2 A-03/A-08): debug print removed; the program list may
-	// not have arrived yet (NULL entoku / non-table data) - fall back to an
-	// empty list instead of crashing the device.
-	local progs
-	if (IsValid( self.Entity ) && self.Entity:GetClass() == "pcmod_laptop") then
-	progs = self.Entity.Programlar
-	elseif (IsValid( entoku )) then
-	progs = entoku.Programlar
-	end
+	// DeviceData.Progs is the primary payload. Entity.Programlar remains as a
+	// legacy fallback, but both are instance-local: another PC must never
+	// replace this menu's shortcuts.
+	local progs = self.Progs
+	if (!istable( progs ) && IsValid( self.Entity )) then progs = self.Entity.Programlar end
 	if (!istable( progs )) then progs = {} end
-	bunubelirle = progs
-	
-	for k, v in pairs( bunubelirle ) do
+	self.Progs = progs
+
+	for k, v in pairs( self.Progs ) do
 		local ypos = y + ((k-1) * h * self.ShortcutHeight )
 		self:CreateButton2( self.Th, "btn_p_" .. tostring( k ), x, ypos, w, self.ShortcutHeight*h, v[2], v[1] )
 	end
@@ -67,7 +58,7 @@ end
 
 function DEV:ButtonClick( btn )
 	local x, y, w, h = self.win_x, self.win_y, self.win_w, self.win_h
-	for k, v in pairs( bunubelirle ) do
+	for k, v in pairs( self.Progs or {} ) do
 		local bname = "btn_p_" .. tostring( k )
 		if (btn == bname) then
 			self:SubmitCommand( "os_command", "startmenu_close" )

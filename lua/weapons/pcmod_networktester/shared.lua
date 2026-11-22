@@ -65,7 +65,8 @@ if (SERVER) then
 	
 	function SWEP:PrimaryAttack()
 		local ent = self.Owner:GetEyeTrace().Entity
-		if (!self.EntA) then
+		if (!IsValid( self.EntA )) then
+			self.EntA = nil
 			// Ports()/GetFullIP() below only exist on PCMod entities.
 			if ((ent) && (ent:IsValid()) && (ent.IsPCMod)) then
 				self.EntA = ent

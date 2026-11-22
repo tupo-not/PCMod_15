@@ -73,6 +73,8 @@ FIXTURES = {
     "pc_camlink.lua": "weapons/gmod_tool/stools/pc_camlink.lua",
     "pcmod_cl_gui.lua": "pcmod/cl_gui.lua",
     "pcmod_sh_json.lua": "pcmod/sh_json.lua",
+    "pcmod_allprogs.lua": "pcmod/ssdevices/dev_allprogs.lua",
+    "pcmod_networktester.lua": "weapons/pcmod_networktester/shared.lua",
 }
 
 # Additional sources that only need a syntax check.
@@ -102,7 +104,6 @@ CHECK_ONLY = [
     "entities/pcmod_laptop/shared.lua",
     "entities/pcmod_printer/shared.lua",
     "weapons/pcmod_hdcopier/shared.lua",
-    "weapons/pcmod_networktester/shared.lua",
     "weapons/gmod_tool/oldstools/pcsendpacket.lua",
     "weapons/pcmod_installdisk/shared.lua",
     "weapons/gmod_tool/stools/pcspawn_switch.lua",

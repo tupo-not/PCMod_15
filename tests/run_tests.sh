@@ -85,6 +85,8 @@ TESTS=(
     mock_alarmz
     mock_alarmzlink
     mock_json
+    mock_allprogs
+    mock_networktester
 )
 
 # Allow narrowing to a single suite: ./run_tests.sh mock_fs
