@@ -152,71 +152,24 @@ function OS:RunCommand( com, args )
 	end
 	if (com == "startmenu_open") then
 		if (self.State != 10) then return end
-		if ((!self.Entity) || (!self.Entity:IsValid())) then return end
 		local ss = self:Display():GetScreen()
 		local dev = ss:GetDevice( "menu_start" )
 		if (dev) then
-			local ent = self.Entity
-			local tid = "pcmod_menuexit_" .. tostring( ent:EntIndex() )
-			if (dev.Closing) then
-				// Pressed again during the exit slide: reopen, cancel the removal.
-				dev.Closing = false
-				ss:AddDevice( "menu_start", dev )
-				self:Display():SetScreen( ss )
-				if (timer && timer.Remove) then timer.Remove( tid ) end
-			else
-				// Second press: flag the device so the client slides it back
-				// down behind the taskbar, then remove it for real.
-				dev.Closing = true
-				ss:AddDevice( "menu_start", dev )
-				self:Display():SetScreen( ss )
-				if (timer && timer.Create) then
-					timer.Create( tid, 0.3, 1, function()
-						if ((!ent) || (!ent:IsValid())) then return end
-						local os = ent:GetOS()
-						if ((!os) || (os.State != 10) || (!os.CloseStartMenu)) then return end
-						os:CloseStartMenu()
-					end )
-				end
-			end
+			self:SetStartMenuClosing( !dev.Closing )
 		else
 			self:OpenStartMenu()
 		end
 	end
 	if (com == "startmenu_close") then
 		if (self.State != 10) then return end
-		self:CloseStartMenu()
+		self:SetStartMenuClosing( true )
 	end
 	if (com == "progmenu_open") then
 		if (self.State != 10) then return end
-		if ((!self.Entity) || (!self.Entity:IsValid())) then return end
 		local ss = self:Display():GetScreen()
 		local dev = ss:GetDevice( "menu_allprogs" )
 		if (dev) then
-			local ent = self.Entity
-			local tid = "pcmod_progmenuexit_" .. tostring( ent:EntIndex() )
-			if (dev.Closing) then
-				// Pressed again during the exit slide: keep the existing menu
-				// open and cancel its pending removal.
-				dev.Closing = false
-				ss:AddDevice( "menu_allprogs", dev )
-				self:Display():SetScreen( ss )
-				if (timer && timer.Remove) then timer.Remove( tid ) end
-			else
-				// Already open: slide down instead of recreating the device and
-				// replaying its entrance animation.
-				dev.Closing = true
-				ss:AddDevice( "menu_allprogs", dev )
-				self:Display():SetScreen( ss )
-				if (timer && timer.Create) then
-					timer.Create( tid, 0.3, 1, function()
-						if ((!ent) || (!ent:IsValid())) then return end
-						local os = ent:GetOS()
-						if ((!os) || (os.State != 10) || (!os.CloseAllPrograms)) then return end
-						os:CloseAllPrograms()
-					end )
-				end
-			end
+			self:SetAllProgramsClosing( !dev.Closing )
 		else
 			self:OpenAllPrograms()
 		end
@@ -330,6 +283,35 @@ function OS:OpenStartMenu()
 	self:Display():SetScreen( ss )
 end
 
+function OS:SetStartMenuClosing( closing )
+	if ((!self.Entity) || (!self.Entity:IsValid())) then return end
+	local ss = self:Display():GetScreen()
+	local dev = ss:GetDevice( "menu_start" )
+	if (dev && (dev.Closing == closing)) then
+		if (closing) then self:SetAllProgramsClosing( true ) end
+		return
+	end
+	local ent = self.Entity
+	local tid = "pcmod_menuexit_" .. tostring( ent:EntIndex() )
+	if (timer && timer.Remove) then timer.Remove( tid ) end
+
+	// Start and All Programs close together. Opening Start never opens or
+	// revives All Programs: an already-started All Programs close finishes.
+	if (closing) then self:SetAllProgramsClosing( true ) end
+	if (!dev) then return end
+	dev.Closing = closing
+	ss:AddDevice( "menu_start", dev )
+	self:Display():SetScreen( ss )
+	if (closing && timer && timer.Create) then
+		timer.Create( tid, 0.3, 1, function()
+			if ((!ent) || (!ent:IsValid())) then return end
+			local os = ent:GetOS()
+			if ((!os) || (os.State != 10) || (!os.CloseStartMenu)) then return end
+			os:CloseStartMenu()
+		end )
+	end
+end
+
 function OS:CloseStartMenu()
 	// Cancel a pending slide-down removal (toggle path): without this a stale
 	// timer could close a menu that was reopened within the 0.3 s window, or
@@ -353,6 +335,28 @@ function OS:OpenAllPrograms()
 	local dev = ss:MakeDevice( "menu_allprogs", 0.4, 0, 0.4, 0.94, tmp, 255 )
 	ss:AddDevice( "menu_allprogs", dev )
 	self:Display():SetScreen( ss )
+end
+
+function OS:SetAllProgramsClosing( closing )
+	if ((!self.Entity) || (!self.Entity:IsValid())) then return end
+	local ss = self:Display():GetScreen()
+	local dev = ss:GetDevice( "menu_allprogs" )
+	if (dev && (dev.Closing == closing)) then return end
+	local ent = self.Entity
+	local tid = "pcmod_progmenuexit_" .. tostring( ent:EntIndex() )
+	if (timer && timer.Remove) then timer.Remove( tid ) end
+	if (!dev) then return end
+	dev.Closing = closing
+	ss:AddDevice( "menu_allprogs", dev )
+	self:Display():SetScreen( ss )
+	if (closing && timer && timer.Create) then
+		timer.Create( tid, 0.3, 1, function()
+			if ((!ent) || (!ent:IsValid())) then return end
+			local os = ent:GetOS()
+			if ((!os) || (os.State != 10) || (!os.CloseAllPrograms)) then return end
+			os:CloseAllPrograms()
+		end )
+	end
 end
 
 function OS:CloseAllPrograms()
