@@ -296,12 +296,38 @@ PCMod.Data[1].Ports = { [1] = { Connected = true, ConEnt = fakePeer, RemotePort 
 ent.IsComputer = false
 ent.IsNetworkDevice = false
 local rec = nil
-PCMod.Wiring = { LinkPorts = function( srcent, srcprt, destent, destprt, rt, ct ) rec = { srcprt = srcprt, destent = destent, destprt = destprt } end }
+PCMod.Wiring = { LinkPorts = function( srcent, srcprt, destent, destprt, rt, ct )
+	rec = { srcprt = srcprt, destent = destent, destprt = destprt, rt = rt }
+	srcent:Ports()[ srcprt ].Connected = true
+	if (destent.Ports) then destent:Ports()[ destprt ].Connected = true end
+end }
 local linfo = ent:BuildDupeInfo()
 assertTrue( linfo.links ~= nil and #linfo.links == 1 and linfo.links[1].port == 1 and linfo.links[1].peer == 42 and linfo.links[1].remote == 3, "dupe saves port links" )
-local pastedPeer = { IsValid = function() return true end, IsPCMod = true }
+local pastedPeer = { IsValid = function() return true end, IsPCMod = true, ports = { [ 3 ] = { Connected = false } } }
+pastedPeer.Ports = function( self ) return self.ports end
+PCMod.Data[ 1 ].Ports[ 1 ].Connected = false
 ent:ApplyDupeInfo( nil, ent, linfo, function( id ) if (id == 42) then return pastedPeer end end )
 assertTrue( rec ~= nil and rec.srcprt == 1 and rec.destprt == 3 and rec.destent == pastedPeer, "dupe re-links ports via LinkPorts" )
+
+-- A PCMod-owned rope is restored once, even if both endpoints apply their
+-- dupe info. The second apply sees the already-connected ports.
+local ropeSpec = { lpos1 = "A", lpos2 = "B", length = 120 }
+PCMod.Wiring.GetRopeData = function() return ropeSpec end
+local ropeCreates = 0
+local restoredRope = { Marker = true }
+PCMod.Wiring.CreateRopeTable = function( src, dest, data )
+	ropeCreates = ropeCreates + 1
+	assertTrue( src == ent and dest == pastedPeer and data == ropeSpec, "rope restore keeps endpoint orientation" )
+	return restoredRope
+end
+local ropeInfo = ent:BuildDupeInfo()
+assertTrue( ropeInfo.links[ 1 ].rope == ropeSpec, "dupe stores the rope parameters" )
+PCMod.Data[ 1 ].Ports[ 1 ].Connected = false
+pastedPeer.ports[ 3 ].Connected = false
+ent:ApplyDupeInfo( nil, ent, ropeInfo, function( id ) if (id == 42) then return pastedPeer end end )
+ent:ApplyDupeInfo( nil, ent, ropeInfo, function( id ) if (id == 42) then return pastedPeer end end )
+assertEq( ropeCreates, 1, "both endpoint applications create only one rope" )
+assertTrue( rec.rt == restoredRope, "restored rope is passed to the logical link" )
 
 -- Static IP configuration (any RFC1918 LAN address: parse, reject, clear).
 PCMod.Data[1].IP = { LAN = false, WAN = false, WanBB = false, WanHost = false, Extra = {}, V6 = false, WanV6 = false }

@@ -99,6 +99,14 @@ assertEq( PCMod.Data[ 2 ].Mode, "optic", "optical mode selected" )
 for i = 1, opt.PortCount do
 	assertEq( PCMod.Data[ 2 ].Ports[ i ].Type, "optic", "optical port type" )
 end
+local optInfo = opt:BuildDupeInfo()
+assertEq( optInfo.mode, "optic", "dupe saves the optical mode" )
+opt:Setup( { Mode = "ethernet" } )
+opt:ApplyDupeInfo( nil, opt, optInfo, function() return nil end )
+assertEq( PCMod.Data[ 2 ].Mode, "optic", "dupe restores the optical mode before linking" )
+for i = 1, opt.PortCount do
+	assertEq( PCMod.Data[ 2 ].Ports[ i ].Type, "optic", "dupe restores optical port type" )
+end
 
 -- Unknown mode falls back to Ethernet.
 local bad = makeSwitch( 3 )

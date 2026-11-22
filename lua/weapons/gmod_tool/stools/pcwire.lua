@@ -117,12 +117,16 @@ if (SERVER) then
 		local netLink = (p1.Type == "network")
 		if (sameKind && (!p1.CanWireSameType) && (!netLink)) then PCMod.Notice( "Cannot wire: same-class ports cannot connect", ply ) return end
 
-		// Physical cable (constraint rope) between the two hit points.
+		// Physical cable owned by the logical PCMod link, including on dupes.
 		local addlength = 100
 		local length = (ent1:GetPos() - ent2:GetPos()):Length() + addlength
-		local const, rope = constraint.Rope( ent1, ent2, 0, 0, lpos1, lpos2, length, 0, 0, width, material, false )
-		local rps = {}
-		if (const || rope) then rps = { { const, rope } } end
+		local rps = PCMod.Wiring.CreateRopeTable( ent1, ent2, {
+			lpos1 = lpos1,
+			lpos2 = lpos2,
+			length = length,
+			width = width,
+			material = material,
+		} )
 
 		PCMod.Wiring.LinkPorts( ent1, port1, ent2, port2, rps, nil )
 		// Both devices changed state; push the new link flags back to the

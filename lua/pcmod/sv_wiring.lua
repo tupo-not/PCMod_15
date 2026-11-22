@@ -37,6 +37,53 @@ function PCMod.Wiring.CanWireSameType( ptype )
 end
 
 // ---------------------------------------------------------------------------------------------------------
+// CreateRopeTable - Creates a PCMod-owned cable and its legacy entity table.
+// Clearing constraint.Type keeps the generic duplicator from creating a second
+// cable; BuildDupeInfo/ApplyDupeInfo restore this one with the logical link.
+// ---------------------------------------------------------------------------------------------------------
+function PCMod.Wiring.CreateRopeTable( srcent, destent, data )
+	data = data || {}
+	local const, rope = constraint.Rope(
+		srcent, destent, data.bone1 || 0, data.bone2 || 0,
+		data.lpos1, data.lpos2, data.length || 0, data.addlength || 0,
+		data.forcelimit || 0, data.width || 1, data.material || "cable/rope",
+		data.rigid == true, data.color
+	)
+	if (IsValid( const )) then const.Type = nil end
+	local rps = {}
+	if (const || rope) then rps = { { const, rope } } end
+	return rps
+end
+
+// Serialize only PCMod-owned ropes. Legacy Type="Rope" constraints remain
+// owned by the generic duplicator for backwards compatibility.
+function PCMod.Wiring.GetRopeData( ropetable, owner )
+	for _, group in pairs( ropetable || {} ) do
+		for _, ent in pairs( group ) do
+			if (IsValid( ent ) && (ent.Type == nil) && ent.LPos1 && ent.LPos2) then
+				local forward = (ent.Ent1 == owner)
+				if (forward || (ent.Ent2 == owner)) then
+					return {
+						bone1 = forward && ent.Bone1 || ent.Bone2,
+						bone2 = forward && ent.Bone2 || ent.Bone1,
+						lpos1 = forward && ent.LPos1 || ent.LPos2,
+						lpos2 = forward && ent.LPos2 || ent.LPos1,
+						length = ent.length,
+						addlength = ent.addlength,
+						forcelimit = ent.forcelimit,
+						width = ent.width,
+						material = ent.material,
+						rigid = ent.rigid,
+						color = ent.color,
+					}
+				end
+			end
+		end
+	end
+	return nil
+end
+
+// ---------------------------------------------------------------------------------------------------------
 // LinkPorts - Links two ports together
 // ---------------------------------------------------------------------------------------------------------
 function PCMod.Wiring.LinkPorts( srcent, srcprt, destent, destprt, ropetable )

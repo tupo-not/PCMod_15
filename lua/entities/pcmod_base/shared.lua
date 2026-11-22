@@ -1839,13 +1839,16 @@ if (SERVER) then
 			end
 			if (self.IsSwitch) then
 				tmp.portmacs = dt.PortMACs
+				tmp.mode = dt.Mode
 			end
-			// Save the logical port links so they can be re-established on paste
-			// (the physical ropes are restored by the duplicator itself).
+			// Save logical links and PCMod-owned cable parameters. Legacy ropes
+			// without serialized data are still restored by the generic duplicator.
 			local links = {}
 			for i, p in pairs( dt.Ports or {} ) do
 				if (p.Connected && p.ConEnt && p.ConEnt:IsValid() && p.ConEnt.IsPCMod) then
-					table.insert( links, { port = i, peer = p.ConEnt:EntIndex(), remote = p.RemotePort } )
+					local link = { port = i, peer = p.ConEnt:EntIndex(), remote = p.RemotePort }
+					if (PCMod.Wiring.GetRopeData) then link.rope = PCMod.Wiring.GetRopeData( p.RopeTable, self ) end
+					table.insert( links, link )
 				end
 			end
 			if (#links > 0) then tmp.links = links end
@@ -1855,6 +1858,9 @@ if (SERVER) then
 		function ENT:ApplyDupeInfo( ply, ent, info, GetEntByID )
 			PCMod.Msg( "==> APPLYING DUPE INFO <==", true )
 			if (!info) then return end
+			// Restore the port medium before links are recreated: an optical
+			// switch must not temporarily fall back to Ethernet ports.
+			if (self.IsSwitch && info.mode) then self:Setup( { Mode = info.mode } ) end
 			local dt = self:Data()
 			if (info.harddrive) then
 				dt.HardDrive = PCMod.StringToTable( info.harddrive ) or {}
@@ -1925,15 +1931,19 @@ if (SERVER) then
 				self:TurnOn()
 			end
 
-			// Re-establish logical port links (the physical ropes are already
-			// restored by the duplicator). We re-wire the ConEnt/RemotePort
-			// bookkeeping and fire the "linked" events so routers and PCs rebuild
-			// their network relationships against the new entities.
+			// Re-establish logical links and PCMod-owned cables. The first
+			// endpoint creates one rope; the second sees the connected ports.
 			if (info.links && GetEntByID && PCMod.Wiring && PCMod.Wiring.LinkPorts) then
 				for _, link in ipairs( info.links ) do
 					local peer = GetEntByID( link.peer )
-					if (peer && peer:IsValid() && peer.IsPCMod) then
-						PCMod.Wiring.LinkPorts( self, link.port, peer, link.remote, nil )
+					local port = self:Ports()[ link.port ]
+					local peerPort = (peer && peer.IsPCMod && peer.Ports) && peer:Ports()[ link.remote ]
+					if (peer && peer:IsValid() && peer.IsPCMod && port && (!port.Connected) && peerPort && (!peerPort.Connected)) then
+						local ropetable
+						if (link.rope && PCMod.Wiring.CreateRopeTable) then
+							ropetable = PCMod.Wiring.CreateRopeTable( self, peer, link.rope )
+						end
+						PCMod.Wiring.LinkPorts( self, link.port, peer, link.remote, ropetable )
 					end
 				end
 			end
