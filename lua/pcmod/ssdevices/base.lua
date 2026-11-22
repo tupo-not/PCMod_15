@@ -525,8 +525,13 @@ DEV.MinH = 0.6
 		PCMod.Msg( "Creating textbox '" .. name .. "'!", true )
 		local tmp = {}
 			tmp.Name = name
-			surface.SetFont( "pcmod_3d2d" )
+			local labelFont = "pcmod_3d2d"
+			if (PCMod.Gui.GetFittedFont) then
+				labelFont = PCMod.Gui.GetFittedFont( text .. " ", labelFont, w * 0.45, h - 2 )
+			end
+			surface.SetFont( labelFont )
 			local tw, th = surface.GetTextSize( text .. " " )
+			tmp.LabelFont = labelFont
 			tmp.BX = x-(w/2)+tw
 			tmp.TX = x-(w/2)
 			tmp.TMX = x-(w/2)+(tw/2)
@@ -764,7 +769,9 @@ DEV.MinH = 0.6
 		surface.DrawRect( x, y, w, h )
 		surface.SetDrawColor( c_bar.r, c_bar.g, c_bar.b, c_bar.a )
 		surface.DrawRect( x, y, w, ch )
-		draw.SimpleText( caption, "pcmod_3d2d", x, y+(ch/2), c_bar_txt, TEXT_ALIGN_LEFT, 1 )
+		local captionFont = "pcmod_3d2d"
+		if (PCMod.Gui.GetFittedFont) then captionFont = PCMod.Gui.GetFittedFont( caption, captionFont, w - 4, ch - 2 ) end
+		draw.SimpleText( caption, captionFont, x, y+(ch/2), c_bar_txt, TEXT_ALIGN_LEFT, 1 )
 		surface.DrawOutline( x, y, w, h, c_bor )
 		surface.DrawLine( x, y+ch, x+w, y+ch )
 	end
@@ -876,7 +883,7 @@ DEV.MinH = 0.6
 				surface.DrawRect( tb.BX, tb.Y, tb.BW, tb.H )
 				surface.DrawOutline( tb.BX, tb.Y, tb.BW, tb.H, c_bor )
 			end
-			draw.SimpleText( tb.Text, font, tb.TX, tb.MY, c_tb_txt, TEXT_ALIGN_LEFT, 1 )
+			draw.SimpleText( tb.Text, tb.LabelFont || font, tb.TX, tb.MY, c_tb_txt, TEXT_ALIGN_LEFT, 1 )
 			draw.SimpleText( txt, font, tb.BX, tb.MY, c_tb_txt, TEXT_ALIGN_LEFT, 1 )
 		end
 		local ch = math.Clamp( th, 0, tb.H ) -- Cursor is not going to be bigger than the textbox! -thomasfn
@@ -928,6 +935,9 @@ DEV.MinH = 0.6
 			for _, name in ipairs( self:GetListboxOrder( lb ) ) do
 				local text = lb.List[ name ]
 				if (i >= o) then
+					// A fitted previous row may have left a smaller font active;
+					// geometry and hit-testing always use the stock row font.
+					surface.SetFont( "pcmod_3d2d" )
 					local tw, th = surface.GetTextSize( text )
 					cy = cy + th
 					if (cy < lb.H) then
@@ -941,10 +951,15 @@ DEV.MinH = 0.6
 						surface.DrawLine( lb.X, lb.Y + ypos + th, lb.X + lb.W, lb.Y + ypos + th )
 						local sa = 0
 						if (lb.ScrollBar) then sa = sbw * 0.5 end
+						local rowFont = "pcmod_3d2d"
+						if (PCMod.Gui.GetFittedFont) then
+							local scrollbarW = lb.ScrollBar && sbw || 0
+							rowFont = PCMod.Gui.GetFittedFont( text, rowFont, lb.W - scrollbarW - 8, th )
+						end
 						if (lb.LeftAlign) then
-							draw.SimpleText( text, "pcmod_3d2d", lb.X + 6, lb.Y + ypos + (th*0.5), tcol, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER )
+							draw.SimpleText( text, rowFont, lb.X + 6, lb.Y + ypos + (th*0.5), tcol, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER )
 						else
-							draw.SimpleText( text, "pcmod_3d2d", lb.MX-sa, lb.Y + ypos + (th*0.5), tcol, 1, 1 )
+							draw.SimpleText( text, rowFont, lb.MX-sa, lb.Y + ypos + (th*0.5), tcol, 1, 1 )
 						end
 						ypos = ypos + th
 					end
@@ -977,7 +992,9 @@ DEV.MinH = 0.6
 	function DEV:RenderFrame( theme, title, x, y, w, h, color )
 		if (PCMod.Gui.ThemeDraw( theme, "frame", title, x, y, w, h, color )) then return end
 		local c_bor = PCMod.Gui.GetThemeColour( theme, "Border" )
-		surface.SetFont( "pcmod_3d2d" )
+		local frameFont = "pcmod_3d2d"
+		if (PCMod.Gui.GetFittedFont) then frameFont = PCMod.Gui.GetFittedFont( title, frameFont, w - 4, h ) end
+		surface.SetFont( frameFont )
 		local tw, th = surface.GetTextSize( title )
 		surface.SetDrawColor( c_bor.r, c_bor.g, c_bor.b, c_bor.a )
 		surface.DrawLine( x, y, x, y+h )
@@ -985,7 +1002,7 @@ DEV.MinH = 0.6
 		surface.DrawLine( x+w, y, x+w, y+h )
 		surface.DrawLine( x, y, x+((w*0.5)-(tw*0.5)), y )
 		surface.DrawLine( x+((w*0.5)+(tw*0.5)), y, x+w, y )
-		draw.SimpleText( title, "pcmod_3d2d", x+(w*0.5), y, color, 1, 1 )
+		draw.SimpleText( title, frameFont, x+(w*0.5), y, color, 1, 1 )
 	end
 	
 // ------------------------------------------------------------------------------------------------------------------------------------------------

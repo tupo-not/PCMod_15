@@ -53,6 +53,7 @@ if (!PCMod_NoInclude) then
 	// ---------------------------------------------------------------------------------------------------------
 
 	include( "pcmod/cl_gui.lua" ) -- Drawing control file
+	include( "pcmod/cl_textfit.lua" ) -- Control-aware font fitting
 	include( "pcmod/cl_ui_widgets.lua" ) -- Widget contract
 	include( "pcmod/cl_2d3d.lua" ) -- 2D 3D drawing file
 	include( "pcmod/cl_rp.lua" ) -- RolePlay control file

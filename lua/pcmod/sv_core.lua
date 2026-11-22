@@ -92,6 +92,7 @@ include( "pcmod/sv_data.lua" ) -- Player data
 
 AddCSLuaFile( "pcmod/cl_core.lua" ) -- Core file
 AddCSLuaFile( "pcmod/cl_gui.lua" ) -- Gui control file
+AddCSLuaFile( "pcmod/cl_textfit.lua" ) -- Fit labels inside their controls
 AddCSLuaFile( "pcmod/cl_vgui.lua" ) -- Vgui control file
 AddCSLuaFile( "pcmod/cl_2d3d.lua" ) -- 2D 3D drawing file
 AddCSLuaFile( "pcmod/cl_rp.lua" ) -- RolePlay mode file

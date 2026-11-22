@@ -54,9 +54,14 @@ function PANEL:Paint()
 		surface.DrawRect( self.X, self.Y, self.W, self.H )
 		surface.DrawOutline( self.X, self.Y, self.W, self.H, c_bor )
 	end
-	// PCMOD15 E2b: label font is theme-selectable (Font_Button);
-	// hit-testing is rect-based, so only the paint changes.
-	draw.SimpleText( self.Text, self:GetThemeFont(), self.MX, self.MY, c_bt_txt, 1, 1 )
+	// Fit the label to the live button rect. Window resizing changes geometry,
+	// but the stock/theme font itself is viewport-scaled and otherwise stays big.
+	local font = self:GetThemeFont()
+	if (PCMod.Gui.GetFittedFont) then
+		local iconW = self.HasIcon && self.H || 0
+		font = PCMod.Gui.GetFittedFont( self.Text, font, self.W - iconW - 4, self.H - 2 )
+	end
+	draw.SimpleText( self.Text, font, self.MX, self.MY, c_bt_txt, 1, 1 )
 	if (self.HasIcon) then
 		local ico = self.Icon
 		local fn = "gui/icons/ico_" .. ico

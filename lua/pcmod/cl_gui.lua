@@ -143,6 +143,7 @@ end
 // ---------------------------------------------------------------------------------------------------------
 function PCMod.Gui.InitFonts()
 	PCMod.Msg( "Creating fonts...", true )
+	if (PCMod.Gui.ResetTextFitCache) then PCMod.Gui.ResetTextFitCache() end
 	// Base size 20 is tuned for the ~400px tall monitor UI. The monitor itself
 	// keeps that size; when the screen is shown fullscreen at native resolution
 	// the font is scaled by the screen height (and cfg.GuiScale) so the UI keeps
@@ -166,6 +167,7 @@ function PCMod.Gui.InitFonts()
 		surface.SetFont( f[ 1 ] )
 		if (surface.GetTextSize( "X" )) then PCMod.Gui.Fonts[ f[ 1 ] ] = true end
 	end
+	if (PCMod.Gui.InitTextFitFonts) then PCMod.Gui.InitTextFitFonts() end
 end
 hook.Add( "Initialize", "PCMod.Gui.InitFonts", PCMod.Gui.InitFonts )
 

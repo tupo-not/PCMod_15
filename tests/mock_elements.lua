@@ -29,7 +29,9 @@ surface = {
     SetTexture = function() end,
     DrawTexturedRect = function() end,
 }
-draw = { SimpleText = function() end }
+draw = { SimpleText = function( text, font )
+    lastLabel = { text = text, font = font }
+end }
 TEXT_ALIGN_CENTER = 1
 TEXT_ALIGN_LEFT = 0
 
@@ -85,5 +87,20 @@ assertTrue( seen.Hover == true, "hover on top device" )
 PCMod.SDraw.Cursor.HoverDevID = "low"
 btn:Paint()
 assertTrue( seen.Hover == false, "no hover through another window" )
+
+-- Labels are fitted against the live rect without changing its hit-box.
+local fitArgs
+PCMod.Gui.GetFittedFont = function( text, font, maxW, maxH )
+    fitArgs = { text = text, font = font, maxW = maxW, maxH = maxH }
+    return "fitted-font"
+end
+btn:SetLayout( 90, 110, 100, 30 )
+btn:Paint()
+assertTrue( fitArgs ~= nil, "button asks the shared fitter for its label" )
+assertEq( fitArgs.maxW, 96, "button leaves horizontal padding" )
+assertEq( fitArgs.maxH, 28, "button leaves vertical padding" )
+assertEq( lastLabel.font, "fitted-font", "button draws with the fitted font" )
+assertEq( btn.W, 100, "font fitting does not change button width" )
+assertEq( btn.H, 30, "font fitting does not change button height" )
 
 print( "ELEMENT GEOMETRY TESTS PASSED" )

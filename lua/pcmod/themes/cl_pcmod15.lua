@@ -193,8 +193,10 @@ function THEME:Draw( id, ... )
 		-- Signature detail: 2px accent underline between title strip and body.
 		self:SetCol( self.Accent_Dim )
 		surface.DrawRect( x, y + ch - 2, w, 2 )
-		-- Hierarchy: bold caption (drawn AND measured only by this theme).
-		draw.SimpleText( caption, self.CaptionFont, x + 4, y + (ch / 2), self.Bar_Text, TEXT_ALIGN_LEFT, 1 )
+		-- Hierarchy: bold caption, fitted to the live title strip.
+		local captionFont = self.CaptionFont
+		if (PCMod.Gui.GetFittedFont) then captionFont = PCMod.Gui.GetFittedFont( caption, captionFont, w - 8, ch - 2 ) end
+		draw.SimpleText( caption, captionFont, x + 4, y + (ch / 2), self.Bar_Text, TEXT_ALIGN_LEFT, 1 )
 		self:SetCol( self.Border )
 		surface.DrawOutline( x, y, w, h )
 		-- Depth: 1px inset shadow along the bottom edge ("sits on the desktop").
@@ -240,7 +242,9 @@ function THEME:Draw( id, ... )
 		-- Bold title = section headers read as structure, not body text.
 		local title, x, y, w, h, color = a1, a2, a3, a4, a5, a6
 		self:EnsureFonts()
-		surface.SetFont( self.CaptionFont )
+		local frameFont = self.CaptionFont
+		if (PCMod.Gui.GetFittedFont) then frameFont = PCMod.Gui.GetFittedFont( title, frameFont, w - 4, h ) end
+		surface.SetFont( frameFont )
 		local tw = surface.GetTextSize( title )
 		self:SetCol( self.Border )
 		surface.DrawLine( x, y, x, y + h )
@@ -248,7 +252,7 @@ function THEME:Draw( id, ... )
 		surface.DrawLine( x + w, y, x + w, y + h )
 		surface.DrawLine( x, y, x + ((w * 0.5) - (tw * 0.5)), y )
 		surface.DrawLine( x + ((w * 0.5) + (tw * 0.5)), y, x + w, y )
-		draw.SimpleText( title, self.CaptionFont, x + (w * 0.5), y, self.Bar_Text, 1, 1 )
+		draw.SimpleText( title, frameFont, x + (w * 0.5), y, self.Bar_Text, 1, 1 )
 		return true
 	end
 
