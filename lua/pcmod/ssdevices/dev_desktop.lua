@@ -15,6 +15,7 @@ DEV.BarSize = 0.06
 
 DEV.BtnSize = 0.06
 DEV.BtnW = 0.12
+DEV.MaxTaskButtons = 4
 
 // Extra hitbox margin around the drawn Start button (fraction of the screen).
 // The taskbar is only BarSize tall and the button sits in the bottom-left
@@ -55,6 +56,8 @@ end
 
 function DEV:UpdateTaskbar()
 	local items = self:GatherTaskItems()
+	self.AllTaskItems = {}
+	for _, item in ipairs( items ) do self.AllTaskItems[ "btn_task_" .. item.ProgName ] = item end
 	// Priorities change on every server focus without changing the button layout.
 	// Refresh item objects before the early return so active/hit logic never sees
 	// stale z-order from the moment the buttons were created.
@@ -74,7 +77,7 @@ function DEV:UpdateTaskbar()
 	end
 	local sigParts = {}
 	for _, item in ipairs( items ) do sigParts[ #sigParts + 1 ] = item.DevID .. "@" .. tostring( item.OpenID ) end
-	local sig = table.concat( sigParts, "|" )
+	local sig = table.concat( sigParts, "|" ) .. "#" .. tostring( self.TaskPage or 0 )
 	if (sig == self.TaskSig) then return end
 	self.TaskSig = sig
 
@@ -84,20 +87,36 @@ function DEV:UpdateTaskbar()
 	self.TaskItems = {}
 	if (#items == 0) then return end
 
+	local pageSize = self.MaxTaskButtons
+	if (#items > pageSize) then pageSize = pageSize - 1 end
+	local pageCount = math.max( 1, math.ceil( #items / pageSize ) )
+	self.TaskPage = self.TaskPage or 0
+	if (self.TaskPage >= pageCount) then self.TaskPage = 0 end
+	local first = (self.TaskPage * pageSize) + 1
+	local last = math.min( #items, first + pageSize - 1 )
+	local visible = {}
+	for i = first, last do visible[ #visible + 1 ] = items[ i ] end
+	if (pageCount > 1) then
+		local item = { ProgName = "more", Title = "+" .. tostring( #items - pageSize), DevID = "taskbar:more", Priority = -1 }
+		visible[ #visible + 1 ] = item
+	end
+
 	local available = self.win_w * (1 - self.BtnW - 0.01)
-	local bw = math.min( self.win_w * 0.18, available / #items )
+	local bw = math.min( self.win_w * 0.18, available / #visible )
 	local x0 = self.win_x + (self.win_w * (self.BtnW + 0.01))
 	local y = self.win_y + (self.win_h * (1 - self.BtnSize))
-	for i, item in ipairs( items ) do
+	for i, item in ipairs( visible ) do
 		local name = "btn_task_" .. item.ProgName
-		self:CreateButton2( self.Th, name, x0 + ((i - 1) * bw), y, bw, self.win_h * self.BtnSize, item.Title, item.Icon )
+		local el = self:CreateButton2( self.Th, name, x0 + ((i - 1) * bw), y, bw, self.win_h * self.BtnSize, item.Title, item.Icon )
+		el.TaskbarRole = "running"
+		el.TaskMinimized = PCMod.SDraw.IsMinimized( item, self.EntID )
 		self.TaskItems[ name ] = item
 	end
 end
 
 function DEV:GetTopTaskItem()
 	local top, topPriority = nil, -1
-	for _, item in pairs( self.TaskItems or {} ) do
+	for _, item in pairs( self.AllTaskItems or self.TaskItems or {} ) do
 		if ((!PCMod.SDraw.IsMinimized( item, self.EntID )) && (item.Priority >= topPriority)) then
 			top = item
 			topPriority = item.Priority
@@ -111,7 +130,10 @@ function DEV:UpdateTaskActive()
 	local topID = top && top.DevID or nil
 	for name, item in pairs( self.TaskItems or {} ) do
 		local el = self.Elements and self.Elements[ name ]
-		if (el) then el.Active = (item.DevID == topID) end
+		if (el) then
+			el.Active = (item.DevID == topID)
+			el.TaskMinimized = PCMod.SDraw.IsMinimized( item, self.EntID )
+		end
 	end
 end
 
@@ -206,6 +228,12 @@ function DEV:ButtonClick( btn )
 		return
 	end
 	local item = self.TaskItems and self.TaskItems[ btn ]
+	if (btn == "btn_task_more") then
+		self.TaskPage = (self.TaskPage or 0) + 1
+		self.TaskSig = nil
+		self:UpdateTaskbar()
+		return
+	end
 	if (item) then
 		local minimized = PCMod.SDraw.IsMinimized( item, self.EntID )
 		local top = self:GetTopTaskItem()

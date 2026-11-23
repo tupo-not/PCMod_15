@@ -118,4 +118,20 @@ assertEq( desktop.TaskItems[ "btn_task_files" ], nil, "closed program leaves the
 assertEq( desktop.Elements[ "btn_task_files" ], nil, "closed program button is removed" )
 assertEq( PCMod.SDraw.Minimized[ 42 ][ win.DevID ], nil, "closed program cleans minimized state" )
 
+-- More than four programs are split into pages. +N cycles them without
+-- rebuilding unrelated controls or losing the full active-window set.
+PCMod.SDraw.SSpaces[ 42 ].window_alarmz = app( "alarmz", "AlarmZ" )
+PCMod.SDraw.SSpaces[ 42 ].window_chatserv = app( "chatserv", "ChatServ" )
+PCMod.SDraw.SSpaces[ 42 ].window_pplayer = app( "pplayer", "Personal Player" )
+desktop:Tick()
+assertEq( count( desktop.AllTaskItems ), 5, "all programs remain available to active logic" )
+assertEq( count( desktop.TaskItems ), 4, "first page shows three apps plus overflow" )
+assertTrue( desktop.Elements[ "btn_task_more" ] != nil, "overflow button exists" )
+assertEq( desktop.Elements[ "btn_task_more" ].Text, "+2", "overflow counts programs on other pages" )
+desktop:ButtonClick( "btn_task_more" )
+assertEq( desktop.TaskPage, 1, "overflow advances to the next page" )
+assertTrue( desktop.TaskItems[ "btn_task_notepad" ] != nil, "next page contains the remaining programs" )
+desktop:ButtonClick( "btn_task_more" )
+assertEq( desktop.TaskPage, 0, "overflow wraps to the first page" )
+
 print( "mock_running PASSED" )

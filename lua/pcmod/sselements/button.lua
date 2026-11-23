@@ -54,6 +54,36 @@ function PANEL:Paint()
 		surface.DrawRect( self.X, self.Y, self.W, self.H )
 		surface.DrawOutline( self.X, self.Y, self.W, self.H, c_bor )
 	end
+	// Running-program taskbar buttons use a compact icon+label layout. Other
+	// buttons keep the original centered-label rendering.
+	if (self.TaskbarRole == "running") then
+		local textCol = c_bt_txt
+		if (self.TaskMinimized) then textCol = self:GetCol( "Button_Text_Locked" ) end
+		local textX = self.X + 4
+		if (self.HasIcon) then textX = self.X + self.H + 2 end
+		local font = self:GetThemeFont()
+		if (PCMod.Gui.GetFittedFont) then
+			font = PCMod.Gui.GetFittedFont( self.Text, font, (self.X + self.W) - textX - 4, self.H - 2 )
+		end
+		draw.SimpleText( self.Text, font, textX, self.MY, textCol, TEXT_ALIGN_LEFT, 1 )
+		if (self.HasIcon) then
+			local sid = PCMod.Res.Mats[ "gui/icons/ico_" .. self.Icon ]
+			if (sid) then
+				local iconCol = PCMod.Gui.GetThemeColour( self:GetTheme(), "Icon_Tint", Color( 255, 255, 255, 255 ) )
+				if (self.TaskMinimized) then iconCol = self:GetCol( "Button_Text_Locked" ) end
+				surface.SetTexture( sid )
+				surface.SetDrawColor( iconCol.r, iconCol.g, iconCol.b, iconCol.a )
+				surface.DrawTexturedRect( self.X + 2, self.Y + 2, self.H - 4, self.H - 4 )
+			end
+		end
+		if (self.Active) then
+			local accent = self:GetCol( "ButtonBG_Active" )
+			surface.SetDrawColor( accent.r, accent.g, accent.b, accent.a )
+			surface.DrawRect( self.X, self.Y + self.H - 2, self.W, 2 )
+		end
+		return
+	end
+
 	// Fit the label to the live button rect. Window resizing changes geometry,
 	// but the stock/theme font itself is viewport-scaled and otherwise stays big.
 	local font = self:GetThemeFont()
@@ -71,9 +101,9 @@ function PANEL:Paint()
 		if (sid) then
 			surface.SetTexture( sid )
 			// PCMOD15 E2: icons may be tinted by the theme (Icon_Tint).
-			// GetCol falls back to white, so themes without the key
-			// render exactly as before.
-			local c_ico = self:GetCol( "Icon_Tint" )
+			// GetThemeColour falls back to white, so themes without the key keep
+			// readable icons even when their button text is black.
+			local c_ico = PCMod.Gui.GetThemeColour( self:GetTheme(), "Icon_Tint", Color( 255, 255, 255, 255 ) )
 			surface.SetDrawColor( c_ico.r, c_ico.g, c_ico.b, c_ico.a )
 			surface.DrawTexturedRect( self.X, self.Y, self.H, self.H ) -- Yes, self.H is repeated on purpose
 		end

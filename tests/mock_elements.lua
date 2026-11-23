@@ -6,7 +6,7 @@ PCMod = {
     Gui = {
         Themes = {},
         ThemeDraw = function() return false end,
-        GetThemeColour = function() return Color( 0, 0, 0, 255 ) end,
+        GetThemeColour = function( theme, key, default ) return default or Color( 0, 0, 0, 255 ) end,
     },
     SSEL = { Bases = {}, BaseLoaded = false },
 }
@@ -23,14 +23,22 @@ function Color( r, g, b, a ) return { r = r, g = g, b = b, a = a or 255 } end
 surface = {
     SetFont = function() end,
     GetTextSize = function( t ) return #tostring( t ) * 6, 10 end,
-    SetDrawColor = function() end,
-    DrawRect = function() end,
+    SetDrawColor = function( r, g, b, a )
+        lastColor = { r = r, g = g, b = b, a = a }
+        table.insert( colorHistory, lastColor )
+    end,
+    DrawRect = function( x, y, w, h )
+        table.insert( paintedRects, { x = x, y = y, w = w, h = h } )
+    end,
     DrawOutline = function() end,
     SetTexture = function() end,
-    DrawTexturedRect = function() end,
+    DrawTexturedRect = function( x, y, w, h )
+        lastIcon = { x = x, y = y, w = w, h = h }
+    end,
 }
-draw = { SimpleText = function( text, font )
-    lastLabel = { text = text, font = font }
+paintedRects = {}
+draw = { SimpleText = function( text, font, x, y, col, align )
+    lastLabel = { text = text, font = font, x = x, y = y, col = col, align = align }
 end }
 TEXT_ALIGN_CENTER = 1
 TEXT_ALIGN_LEFT = 0
@@ -102,5 +110,39 @@ assertEq( fitArgs.maxH, 28, "button leaves vertical padding" )
 assertEq( lastLabel.font, "fitted-font", "button draws with the fitted font" )
 assertEq( btn.W, 100, "font fitting does not change button width" )
 assertEq( btn.H, 30, "font fitting does not change button height" )
+
+-- Taskbar-specific rendering: left icon/label, active rail and dim minimized text.
+colorHistory = {}
+PCMod.Res = { Mats = { [ "gui/icons/ico_app" ] = 1 } }
+btn.HasIcon = true
+btn.Icon = "app"
+btn.TaskbarRole = "running"
+btn.Active = true
+btn.TaskMinimized = false
+btn:SetLayout( 10, 20, 100, 30 )
+btn:Paint()
+assertEq( lastLabel.x, 42, "taskbar label sits after the icon" )
+assertEq( lastLabel.align, TEXT_ALIGN_LEFT, "taskbar label is left aligned" )
+assertTrue( lastIcon ~= nil and lastIcon.x == 12 and lastIcon.y == 22 and lastIcon.w == 26 and lastIcon.h == 26, "taskbar icon uses a compact padded square" )
+local iconTint = colorHistory[ #colorHistory - 1 ]
+assertEq( iconTint.r, 255, "icon tint falls back to white instead of Basic black text" )
+assertEq( iconTint.g, 255, "icon tint fallback stays neutral" )
+assertEq( iconTint.b, 255, "white icon fallback is not derived from button text" )
+local rail = paintedRects[ #paintedRects ]
+assertTrue( rail ~= nil and rail.y == 48 and rail.h == 2 and rail.w == 100, "active taskbar button has a bottom accent rail" )
+PCMod.Gui.GetThemeColour = function( theme, key, default )
+    if key == "Button_Text_Locked" then return { r = 111, g = 112, b = 113, a = 255 } end
+    if key == "Icon_Tint" then return default end
+    return Color( 0, 0, 0, 255 )
+end
+btn.TaskMinimized = true
+btn:Paint()
+assertEq( lastLabel.col.r, 111, "minimized label uses the locked/dim text colour" )
+iconTint = colorHistory[ #colorHistory - 1 ]
+assertEq( iconTint.r, 111, "minimized icon is dimmed independently of normal icon tint" )
+btn.TaskbarRole = nil
+btn.TaskMinimized = false
+btn:Paint()
+assertEq( lastColor.r, 255, "ordinary All Programs icons also use the white fallback" )
 
 print( "ELEMENT GEOMETRY TESTS PASSED" )
