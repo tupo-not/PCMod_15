@@ -32,10 +32,12 @@ PCMod.SDraw.Minimized = {}
 function PCMod.SDraw.IsMinimized( device, entid )
 	if ((!device) || (!device.ProgName) || (!device.DevID)) then return false end
 	local perEnt = PCMod.SDraw.Minimized && PCMod.SDraw.Minimized[ entid ]
-	local rec = perEnt && perEnt[ device.DevID ]
+	local rec = perEnt && (perEnt[ device.DevID ] || perEnt[ "prog:" .. device.ProgName ])
 	if (!rec) then return false end
-	if (device.OpenID && rec.OpenID && (device.OpenID != rec.OpenID)) then
+	if ((device.OpenID && rec.OpenID && (device.OpenID != rec.OpenID)) ||
+		(device.ActivateID && rec.ActivateID && (device.ActivateID != rec.ActivateID))) then
 		perEnt[ device.DevID ] = nil
+		perEnt[ "prog:" .. device.ProgName ] = nil
 		return false
 	end
 	return true
@@ -45,10 +47,13 @@ function PCMod.SDraw.SetMinimized( device, entid, minimized )
 	if ((!device) || (!device.ProgName) || (!device.DevID)) then return end
 	PCMod.SDraw.Minimized[ entid ] = PCMod.SDraw.Minimized[ entid ] or {}
 	if (minimized) then
-		PCMod.SDraw.Minimized[ entid ][ device.DevID ] = { OpenID = device.OpenID }
+		local rec = { OpenID = device.OpenID, ActivateID = device.ActivateID }
+		PCMod.SDraw.Minimized[ entid ][ device.DevID ] = rec
+		PCMod.SDraw.Minimized[ entid ][ "prog:" .. device.ProgName ] = rec
 		if (PCMod.SDraw.DevFocus == string.match( device.DevID, ":(.+)$" )) then PCMod.SDraw.DevFocus = "" end
 	else
 		PCMod.SDraw.Minimized[ entid ][ device.DevID ] = nil
+		PCMod.SDraw.Minimized[ entid ][ "prog:" .. device.ProgName ] = nil
 	end
 end
 

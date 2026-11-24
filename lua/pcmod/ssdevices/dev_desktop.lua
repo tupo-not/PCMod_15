@@ -39,10 +39,15 @@ function DEV:GatherTaskItems()
 				Icon = dev.AppIcon,
 				DevID = dev.DevID or (tostring( entid ) .. ":" .. tostring( key )),
 				OpenID = dev.OpenID,
+				ActivateID = dev.ActivateID,
+				AppMain = (dev.AppMain == true),
 				Priority = dev.Priority or 0,
 			}
 			local old = byName[ item.ProgName ]
-			if ((!old) || (item.Priority > old.Priority)) then byName[ item.ProgName ] = item end
+			local replace = (!old)
+			if (old && item.AppMain && (!old.AppMain)) then replace = true end
+			if (old && (item.AppMain == old.AppMain) && (item.Priority > old.Priority)) then replace = true end
+			if (replace) then byName[ item.ProgName ] = item end
 		end
 	end
 	local items = {}
@@ -97,7 +102,7 @@ function DEV:UpdateTaskbar()
 	local visible = {}
 	for i = first, last do visible[ #visible + 1 ] = items[ i ] end
 	if (pageCount > 1) then
-		local item = { ProgName = "more", Title = "+" .. tostring( #items - pageSize), DevID = "taskbar:more", Priority = -1 }
+		local item = { ProgName = "more", Title = "+" .. tostring( #items - #visible ), DevID = "taskbar:more", Priority = -1 }
 		visible[ #visible + 1 ] = item
 	end
 

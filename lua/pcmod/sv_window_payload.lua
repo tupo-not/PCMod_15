@@ -37,6 +37,8 @@ function P.Stamp( prog, spec, data )
 	data.ProgName = prog.Name
 	data.AppTitle = prog.Title or prog.Name
 	data.AppIcon = prog.Icon or "app"
+	data.AppMain = (spec.Key == prog.DeviceName)
+	data.ActivateID = prog.ActivateID or 0
 	data.WindowDrag = (spec.Drag == true)
 	data.WindowResize = (spec.Resize == true)
 	data.MinW = tonumber( spec.MinW ) or 0.5

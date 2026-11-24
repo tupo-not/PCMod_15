@@ -21,17 +21,19 @@ local function count( t ) local n = 0 for _ in pairs( t ) do n = n + 1 end retur
 local function app( prog, title, openid )
 	return {
 		Type = "window_" .. prog, ProgName = prog, AppTitle = title,
-		DevID = "42:window_" .. prog, OpenID = openid or 1,
+		DevID = "42:window_" .. prog, OpenID = openid or 1, ActivateID = 1, AppMain = true,
 		X = 0, Y = 0, W = 0.5, H = 0.5, Priority = 5,
 	}
 end
 
 function PCMod.SDraw.IsMinimized( device, entid )
 	local perEnt = PCMod.SDraw.Minimized[ entid ]
-	local rec = perEnt && perEnt[ device.DevID ]
+	local rec = perEnt && (perEnt[ device.DevID ] || perEnt[ "prog:" .. device.ProgName ])
 	if (!rec) then return false end
-	if (device.OpenID && rec.OpenID && (device.OpenID != rec.OpenID)) then
+	if ((device.OpenID && rec.OpenID && (device.OpenID != rec.OpenID)) ||
+		(device.ActivateID && rec.ActivateID && (device.ActivateID != rec.ActivateID))) then
 		perEnt[ device.DevID ] = nil
+		perEnt[ "prog:" .. device.ProgName ] = nil
 		return false
 	end
 	return true
@@ -39,10 +41,13 @@ end
 function PCMod.SDraw.SetMinimized( device, entid, minimized )
 	PCMod.SDraw.Minimized[ entid ] = PCMod.SDraw.Minimized[ entid ] or {}
 	if (minimized) then
-		PCMod.SDraw.Minimized[ entid ][ device.DevID ] = { OpenID = device.OpenID }
+		local rec = { OpenID = device.OpenID, ActivateID = device.ActivateID }
+		PCMod.SDraw.Minimized[ entid ][ device.DevID ] = rec
+		PCMod.SDraw.Minimized[ entid ][ "prog:" .. device.ProgName ] = rec
 		if (PCMod.SDraw.DevFocus == string.match( device.DevID, ":(.+)$" )) then PCMod.SDraw.DevFocus = "" end
 	else
 		PCMod.SDraw.Minimized[ entid ][ device.DevID ] = nil
+		PCMod.SDraw.Minimized[ entid ][ "prog:" .. device.ProgName ] = nil
 	end
 end
 
@@ -99,6 +104,23 @@ assertEq( cmd[ 2 ], "prog_command", "restore targets the program command" )
 assertEq( cmd[ 3 ], "files", "restore targets the correct program" )
 assertEq( cmd[ 4 ], "focus", "restore requests focus" )
 
+-- Auxiliary pickers never replace the main program taskbar identity.
+PCMod.SDraw.SSpaces[ 42 ].win_notepad_openfile = app( "notepad", "Notepad" )
+PCMod.SDraw.SSpaces[ 42 ].win_notepad_openfile.DevID = "42:win_notepad_openfile"
+PCMod.SDraw.SSpaces[ 42 ].win_notepad_openfile.AppMain = false
+PCMod.SDraw.SSpaces[ 42 ].win_notepad_openfile.Priority = 240
+desktop:Tick()
+assertEq( desktop.TaskItems[ "btn_task_notepad" ].DevID, "42:window_notepad", "picker does not steal the main taskbar identity" )
+PCMod.SDraw.SetMinimized( desktop.TaskItems[ "btn_task_notepad" ], 42, true )
+assertTrue( PCMod.SDraw.IsMinimized( PCMod.SDraw.SSpaces[ 42 ].win_notepad_openfile, 42 ), "main task minimizes auxiliary pickers too" )
+PCMod.SDraw.SetMinimized( desktop.TaskItems[ "btn_task_notepad" ], 42, false )
+
+-- Server activation restores a minimized program without changing OpenID.
+local activated = PCMod.SDraw.SSpaces[ 42 ].window_notepad
+PCMod.SDraw.SetMinimized( activated, 42, true )
+activated.ActivateID = 2
+assertTrue( not PCMod.SDraw.IsMinimized( activated, 42 ), "new ActivateID restores the minimized program" )
+
 -- Server focus changes do not rebuild the layout, but must refresh active state.
 PCMod.SDraw.SSpaces[ 42 ].window_notepad.Priority = 20
 desktop:Tick()
@@ -131,6 +153,7 @@ assertEq( desktop.Elements[ "btn_task_more" ].Text, "+2", "overflow counts progr
 desktop:ButtonClick( "btn_task_more" )
 assertEq( desktop.TaskPage, 1, "overflow advances to the next page" )
 assertTrue( desktop.TaskItems[ "btn_task_notepad" ] != nil, "next page contains the remaining programs" )
+assertEq( desktop.Elements[ "btn_task_more" ].Text, "+3", "later page counts programs on the other pages" )
 desktop:ButtonClick( "btn_task_more" )
 assertEq( desktop.TaskPage, 0, "overflow wraps to the first page" )
 

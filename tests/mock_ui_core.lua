@@ -98,6 +98,8 @@ assertEq( payload.Data.Hello, "world", "payload prepare ran" )
 assertEq( payload.Data.ProgName, "demo", "payload prog name" )
 assertEq( payload.Data.AppTitle, "Demo Program", "payload taskbar title" )
 assertEq( payload.Data.AppIcon, "harddrive", "payload taskbar icon" )
+assertEq( payload.Data.AppMain, true, "main program window is marked" )
+assertEq( payload.Data.ActivateID, 0, "activation generation starts at zero" )
 assertEq( payload.Data.WindowDrag, true, "payload drag" )
 assertEq( payload.Data.WindowResize, true, "payload resize" )
 assertNear( payload.Data.MinW, 0.55, "payload min width" )
@@ -110,6 +112,8 @@ server.OS = "server"
 local sp = PCMod.WindowPayload.Build( server, {} )
 assertEq( sp.Data.WindowDrag, false, "server windows do not drag" )
 assertEq( sp.Data.WindowResize, false, "server windows do not resize" )
+local auxiliary = PCMod.WindowPayload.Build( prog, { Key = "win_demo_picker" } )
+assertEq( auxiliary.Data.AppMain, false, "auxiliary picker is not the main program window" )
 
 -- Widget registry -----------------------------------------------------------
 local W = PCMod.UI.Widgets

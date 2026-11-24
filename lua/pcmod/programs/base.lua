@@ -48,6 +48,7 @@ end
 // Original start / stop / state management
 // ------------------------------------------------------------------------------------------------
 function PROG:Start()
+	self.ActivateID = (self.ActivateID or 0) + 1
 	// Already running: bring the existing window to the front instead of
 	// resetting the program (this is what makes multi-window switching work
 	// from the Start menu and from other programs).

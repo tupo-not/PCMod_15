@@ -32,6 +32,7 @@ local function assertTrue( v, msg ) if (!v) then error( "FAILED: " .. msg, 2 ) e
 
 local text = "Set PCMod 1.5 Theme"
 local initializedCount = createCount
+assertTrue( initializedCount <= 30, "font initialization uses a small quantized set" )
 assertEq( PCMod.Gui.GetFittedFont( text, "pcmod15_button", 400, 30 ), "pcmod15_button", "large rect keeps the theme font" )
 assertEq( createCount, initializedCount, "large rect creates no font during paint" )
 
@@ -50,6 +51,6 @@ PCMod.Gui.ResetTextFitCache()
 local afterReset = createCount
 assertEq( PCMod.Gui.GetFittedFont( text, "pcmod15_button", 180, 14 ), fitted, "reset only clears measurement cache" )
 assertEq( createCount, afterReset, "font objects are not recreated after cache reset" )
-assertEq( PCMod.Gui.GetFittedFont( text, "pcmod15_button", 0, 14 ), "pcmod15_button", "invalid rect falls back safely" )
+assertEq( PCMod.Gui.GetFittedFont( text, "pcmod15_button", 0, 14 ), "pcmod_fit_pcmod15_button_6", "invalid rect uses the smallest fitted variant" )
 
 print( "mock_textfit PASSED" )
