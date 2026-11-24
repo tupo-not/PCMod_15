@@ -396,7 +396,7 @@ function traceEnt:GetSubnet() return 5 end
 function traceEnt:GetFullIP() return "192.168.5.1" end
 function traceEnt:GetBSubnet() return 3 end
 function traceEnt:GetFullBIP() return "10.0.1.5" end
-function traceEnt:IsAddressedTo( a ) return a == "10.0.1.4" end
+function traceEnt:IsAddressedTo( a ) return a == "100.0.3.5" end
 traceDrv.Entity = traceEnt
 local traceSent
 traceDrv.Process = function( self, data ) traceSent = data return true end
@@ -428,12 +428,12 @@ assertEq( traceSent[ 2 ][ 3 ], 40003, "WAN hop keeps the source port for NAT" )
 -- A probe addressed to the router itself is the final hop.
 traceSent = nil
 PCMod.Network.Packets[ 301 ] = {
-	Source = "10.0.1.3", Dest = "10.0.1.4", Port = 0, SourcePort = 40002,
+	Source = "10.0.1.3", Dest = "100.0.3.5", Port = 0, SourcePort = 40002,
 	Body = { "netTrace", "nettools", 2, 3 }, TTL = 1, Delivered = false,
 }
 traceDrv:ProcessPacket( 301, nil, "wan" )
 assertTrue( traceSent and traceSent[ 2 ][ 4 ][ 1 ] == "netTraceResponse", "router answers a trace probe to itself" )
-assertEq( traceSent[ 2 ][ 1 ], "10.0.1.4", "trace reply comes from the traced address" )
+assertEq( traceSent[ 2 ][ 1 ], "100.0.3.5", "trace reply comes from the traced WAN address" )
 assertEq( traceSent[ 2 ][ 2 ], "10.0.1.3", "trace reply goes to the probe source" )
 assertEq( traceSent[ 2 ][ 3 ], 40002, "trace reply preserves the source port" )
 
@@ -602,6 +602,8 @@ assertTrue( not bdrv:BackboneWebAllowed( "fd00:7::c" ), "backbone pool IPv6 is b
 assertTrue( not bdrv:BackboneWebAllowed( "fd00:0:0:1::5" ), "LAN IPv6 sources are blocked from the panel" )
 assertTrue( bdrv:BackboneWebAllowed( "::1" ), "loopback may open the panel" )
 assertTrue( not bdrv:BackboneWebAllowed( "10.0.0.5" ), "LAN sources cannot open the backbone panel" )
+assertTrue( bdrv:BackboneWebAllowed( "100.0.7.1", "lan" ), "management ingress may open the panel" )
+assertTrue( not bdrv:BackboneWebAllowed( "100.0.7.1", "wan" ), "management source IP cannot bypass ingress checks" )
 local mgmtpage2 = bdrv:GetWebPage( "/lan" )
 assertTrue( string.find( mgmtpage2, "blocked from this panel", 1, true ) ~= nil, "management page documents the web guard" )
 
@@ -753,6 +755,11 @@ webCalled = false
 got = runPacket( 422, "fd00:4::9", "::ffff:10.20.0.1", 80, "wan", { "http", "/" } )
 assertEq( #got, 0, "mapped IPv4 LAN gateway is not exposed to the WAN" )
 assertTrue( not webCalled, "mapped LAN admin page is not served over the WAN" )
+
+-- A private IPv4 host behind the LAN is equally protected from unsolicited WAN
+-- traffic; recursive NAT translations with side=nil are unaffected.
+got = runPacket( 424, "100.0.4.9", "10.20.0.2", 72, "wan" )
+assertEq( #got, 0, "private IPv4 host is not exposed to unsolicited WAN traffic" )
 
 -- The router's WAN identity stays reachable (it is not inside the LAN /64).
 local pingReplies = {}

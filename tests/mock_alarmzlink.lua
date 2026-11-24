@@ -197,6 +197,14 @@ PCMod.Alarmz.SetPass( plyB, 11, "" )
 assertEq( lastResult()[ 1 ], false, "non-owner cannot remove password" )
 assertTrue( entry.hash != nil, "password survives non-owner removal attempt" )
 
+-- 7b. protected camera cannot be disconnected by an unauthenticated player.
+local stranger = MakePly( "STEAM_STRANGER" )
+PCMod.Alarmz.Disconnect( stranger, 11, 0 )
+assertEq( lastResult()[ 1 ], false, "unauthenticated disconnect is rejected" )
+assertTrue( entry.links[ 31 ] == true, "unauthenticated disconnect leaves the link intact" )
+PCMod.Alarmz.SetPass( farPly, 11, "remote" )
+assertEq( lastResult()[ 1 ], false, "owner cannot change password from out of range" )
+
 -- 8. owner leaving does not weaken the password (hash stays, checks still enforced)
 plyA._valid = false
 assertTrue( PCMod.Alarmz.CheckPass( entry, "secret" ) == true, "owner offline: correct pass still works" )

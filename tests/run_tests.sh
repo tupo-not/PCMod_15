@@ -90,6 +90,7 @@ TESTS=(
     mock_progmenu
     mock_textfit
     mock_running
+    mock_pcwire
 )
 
 # Allow narrowing to a single suite: ./run_tests.sh mock_fs

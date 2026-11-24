@@ -10,6 +10,17 @@ DRV.Type = "control"
 
 DRV.NextUpdate = 0
 
+local function DebugCommandAllowed( ply )
+	return IsValid( ply ) && ply:IsAdmin()
+end
+
+local BIOS_PUBLIC_COMMANDS = {
+	[ "waitcommand" ] = true,
+	[ "os:instance" ] = true,
+	[ "os:launch" ] = true,
+	[ "shutdown" ] = true,
+}
+
 function DRV:Initialize()
 	if (!self.Entity) then return end
 	
@@ -63,12 +74,17 @@ function DRV:CallEvent( data )
 		local dat = data[2]
 		local com = dat[1]
 		table.remove( dat, 1 )
+		// These debug/destructive commands are not part of normal PC use. Never
+		// accept them from a nearby unprivileged client, even on a password screen.
+		if (((com == "force_bsod") || (com == "file_dump") || (com == "write_file") || (com == "clear_os")) && (!DebugCommandAllowed( data[1] ))) then return end
 		if (com == "force_bsod") then
 			self:SetState( 8 )
 			return
 		end
 		if (com == "bios_command") then
-			self:Exec( table.concat( dat, " " ) )
+			local command = table.concat( dat, " " )
+			if (!BIOS_PUBLIC_COMMANDS[ command ]) then return end
+			self:Exec( command )
 			return
 		end
 		if (com == "os_command") then

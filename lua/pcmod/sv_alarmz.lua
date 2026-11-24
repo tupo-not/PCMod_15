@@ -238,9 +238,17 @@ function PCMod.Alarmz.Disconnect( ply, camIdx, monIdx )
 		PCMod.Alarmz.SendResult( ply, false, "Camera too far away", camIdx, false )
 		return
 	end
+	if (!PCMod.Alarmz.CanBypassPass( entry, ply )) then
+		PCMod.Alarmz.SendResult( ply, false, "Wrong camera password", camIdx, false )
+		return
+	end
 	local pcIdx = 0
 	if (monIdx && (monIdx != 0)) then
 		local mon = ents.GetByIndex( monIdx )
+		if (IsValid( mon ) && (!PCMod.Alarmz.InRange( ply, mon ))) then
+			PCMod.Alarmz.SendResult( ply, false, "Screen too far away", camIdx, false )
+			return
+		end
 		local pc = PCMod.Alarmz.ResolvePC( mon )
 		if (pc) then pcIdx = pc:EntIndex() end
 	else
@@ -263,6 +271,10 @@ end
 function PCMod.Alarmz.SetPass( ply, camIdx, pass )
 	local entry = PCMod.Alarmz.CamEntry( camIdx )
 	if ((!IsValid( ply )) || (!entry) || (!PCMod.Alarmz.CamEnt( camIdx ))) then return end
+	if (!PCMod.Alarmz.InRange( ply, PCMod.Alarmz.CamEnt( camIdx ) )) then
+		PCMod.Alarmz.SendResult( ply, false, "Camera too far away", camIdx, false )
+		return
+	end
 	if (entry.ownerID != ply:SteamID()) then
 		PCMod.Alarmz.SendResult( ply, false, "Only the camera owner can change the password", camIdx, false )
 		return

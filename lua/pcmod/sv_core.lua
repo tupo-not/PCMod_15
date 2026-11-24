@@ -11,7 +11,7 @@
 
 PCMod = {} -- Main table
 PCMod.Exists = true -- Internal checking
-PCMod.Version = "2.0.4" -- 'Nice' version
+PCMod.Version = "NEXT 1.0.0" -- 'Nice' version
 PCMod.IntVer = "Release" -- Internal version
 PCMod.Data = {} -- Data storage table for entities
 
@@ -404,8 +404,16 @@ concommand.Add( "pc_run", PCMod.PC_Run )
 function PCMod.Locked( ply, com, args )
 	local svm = tonumber( args[1] )
 	if (svm == nil) then return end -- Unvalidated input must not silently toggle lock
-	ply:DrawViewModel( svm == 0 )
-	ply:Freeze( svm == 1 )
+	if (svm == 1) then
+		ply:DrawViewModel( false )
+		ply:Freeze( true )
+		ply.PCModLocked = true
+	elseif (ply.PCModLocked) then
+		// Release only the lock owned by PCMod, never an admin/gameplay freeze.
+		ply:DrawViewModel( true )
+		ply:Freeze( false )
+		ply.PCModLocked = nil
+	end
 end
 concommand.Add( "pc_locked", PCMod.Locked )
 

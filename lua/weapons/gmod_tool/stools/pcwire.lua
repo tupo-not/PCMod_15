@@ -36,6 +36,24 @@ TOOL.ScrollablePCWire = true
 // ---------------------------------------------------------------------------------------------------------
 if (SERVER) then
 
+	local function PCWireAllowed( ply, ent )
+		if ((!IsValid( ply )) || (!ply:IsPlayer())) then return false end
+		local tool = ply:GetTool()
+		if ((!tool) || (!tool.GetMode) || (tool:GetMode() != "pcwire")) then return false end
+		if ((!IsValid( ent )) || (!ent.IsPCMod)) then return false end
+		local reach = (PCMod.Cfg && PCMod.Cfg.ReachDistance) or 256
+		if ((ply:GetPos() - ent:GetPos()):Length() > reach) then return false end
+		if (ply.IsLineOfSightClear && (!ply:IsLineOfSightClear( ent ))) then return false end
+		return true
+	end
+
+	local function PCWireRateAllowed( ply )
+		local now = CurTime()
+		if ((ply._pcmodWireNext || 0) > now) then return false end
+		ply._pcmodWireNext = now + 0.15
+		return true
+	end
+
 	// In single player the toolgun does not fire LeftClick/RightClick/Reload on
 	// the client side (Wiremod's "wtfgarry" workaround); forward them so the
 	// client-side HUD tool still reacts.
@@ -57,17 +75,16 @@ if (SERVER) then
 	util.AddNetworkString( "pcmod_reqports" )
 	net.Receive( "pcmod_reqports", function( len, ply )
 		local ent = net.ReadEntity()
-		if ((IsValid( ent )) && (ent.IsPCMod)) then
+		if (PCWireAllowed( ply, ent ) && PCWireRateAllowed( ply )) then
 			PC_BeamPorts( ent, ply )
 		end
 	end )
 
 	util.AddNetworkString( "pcwire_unlink" )
 	net.Receive( "pcwire_unlink", function( len, ply )
-		if ((!ply) || (!ply:IsPlayer())) then return end
 		local ent = net.ReadEntity()
 		local port = net.ReadUInt( 8 )
-		if ((!IsValid( ent )) || (!ent.IsPCMod)) then return end
+		if ((!PCWireAllowed( ply, ent )) || (!PCWireRateAllowed( ply ))) then return end
 		local prt = ent:Ports()[ port ]
 		if ((!prt) || (!prt.Connected)) then return end
 		local other = prt.ConEnt
@@ -82,7 +99,6 @@ if (SERVER) then
 
 	util.AddNetworkString( "pcwire_upload" )
 	net.Receive( "pcwire_upload", function( len, ply )
-		if ((!ply) || (!ply:IsPlayer())) then return end
 		local ent1 = net.ReadEntity()
 		local port1 = net.ReadUInt( 8 )
 		local ent2 = net.ReadEntity()
@@ -95,6 +111,8 @@ if (SERVER) then
 		local g = net.ReadUInt( 8 )
 		local b = net.ReadUInt( 8 )
 
+		if ((!PCWireAllowed( ply, ent1 )) || (!PCWireAllowed( ply, ent2 )) || (!PCWireRateAllowed( ply ))) then return end
+		if (ent1 == ent2) then PCMod.Notice( "Cannot wire: same entity", ply ) return end
 		// Snap both ends onto the models' hardcoded connector points (when the
 		// clicked spot is close enough) so the rope leaves from the socket.
 		if (PCMod.PortAnchors && PCMod.PortAnchors.Resolve) then
@@ -103,9 +121,6 @@ if (SERVER) then
 		end
 
 		// Validate everything server-side (never trust the client).
-		if ((!IsValid( ent1 )) || (!IsValid( ent2 ))) then PCMod.Notice( "Cannot wire: invalid entity", ply ) return end
-		if ((!ent1.IsPCMod) || (!ent2.IsPCMod)) then PCMod.Notice( "Cannot wire: not a PCMod entity", ply ) return end
-		if (ent1 == ent2) then PCMod.Notice( "Cannot wire: same entity", ply ) return end
 		local p1 = ent1:Ports()[ port1 ]
 		local p2 = ent2:Ports()[ port2 ]
 		if ((!p1) || (!p2)) then PCMod.Notice( "Cannot wire: bad port", ply ) return end

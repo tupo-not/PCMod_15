@@ -491,6 +491,9 @@ function DRV:ProcessPacket( pid, pass, side, generation )
 		if ((!lanTarget) && PCMod.IPv6.IsIPv6( packet.Dest )) then
 			lanTarget = self:IsLanIPv6( packet.Dest )
 		end
+		// Private IPv4 hosts need the same WAN boundary as the LAN /64. NAT
+		// translations recurse with side=nil and therefore stay unaffected.
+		if ((!lanTarget) && PCMod.IPv4.ParseLan( packet.Dest )) then lanTarget = true end
 		if (lanTarget && (!self:WanToLanAllowed( packet ))) then
 			PCMod.Msg( "[webgr]WAN -> LAN ingress blocked for " .. tostring( packet.Dest ), true )
 			PCMod.Network.DropPacket( pid )
@@ -567,7 +570,7 @@ function DRV:ProcessPacket( pid, pass, side, generation )
 	if ((packet.Port == 80) && (packet.Body) && (packet.Body[1] == "http") && (self.Entity.IsAddressedTo && self.Entity:IsAddressedTo( packet.Dest ))) then
 		// Backbone: management-only. The firewall-is-off default does not
 		// expose the panel to the backbone DHCP pool.
-		if (!self:BackboneWebAllowed( packet.Source )) then
+		if (!self:BackboneWebAllowed( packet.Source, side )) then
 			PCMod.Msg( "[webgr]Backbone web access denied for " .. tostring( packet.Source ), true )
 			packet.Delivered = true
 			return
@@ -1137,7 +1140,9 @@ end
 // sources are all denied by default. Normal forwarding is unaffected (the
 // backbone firewall stays in its default-allow state) and the router's own
 // generated replies never pass through this check.
-function DRV:BackboneWebAllowed( source )
+function DRV:BackboneWebAllowed( source, side )
+	// Management is ingress-bound: a claimed management source IP is not enough.
+	if (side && (side != "lan")) then return false end
 	if (!self:IsBackbone()) then return true end
 	if (self:GetCfg().WebGuard == false) then return true end
 	local ip = source
