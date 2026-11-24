@@ -11,7 +11,7 @@
 
 if (!PCMod_NoInclude) then PCMod = {} end -- Main table
 PCMod.Exists = true -- Internal checking
-PCMod.Version = "1.1" -- 'Nice' version
+PCMod.Version = "NEXT 1.0.0" -- 'Nice' version
 PCMod.IntVer = "Release" -- Internal version
 PCMod.IsPCMod2 = true
 

@@ -74,3 +74,10 @@ end
 for _, v in pairs( PCMod.Cfg.Models ) do
 	PCMod.Res.AddModel( v )
 end
+
+// Custom sounds are not models: register them separately for FastDL clients.
+if (SERVER) then
+	for _, v in pairs( PCMod.Cfg.Sounds or {} ) do
+		PCMod.Res.ServeItem( "sound/" .. v )
+	end
+end

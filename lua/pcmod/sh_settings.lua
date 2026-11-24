@@ -39,14 +39,14 @@ if (CLIENT) then
 		PCMod.Settings.InfoTab = tb_info
 		
 		// Add the info labels
-		vgui.AddText( tb_info, "Welcome to the PCMod 13 settings panel!" )
+		vgui.AddText( tb_info, "Welcome to the PCMod NEXT settings panel!" )
 		vgui.AddText( tb_info, "Below is a list of settings that PCMod is currently using." )
 		vgui.AddText( tb_info, "To change these settings you need to edit the config file." )
 		vgui.AddText( tb_info, "You can also temporarily change them in the 'Options' tab." )
 		
 		vgui.AddText( tb_info, " " )
 		
-		vgui.AddText( tb_info, "Name: PCMod 13" )
+		vgui.AddText( tb_info, "Name: PCMod NEXT" )
 		vgui.AddText( tb_info, "Version: " .. PCMod.Version )
 		vgui.AddText( tb_info, "Author: <BA>Riekelt, CrazyScouter, [GU]thomasfn" )
 		

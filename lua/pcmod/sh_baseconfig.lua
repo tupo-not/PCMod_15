@@ -159,6 +159,8 @@ cfg.Mats = {
 	"models/Chipstiks_PCMod_Models/Speakers/brushed-metal",
 	"models/PCMod/eeePC/eeePC",
 	"models/PCMod/USB/USB",
+	"models/PCMod/cddvd/black",
+	"models/PCMod/cddvd/transparent02",
 	"models/PCMod/kopierer/kopierer",
 	"models/PCMod/wrt54g/BEIGE",
 	"models/PCMod/wrt54g/BLUE",
@@ -181,7 +183,12 @@ cfg.Models = {
 	"pcmod/kopierer",
 	"pcmod/usb",
 	"pcmod/wrt54g",
+	"pcmod/pcmodinstall",
 	"darksunrise/monitor01"
+}
+
+cfg.Sounds = {
+	"pcmod/install_ping.wav",
 }
 
 list.Set( "pc_oslist", "personal", {} )

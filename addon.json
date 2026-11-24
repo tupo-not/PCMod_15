@@ -1,11 +1,11 @@
 {
-   "name":      		"PCMod",
-   "title":      		"PCMod - Personal Computer",
-   "version":      		"1.5.1",
+   "name":      		"PCMod NEXT",
+   "title":      		"PCMod NEXT - Interactive Computers & Networks",
+   "version":      		"1.0.0",
    "author":      		"sanazt & NAAIN",
-   "description":  	"PCMod - A complete computer system for Garry's Mod, allowing you to play games, browse the web, chat, and more within the game.",
+   "description":  	"PCMod NEXT - Interactive computers with Personal/Server OS, programs, virtual files, cameras, printers, wiring, and a simulated IPv4/IPv6 network. Browser access is limited to numeric addresses inside the PCMod network.",
    "url":     		"https://github.com/tupo-not/PCMod_15",
    "type"		:	"entity",
-   "tags"		:	[ "fun", "cartoon" ],
+   "tags"		:	[ "fun", "build" ],
    "ignore"	:["tests/*", ".git/*", "*.md", "*.txt"]
 }

@@ -64,8 +64,8 @@
 ------------------------------------------------------------------------------------
 
 THEME.Name = "pcmod15"
-THEME.Description = "PCMod 1.5 interface (graphite + teal, prototype v2)"
-THEME.NiceName = "PCMod 1.5"
+THEME.Description = "PCMod NEXT interface (graphite + teal)"
+THEME.NiceName = "PCMod NEXT"
 THEME.Author = "PCMod 1.5"
 
 -- == Required contract keys (all 20, enumerated from GetThemeColour sites) ==
